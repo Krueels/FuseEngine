@@ -53,6 +53,7 @@ public class Player : IDisposable
     private float _noclipSprintSpeed = 15.0f;
 
     private Light? _flashlight;
+    private Audio.AudioSystem? _audio;
 
     private float _tiltTarget;
     private float _tiltCurrent;
@@ -179,7 +180,10 @@ public class Player : IDisposable
     {
         if (_flashlight == null) return;
         if (Input.Input.KeyPressed(KeyCodes.F))
+        {
             _flashlight.Enabled = !_flashlight.Enabled;
+            _audio.Play("Audio/flashlight.wav", volume: 1.0f);
+        }
     }
 
     private void ApplyMovement(float dt)
@@ -440,6 +444,7 @@ public class Player : IDisposable
     public void SetSpeed(float speed) => _maxSpeedGround = speed;
     public float Speed => _maxSpeedGround;
     public void SetFlashlight(Light light) => _flashlight = light;
+    public void SetAudioSystem(Audio.AudioSystem audio) => _audio = audio;
 
     private void HandleSprint()
     {

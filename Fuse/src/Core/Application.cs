@@ -18,6 +18,7 @@ public unsafe class Application : IDisposable
     // Core Systems
     private readonly Physics.PhysicsWorld _physics;
     private AssetManagement.AssetManager _assets = null!;
+    private Audio.AudioSystem _audio = null!;
     private Renderer.MasterRenderer _renderer = null!;
     private Scene.SceneManager _sceneManager = null!;
     private Interaction.PlayerInteraction _interaction = null!;
@@ -60,6 +61,10 @@ public unsafe class Application : IDisposable
         _renderer = new Renderer.MasterRenderer(gl);
         _sceneManager = new Scene.SceneManager(_physics, _assets);
         _debugDrawer = new Debug.DebugDrawer(gl);
+
+        // Audio
+        _audio = new Audio.AudioSystem();
+        _audio.GlobalVolume = 1.0f;
         
         // UI & ImGui
         _ui = new Renderer.UIRenderer(gl, _scrWidth, _scrHeight);
@@ -68,8 +73,9 @@ public unsafe class Application : IDisposable
 
         // Player setup
         _player = new Player.Player(_physics, new Vector3(0, 2, 0));
+        _player.SetAudioSystem(_audio);
         var emptyID = new JoltPhysicsSharp.BodyID();
-        _pickup = new Player.PickupController(_physics, _player.Camera, emptyID);
+        _pickup = new Player.PickupController(_physics, _player.Camera, emptyID, _audio);
         _flashlight = new Renderer.Light
         {
             Id = "player_flashlight",
@@ -205,6 +211,7 @@ public unsafe class Application : IDisposable
                     _pickup.PhysicsUpdate(dt);
                     _physics.Step(float.Min(dt, 0.0333f));
                     _player.Update(dt);
+                    _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
                     _pickup.Update(dt);
                     
                     _sceneManager.Update(dt);
@@ -319,7 +326,7 @@ public unsafe class Application : IDisposable
             else
                 target = origin + front * maxDist;
 
-            Physics.Explosion.Apply(_physics, target, 105f, 10000.0f);
+            Physics.Explosion.Apply(_physics, target, 105f, 1000.0f, _audio);
         }
     }
 
@@ -447,12 +454,13 @@ public unsafe class Application : IDisposable
         _sceneManager.Dispose();
         _console.StopCapture();
         _player.Dispose();
+        _audio.Dispose();
         _imgui.Shutdown();
         _ui.Dispose();
         _debugDrawer.Dispose();
         _assets.Clear();
         _physics.Dispose();
         _window.Dispose();
-        Logger.Info("Application shutdown");
+        Logger.Important("Application shutdown");
     }
 }

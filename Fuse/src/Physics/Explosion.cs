@@ -5,8 +5,10 @@ namespace Fuse.Physics;
 
 public static class Explosion
 {
-    public static void Apply(PhysicsWorld world, Vector3 origin, float radius, float force)
+    public static void Apply(PhysicsWorld world, Vector3 origin, float radius, float force, Audio.AudioSystem? audio = null)
     {
+        audio?.Play3D("Audio/explosion.wav", origin, 1.0f, maxDist: radius * 2f);
+
         var bi = world.BodyInterface;
         var narrow = world.NarrowPhaseQuery;
 

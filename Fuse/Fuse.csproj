@@ -13,6 +13,7 @@
     <PackageReference Include="MIConvexHull" Version="1.1.19.1019" />
     <PackageReference Include="Silk.NET.GLFW" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
+    <PackageReference Include="SoLoudSharp" Version="0.2.0" />
     <PackageReference Include="StbImageSharp" Version="2.30.15" />
     <PackageReference Include="Silk.NET.Assimp" Version="2.22.0" />
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />

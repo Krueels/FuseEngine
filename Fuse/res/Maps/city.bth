@@ -3,7 +3,7 @@
   "objects": [
     {
       "id": "brush_c71554c0",
-      "visible": true,
+      "visible": false,
       "type": "brush",
       "faces": [
         {
@@ -151,8 +151,13 @@
           "rotation": 0
         }
       ],
+      "mesh": "brush_c71554c0",
       "texture": "Textures/dev_measurecrate01.bmp",
       "behaviours": [
+        {
+          "type": "TrReset",
+          "properties": {}
+        },
         {
           "type": "TrReset",
           "properties": {}
@@ -185,24 +190,7 @@
     {
       "id": "Buildings_Building_02",
       "visible": true,
-      "body": {
-        "shape": "none",
-        "position": [
-          0,
-          -14.188767,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_02_Building_02.001-0",
@@ -433,24 +421,7 @@
       "id": "Buildings_Building",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -75.23971,
-          -15.050116,
-          4.830551
-        ],
-        "rotation": [
-          0.99651194,
-          0,
-          -0.08345012,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_Building.001-0",
@@ -631,24 +602,7 @@
       "id": "Buildings_Building.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -118.6355,
-          -12.542581,
-          -44.703114
-        ],
-        "rotation": [
-          0.99651194,
-          0,
-          -0.08345012,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building.001_Building.002-0",
@@ -864,24 +818,7 @@
       "id": "Buildings_Building.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -416.69537,
-          -7.812724,
-          34.41091
-        ],
-        "rotation": [
-          0.104605146,
-          0,
-          0.99451387,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building.002_Building.003-0",
@@ -904,7 +841,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -934,7 +871,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -964,7 +901,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -994,7 +931,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -1024,7 +961,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -1054,7 +991,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -1084,7 +1021,7 @@
         "rotation": [
           0.104605146,
           0,
-          0.99451387,
+          0.9945138,
           0
         ],
         "mass": 0,
@@ -1097,24 +1034,7 @@
       "id": "Buildings_Building.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -592.0807,
-          -29.079746,
-          4.830551
-        ],
-        "rotation": [
-          0.99913794,
-          0,
-          -0.0415137,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building.003_Building.004-0",
@@ -1330,24 +1250,7 @@
       "id": "Buildings_Building_01",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -41.355328,
-          -13.111541,
-          -6.3410587
-        ],
-        "rotation": [
-          0.9806862,
-          0,
-          0.19558781,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_01_Building_01.001-0",
@@ -1528,24 +1431,7 @@
       "id": "Buildings_Building_01.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -43.896988,
-          -5.400586,
-          -69.34425
-        ],
-        "rotation": [
-          0.9806862,
-          0,
-          0.19558781,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_01.001_Building_01.002-0",
@@ -1761,24 +1647,7 @@
       "id": "Buildings_Building_01.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -492.41333,
-          -0.67072964,
-          55.854424
-        ],
-        "rotation": [
-          -0.17470591,
-          0,
-          0.9846207,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_01.002_Building_01.003-0",
@@ -1994,24 +1863,7 @@
       "id": "Buildings_Building_01.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -558.6976,
-          -27.141172,
-          -6.3410587
-        ],
-        "rotation": [
-          0.9924396,
-          0,
-          0.12273398,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_01.003_Building_01.004-0",
@@ -2227,24 +2079,7 @@
       "id": "Buildings_Building_02.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -518.7993,
-          -29.60098,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_02.001_Building_02.002-0",
@@ -2475,24 +2310,7 @@
       "id": "Buildings_Building_02.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -1032.3961,
-          -43.110996,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_02.002_Building_02.003-0",
@@ -2723,24 +2541,7 @@
       "id": "Buildings_Building_03",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -172.73749,
-          -15.597241,
-          -0.26081657
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_03_Building_03.001-0",
@@ -2921,24 +2722,7 @@
       "id": "Buildings_Building_03.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -333.68567,
-          -14.558272,
-          -55.93311
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_03.001_Building_03.002-0",
@@ -3154,24 +2938,7 @@
       "id": "Buildings_Building_03.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -202.31654,
-          -9.828416,
-          54.76748
-        ],
-        "rotation": [
-          0.021248037,
-          0,
-          0.9997742,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_03.002_Building_03.003-0",
@@ -3387,24 +3154,7 @@
       "id": "Buildings_Building_03.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -692.5856,
-          -29.626873,
-          -0.010230154
-        ],
-        "rotation": [
-          0.99990445,
-          0,
-          0.013825268,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_03.003_Building_03.004-0",
@@ -3620,24 +3370,7 @@
       "id": "Buildings_Building_04",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -144.4806,
-          -15.602461,
-          3.3317852
-        ],
-        "rotation": [
-          0.9798359,
-          0,
-          -0.1998038,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_04_Building_04.001-0",
@@ -3818,24 +3551,7 @@
       "id": "Buildings_Building_04.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -271.35968,
-          -14.577502,
-          -48.008923
-        ],
-        "rotation": [
-          0.9798359,
-          0,
-          -0.1998038,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_04.001_Building_04.002-0",
@@ -4051,24 +3767,7 @@
       "id": "Buildings_Building_04.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -264.24957,
-          -9.847646,
-          44.202446
-        ],
-        "rotation": [
-          0.22057825,
-          0,
-          0.9753693,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_04.002_Building_04.003-0",
@@ -4284,24 +3983,7 @@
       "id": "Buildings_Building_04.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -663.5769,
-          -29.632092,
-          3.3317852
-        ],
-        "rotation": [
-          0.9798359,
-          0,
-          -0.19980377,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_04.003_Building_04.004-0",
@@ -4517,24 +4199,7 @@
       "id": "Buildings_Building_05",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -110.32396,
-          -15.499085,
-          -3.0401306
-        ],
-        "rotation": [
-          0.97548985,
-          0,
-          0.22004446,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_05_Building_05.001-0",
@@ -4740,24 +4405,7 @@
       "id": "Buildings_Building_05.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -196.0206,
-          -14.196651,
-          -62.06342
-        ],
-        "rotation": [
-          0.97548985,
-          0,
-          0.22004446,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_05.001_Building_05.002-0",
@@ -5003,24 +4651,7 @@
       "id": "Buildings_Building_05.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -340.11774,
-          -9.466795,
-          55.043354
-        ],
-        "rotation": [
-          -0.19926754,
-          0,
-          0.9799451,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_05.002_Building_05.003-0",
@@ -5266,24 +4897,7 @@
       "id": "Buildings_Building_05.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -629.4203,
-          -29.528717,
-          -3.0401306
-        ],
-        "rotation": [
-          0.9970919,
-          0,
-          0.07620928,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_05.003_Building_05.004-0",
@@ -5529,24 +5143,7 @@
       "id": "Buildings_Building_06",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -205.35902,
-          -17.626732,
-          5.7800117
-        ],
-        "rotation": [
-          0.9977874,
-          0,
-          -0.06648503,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_06_Building_06.001-0",
@@ -5752,24 +5349,7 @@
       "id": "Buildings_Building_06.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -402.35687,
-          -22.035221,
-          -57.924404
-        ],
-        "rotation": [
-          0.9977874,
-          0,
-          -0.06648503,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_06.001_Building_06.002-0",
@@ -6015,24 +5595,7 @@
       "id": "Buildings_Building_06.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -133.79195,
-          -17.305363,
-          59.674583
-        ],
-        "rotation": [
-          0.08767104,
-          0,
-          0.9961495,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_06.002_Building_06.003-0",
@@ -6278,24 +5841,7 @@
       "id": "Buildings_Building_06.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -724.4553,
-          -30.097515,
-          5.7800117
-        ],
-        "rotation": [
-          0.9977874,
-          0,
-          -0.06648502,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_06.003_Building_06.004-0",
@@ -6541,24 +6087,7 @@
       "id": "Buildings_Building_07",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -237.15804,
-          -16.350231,
-          -1.4094105
-        ],
-        "rotation": [
-          0.9950076,
-          0,
-          0.09979922,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_07_Building_07.001-0",
@@ -6739,24 +6268,7 @@
       "id": "Buildings_Building_07.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -475.77753,
-          -17.332397,
-          -58.46654
-        ],
-        "rotation": [
-          0.9950076,
-          0,
-          0.09979923,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_07.001_Building_07.002-0",
@@ -6972,24 +6484,7 @@
       "id": "Buildings_Building_07.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -60.460648,
-          -12.602541,
-          63.335594
-        ],
-        "rotation": [
-          -0.07863465,
-          0,
-          0.99690354,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_07.002_Building_07.003-0",
@@ -7010,9 +6505,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7040,9 +6535,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7070,9 +6565,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7100,9 +6595,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7130,9 +6625,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7160,9 +6655,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7190,9 +6685,9 @@
           63.335594
         ],
         "rotation": [
-          -0.07863465,
+          -0.07863464,
           0,
-          0.99690354,
+          0.9969035,
           0
         ],
         "mass": 0,
@@ -7205,24 +6700,7 @@
       "id": "Buildings_Building_07.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -754.7508,
-          -28.821014,
-          -1.1588241
-        ],
-        "rotation": [
-          0.99911064,
-          0,
-          0.04216556,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_07.003_Building_07.004-0",
@@ -7438,24 +6916,7 @@
       "id": "Buildings_Building_08",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -259.48218,
-          -19.037128,
-          8.163385
-        ],
-        "rotation": [
-          0.9995344,
-          0,
-          -0.030510405,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_08_Building_08.001-0",
@@ -7611,24 +7072,7 @@
       "id": "Buildings_Building_08.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -525.01776,
-          -27.231323,
-          -37.35191
-        ],
-        "rotation": [
-          0.9995344,
-          0,
-          -0.030510405,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_08.001_Building_08.002-0",
@@ -7814,24 +7258,7 @@
       "id": "Buildings_Building_08.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -10.367798,
-          -22.501469,
-          44.33209
-        ],
-        "rotation": [
-          0.051741667,
-          0,
-          0.9986605,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_08.002_Building_08.003-0",
@@ -8017,24 +7444,7 @@
       "id": "Buildings_Building_08.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -778.5785,
-          -31.507912,
-          8.163385
-        ],
-        "rotation": [
-          0.9995344,
-          0,
-          -0.030510405,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_08.003_Building_08.004-0",
@@ -8220,24 +7630,7 @@
       "id": "Buildings_Building_09",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -278.72464,
-          -18.993164,
-          0.73235226
-        ],
-        "rotation": [
-          0.9963746,
-          0,
-          0.085074395,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09_Building_09.001-0",
@@ -8393,24 +7786,7 @@
       "id": "Buildings_Building_09.001",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -298.11154,
-          -18.993164,
-          4.5486717
-        ],
-        "rotation": [
-          0.99734795,
-          0,
-          -0.07278073,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.001_Building_09.002-0",
@@ -8428,7 +7804,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8453,7 +7829,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8478,7 +7854,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8503,7 +7879,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8528,7 +7904,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8553,7 +7929,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -8566,24 +7942,7 @@
       "id": "Buildings_Building_09.002",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -316.88785,
-          -18.993164,
-          -0.18356442
-        ],
-        "rotation": [
-          0.99785715,
-          0,
-          0.06543022,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.002_Building_09.003-0",
@@ -8739,24 +8098,7 @@
       "id": "Buildings_Building_09.003",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -330.44717,
-          -18.993164,
-          -0.41347715
-        ],
-        "rotation": [
-          0.99963444,
-          0,
-          -0.027037278,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.003_Building_09.004-0",
@@ -8942,24 +8284,7 @@
       "id": "Buildings_Building_09.004",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -337.7363,
-          -18.993164,
-          -2.6696317
-        ],
-        "rotation": [
-          0.9971055,
-          0,
-          0.07603084,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.004_Building_09.005-0",
@@ -9145,24 +8470,7 @@
       "id": "Buildings_Building_09.005",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -350.9176,
-          -18.993164,
-          -3.3838196
-        ],
-        "rotation": [
-          0.25379938,
-          0,
-          0.96725684,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.005_Building_09.006-0",
@@ -9348,24 +8656,7 @@
       "id": "Buildings_Building_09.006",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -345.38324,
-          -18.993164,
-          1.8690004
-        ],
-        "rotation": [
-          0.15285973,
-          0,
-          0.9882479,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.006_Building_09.007-0",
@@ -9386,7 +8677,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9416,7 +8707,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9446,7 +8737,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9476,7 +8767,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9506,7 +8797,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9536,7 +8827,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -9551,24 +8842,7 @@
       "id": "Buildings_Building_09.007",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -358.89993,
-          -18.993164,
-          -5.2650785
-        ],
-        "rotation": [
-          0.9999998,
-          0,
-          0.0005497897,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.007_Building_09.008-0",
@@ -9754,24 +9028,7 @@
       "id": "Buildings_Building_09.008",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -366.3024,
-          -18.993164,
-          -7.1157894
-        ],
-        "rotation": [
-          0.9946285,
-          0,
-          0.103508964,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.008_Building_09.009-0",
@@ -9957,24 +9214,7 @@
       "id": "Buildings_Building_09.009",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -409.01685,
-          -18.993164,
-          -8.574614
-        ],
-        "rotation": [
-          0.018156316,
-          0,
-          0.9998352,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.009_Building_09.010-0",
@@ -10160,24 +9400,7 @@
       "id": "Buildings_Building_09.010",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -401.68878,
-          -18.993164,
-          -6.4483104
-        ],
-        "rotation": [
-          -0.084885255,
-          0,
-          0.99639076,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.010_Building_09.011-0",
@@ -10198,9 +9421,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10228,9 +9451,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10258,9 +9481,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10288,9 +9511,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10318,9 +9541,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10348,9 +9571,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -10363,24 +9586,7 @@
       "id": "Buildings_Building_09.011",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -388.4969,
-          -18.993164,
-          -5.96841
-        ],
-        "rotation": [
-          0.96947324,
-          0,
-          -0.24519712,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.011_Building_09.012-0",
@@ -10566,24 +9772,7 @@
       "id": "Buildings_Building_09.012",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -394.12366,
-          -18.993164,
-          -11.122075
-        ],
-        "rotation": [
-          0.98956674,
-          0,
-          -0.14407504,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.012_Building_09.013-0",
@@ -10606,7 +9795,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10636,7 +9825,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10666,7 +9855,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10696,7 +9885,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10726,7 +9915,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10756,7 +9945,7 @@
         "rotation": [
           0.98956674,
           0,
-          -0.14407504,
+          -0.14407502,
           0
         ],
         "mass": 0,
@@ -10769,24 +9958,7 @@
       "id": "Buildings_Building_09.013",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -380.4824,
-          -18.993164,
-          -4.2292566
-        ],
-        "rotation": [
-          -0.009432905,
-          0,
-          0.9999555,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.013_Building_09.014-0",
@@ -10972,24 +10144,7 @@
       "id": "Buildings_Building_09.014",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -373.0482,
-          -18.993164,
-          -2.510344
-        ],
-        "rotation": [
-          -0.112340234,
-          0,
-          0.9936698,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.014_Building_09.015-0",
@@ -11175,24 +10330,7 @@
       "id": "Buildings_Building_09.015",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -415.91837,
-          -18.993164,
-          -11.356784
-        ],
-        "rotation": [
-          0.997837,
-          0,
-          -0.065736406,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.015_Building_09.016-0",
@@ -11215,7 +10353,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11245,7 +10383,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11275,7 +10413,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11305,7 +10443,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11335,7 +10473,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11365,7 +10503,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -11378,24 +10516,7 @@
       "id": "Buildings_Building_09.016",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -423.011,
-          -18.993164,
-          -14.170411
-        ],
-        "rotation": [
-          0.99930215,
-          0,
-          0.03735233,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.016_Building_09.017-0",
@@ -11581,24 +10702,7 @@
       "id": "Buildings_Building_09.017",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -436.0974,
-          -18.993164,
-          -15.902805
-        ],
-        "rotation": [
-          0.29107428,
-          0,
-          0.9567005,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.017_Building_09.018-0",
@@ -11784,24 +10888,7 @@
       "id": "Buildings_Building_09.018",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -430.98633,
-          -18.993164,
-          -10.237345
-        ],
-        "rotation": [
-          0.19102341,
-          0,
-          0.98158544,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.018_Building_09.019-0",
@@ -11987,24 +11074,7 @@
       "id": "Buildings_Building_09.019",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -443.9102,
-          -18.993164,
-          -18.396324
-        ],
-        "rotation": [
-          0.99927074,
-          0,
-          -0.038184196,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.019_Building_09.020-0",
@@ -12190,24 +11260,7 @@
       "id": "Buildings_Building_09.020",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -451.14722,
-          -18.993164,
-          -20.814507
-        ],
-        "rotation": [
-          0.9978914,
-          0,
-          0.06490569,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.020_Building_09.021-0",
@@ -12228,9 +11281,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12258,9 +11311,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12288,9 +11341,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12318,9 +11371,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12348,9 +11401,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12378,9 +11431,9 @@
           -20.814507
         ],
         "rotation": [
-          0.9978914,
+          0.99789137,
           0,
-          0.06490569,
+          0.06490568,
           0
         ],
         "mass": 0,
@@ -12393,24 +11446,7 @@
       "id": "Buildings_Building_09.021",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -493.60046,
-          -18.993164,
-          -8.27696
-        ],
-        "rotation": [
-          -0.16601641,
-          0,
-          0.986123,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.021_Building_09.022-0",
@@ -12431,9 +11467,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12461,9 +11497,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12491,9 +11527,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12521,9 +11557,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12551,9 +11587,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12581,9 +11617,9 @@
           -8.27696
         ],
         "rotation": [
-          -0.16601641,
+          -0.1660164,
           0,
-          0.986123,
+          0.98612297,
           0
         ],
         "mass": 0,
@@ -12596,24 +11632,7 @@
       "id": "Buildings_Building_09.022",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -485.99933,
-          -18.993164,
-          -8.943675
-        ],
-        "rotation": [
-          -0.2666674,
-          0,
-          0.9637886,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.022_Building_09.023-0",
@@ -12799,24 +11818,7 @@
       "id": "Buildings_Building_09.023",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -473.52618,
-          -18.993164,
-          -13.265285
-        ],
-        "rotation": [
-          0.9980301,
-          0,
-          -0.06273585,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.023_Building_09.024-0",
@@ -13002,24 +12004,7 @@
       "id": "Buildings_Building_09.024",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -480.6355,
-          -18.993164,
-          -16.03624
-        ],
-        "rotation": [
-          0.9991853,
-          0,
-          0.040356845,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.024_Building_09.025-0",
@@ -13205,24 +12190,7 @@
       "id": "Buildings_Building_09.025",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -465.425,
-          -18.993164,
-          -14.541125
-        ],
-        "rotation": [
-          -0.1931573,
-          0,
-          0.9811678,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.025_Building_09.026-0",
@@ -13408,24 +12376,7 @@
       "id": "Buildings_Building_09.026",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -457.87216,
-          -18.993164,
-          -15.626046
-        ],
-        "rotation": [
-          -0.29315373,
-          0,
-          0.95606536,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.026_Building_09.027-0",
@@ -13611,24 +12562,7 @@
       "id": "Buildings_Building_09.027",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -797.8209,
-          -31.463947,
-          0.73235226
-        ],
-        "rotation": [
-          0.9963746,
-          0,
-          0.085074395,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.027_Building_09.028-0",
@@ -13814,24 +12748,7 @@
       "id": "Buildings_Building_09.028",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -817.2079,
-          -31.463947,
-          4.5486717
-        ],
-        "rotation": [
-          0.99734795,
-          0,
-          -0.07278073,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.028_Building_09.029-0",
@@ -13854,7 +12771,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -13884,7 +12801,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -13914,7 +12831,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -13944,7 +12861,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -13974,7 +12891,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -14004,7 +12921,7 @@
         "rotation": [
           0.99734795,
           0,
-          -0.07278073,
+          -0.07278072,
           0
         ],
         "mass": 0,
@@ -14017,24 +12934,7 @@
       "id": "Buildings_Building_09.029",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -835.98413,
-          -31.463947,
-          -0.18356442
-        ],
-        "rotation": [
-          0.99785715,
-          0,
-          0.06543023,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.029_Building_09.030-0",
@@ -14220,24 +13120,7 @@
       "id": "Buildings_Building_09.030",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -847.9846,
-          -31.463947,
-          -0.41347715
-        ],
-        "rotation": [
-          0.99963444,
-          0,
-          -0.027037278,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.030_Building_09.031-0",
@@ -14423,24 +13306,7 @@
       "id": "Buildings_Building_09.033",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -862.9207,
-          -31.463947,
-          1.8690004
-        ],
-        "rotation": [
-          0.15285973,
-          0,
-          0.9882479,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.033_Building_09.034-0",
@@ -14461,7 +13327,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14491,7 +13357,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14521,7 +13387,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14551,7 +13417,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14581,7 +13447,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14611,7 +13477,7 @@
           1.8690004
         ],
         "rotation": [
-          0.15285973,
+          0.15285972,
           0,
           0.9882479,
           0
@@ -14626,24 +13492,7 @@
       "id": "Buildings_Building_09.034",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -876.4374,
-          -31.463947,
-          -5.2650785
-        ],
-        "rotation": [
-          0.9999998,
-          0,
-          0.0005497897,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.034_Building_09.035-0",
@@ -14829,24 +13678,7 @@
       "id": "Buildings_Building_09.037",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -919.22626,
-          -31.463947,
-          -6.4483104
-        ],
-        "rotation": [
-          -0.084885255,
-          0,
-          0.99639076,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.037_Building_09.038-0",
@@ -14867,9 +13699,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -14897,9 +13729,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -14927,9 +13759,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -14957,9 +13789,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -14987,9 +13819,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -15017,9 +13849,9 @@
           -6.4483104
         ],
         "rotation": [
-          -0.084885255,
+          -0.08488524,
           0,
-          0.99639076,
+          0.9963907,
           0
         ],
         "mass": 0,
@@ -15032,24 +13864,7 @@
       "id": "Buildings_Building_09.038",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -906.03436,
-          -31.463947,
-          -5.96841
-        ],
-        "rotation": [
-          0.96947324,
-          0,
-          -0.24519712,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.038_Building_09.039-0",
@@ -15235,24 +14050,7 @@
       "id": "Buildings_Building_09.041",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -890.5857,
-          -31.463947,
-          -2.510344
-        ],
-        "rotation": [
-          -0.112340234,
-          0,
-          0.9936698,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.041_Building_09.042-0",
@@ -15438,24 +14236,7 @@
       "id": "Buildings_Building_09.042",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -933.4558,
-          -31.463947,
-          -11.356784
-        ],
-        "rotation": [
-          0.997837,
-          0,
-          -0.065736406,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.042_Building_09.043-0",
@@ -15478,7 +14259,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15508,7 +14289,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15538,7 +14319,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15568,7 +14349,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15598,7 +14379,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15628,7 +14409,7 @@
         "rotation": [
           0.997837,
           0,
-          -0.065736406,
+          -0.0657364,
           0
         ],
         "mass": 0,
@@ -15641,24 +14422,7 @@
       "id": "Buildings_Building_09.045",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -948.5238,
-          -31.463947,
-          -10.237345
-        ],
-        "rotation": [
-          0.19102341,
-          0,
-          0.98158544,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.045_Building_09.046-0",
@@ -15844,24 +14608,7 @@
       "id": "Buildings_Building_09.046",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -961.44763,
-          -31.463947,
-          -18.396324
-        ],
-        "rotation": [
-          0.99927074,
-          0,
-          -0.038184196,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.046_Building_09.047-0",
@@ -16047,24 +14794,7 @@
       "id": "Buildings_Building_09.049",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -1003.5368,
-          -31.463947,
-          -8.943675
-        ],
-        "rotation": [
-          -0.2666674,
-          0,
-          0.9637886,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.049_Building_09.050-0",
@@ -16250,24 +14980,7 @@
       "id": "Buildings_Building_09.050",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -991.06366,
-          -31.463947,
-          -13.265285
-        ],
-        "rotation": [
-          0.9980301,
-          0,
-          -0.06273585,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.050_Building_09.051-0",
@@ -16453,24 +15166,7 @@
       "id": "Buildings_Building_09.053",
       "visible": true,
       "parent": "Buildings_Building_02",
-      "body": {
-        "shape": "none",
-        "position": [
-          -975.40967,
-          -31.463947,
-          -15.626046
-        ],
-        "rotation": [
-          -0.29315373,
-          0,
-          0.95606536,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "mesh": ""
     },
     {
       "id": "Buildings_Building_09.053_Building_09.054-0",
@@ -16655,6 +15351,7 @@
     {
       "id": "new_directional_light",
       "visible": true,
+      "mesh": "",
       "light_type": "directional",
       "light_color": [
         1,
@@ -16667,34 +15364,43 @@
       "light_outer_cone": 0.5235988,
       "light_cast_shadows": true,
       "light_shadow_bias": 0.001,
-      "light_dynamic": false,
-      "body": {
-        "shape": "none",
-        "position": [
-          0,
-          12,
-          0
-        ],
-        "rotation": [
-          0.9659259,
-          0.25881907,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
+      "light_dynamic": false
     }
   ],
   "player_spawn": {
     "position": [
       0,
-      2.4,
+      -0.38341135,
       0
     ],
-    "yaw": 180,
-    "pitch": 0
-  }
+    "yaw": 180.60004,
+    "pitch": -2.7999995
+  },
+  "lights": [
+    {
+      "type": "spot",
+      "position": [
+        0,
+        0.5165886,
+        0
+      ],
+      "color": [
+        1,
+        0.95,
+        0.8
+      ],
+      "radius": 25,
+      "cast_shadows": false,
+      "shadow_bias": 0.001,
+      "intensity": 1,
+      "enabled": false,
+      "direction": [
+        -0.9987514,
+        -0.048849765,
+        -0.01045993
+      ],
+      "inner_cone": 0.2617994,
+      "outer_cone": 0.6108653
+    }
+  ]
 }

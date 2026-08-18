@@ -32,12 +32,14 @@ public class PickupController
     private float _maxTotalImpulse = 20.0f;
 
     private Vector2 _lookMomentum;
+    private Audio.AudioSystem? _audio;
 
-    public PickupController(Physics.PhysicsWorld world, Camera camera, BodyID playerBody)
+    public PickupController(Physics.PhysicsWorld world, Camera camera, BodyID playerBody, Audio.AudioSystem? audio = null)
     {
         _world = world;
         _camera = camera;
         _playerBodyID = playerBody;
+        _audio = audio;
         _bli = world.Native.BodyLockInterface;
     }
 
@@ -136,6 +138,7 @@ public class PickupController
         }
 
         _heldBodyID = hitID;
+        _audio?.Play("Audio/wpn_select.wav", volume: 1.0f);
     }
 
     private void DropObject(bool doThrow)

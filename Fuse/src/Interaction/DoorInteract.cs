@@ -37,6 +37,8 @@ public sealed class DoorInteract : IInteractable
         _from = isChild ? Entity.InitialRelativeRotation : Entity.Body.Rotation(World);
         _to = _baseRot * Quaternion.CreateFromAxisAngle(Vector3.UnitY, _open ? MathUtil.Deg(90f) : 0f);
 
+        Audio.AudioSystem.Instance?.Play3D("Audio/door_move.wav", Entity.Body.Position(World), 1.0f, maxDist: 15f);
+
         Logger.Info($"DOOR: {Entity.Id}");
     }
 
