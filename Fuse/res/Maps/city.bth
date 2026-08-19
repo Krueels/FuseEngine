@@ -3,7 +3,7 @@
   "objects": [
     {
       "id": "brush_c71554c0",
-      "visible": false,
+      "visible": true,
       "type": "brush",
       "faces": [
         {
@@ -154,10 +154,6 @@
       "mesh": "brush_c71554c0",
       "texture": "Textures/dev_measurecrate01.bmp",
       "behaviours": [
-        {
-          "type": "TrReset",
-          "properties": {}
-        },
         {
           "type": "TrReset",
           "properties": {}
@@ -15375,32 +15371,5 @@
     ],
     "yaw": 180.60004,
     "pitch": -2.7999995
-  },
-  "lights": [
-    {
-      "type": "spot",
-      "position": [
-        0,
-        0.5165886,
-        0
-      ],
-      "color": [
-        1,
-        0.95,
-        0.8
-      ],
-      "radius": 25,
-      "cast_shadows": false,
-      "shadow_bias": 0.001,
-      "intensity": 1,
-      "enabled": false,
-      "direction": [
-        -0.9987514,
-        -0.048849765,
-        -0.01045993
-      ],
-      "inner_cone": 0.2617994,
-      "outer_cone": 0.6108653
-    }
-  ]
+  }
 }

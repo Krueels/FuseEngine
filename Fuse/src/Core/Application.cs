@@ -19,6 +19,7 @@ public unsafe class Application : IDisposable
     private readonly Physics.PhysicsWorld _physics;
     private AssetManagement.AssetManager _assets = null!;
     private Audio.AudioSystem _audio = null!;
+    private Audio.ImpactSoundSystem _impactSound = null!;
     private Renderer.MasterRenderer _renderer = null!;
     private Scene.SceneManager _sceneManager = null!;
     private Interaction.PlayerInteraction _interaction = null!;
@@ -65,6 +66,7 @@ public unsafe class Application : IDisposable
         // Audio
         _audio = new Audio.AudioSystem();
         _audio.GlobalVolume = 1.0f;
+        _impactSound = new Audio.ImpactSoundSystem(_physics, _audio);
         
         // UI & ImGui
         _ui = new Renderer.UIRenderer(gl, _scrWidth, _scrHeight);
@@ -130,6 +132,7 @@ public unsafe class Application : IDisposable
 
     private void LoadMap(string mapName, Action<float, string>? onProgress = null)
     {
+        _impactSound?.Clear();
         var spawn = _sceneManager.LoadMap(mapName, onProgress);
         if (spawn.HasValue)
         {
@@ -143,6 +146,7 @@ public unsafe class Application : IDisposable
     
     private void ReloadMap(Action<float, string>? onProgress = null)
     {
+        _impactSound?.Clear();
         var spawn = _sceneManager.ReloadMap(onProgress);
         if (spawn.HasValue)
         {
@@ -212,6 +216,7 @@ public unsafe class Application : IDisposable
                     _physics.Step(float.Min(dt, 0.0333f));
                     _player.Update(dt);
                     _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
+                    _impactSound.Update(dt);
                     _pickup.Update(dt);
                     
                     _sceneManager.Update(dt);
@@ -285,15 +290,15 @@ public unsafe class Application : IDisposable
 
         if (Input.Input.KeyPressed(KeyCodes.F5)) ReloadMap(OnLoadProgress);
 
-        if (Input.Input.KeyPressed(KeyCodes.F6))
-        {
-            string savePath = _sceneManager.CurrentMapPath;
-            var spawn = new Fuse.Scene.PlayerSpawn(
-                _player.NativeCharacter.Position,
-                _player.Camera.Yaw,
-                _player.Camera.Pitch);
-            Fuse.Scene.MapSerializer.SaveToFile(_sceneManager.ActiveScene, _physics, savePath, spawn);
-        }
+        //if (Input.Input.KeyPressed(KeyCodes.F6))
+        //{
+        //    string savePath = _sceneManager.CurrentMapPath;
+        //    var spawn = new Fuse.Scene.PlayerSpawn(
+        //        _player.NativeCharacter.Position,
+        //        _player.Camera.Yaw,
+        //        _player.Camera.Pitch);
+        //    Fuse.Scene.MapSerializer.SaveToFile(_sceneManager.ActiveScene, _physics, savePath, spawn);
+        //}
 
         if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
 
@@ -326,7 +331,7 @@ public unsafe class Application : IDisposable
             else
                 target = origin + front * maxDist;
 
-            Physics.Explosion.Apply(_physics, target, 105f, 1000.0f, _audio);
+            Physics.Explosion.Apply(_physics, target, 105f, 10000.0f, _audio);
         }
     }
 
@@ -454,6 +459,7 @@ public unsafe class Application : IDisposable
         _sceneManager.Dispose();
         _console.StopCapture();
         _player.Dispose();
+        _impactSound.Dispose();
         _audio.Dispose();
         _imgui.Shutdown();
         _ui.Dispose();

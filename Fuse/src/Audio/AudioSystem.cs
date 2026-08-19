@@ -43,7 +43,7 @@ public sealed class AudioSystem : IDisposable
     }
 
     public VoiceHandle Play3D(string path, Vector3 position, float volume = 1.0f,
-        float minDist = 5.0f, float maxDist = 150.0f)
+        float minDist = 5.0f, float maxDist = 150.0f, float pitch = 1.0f)
     {
         var wav = GetSound(path);
         if (wav == null) return VoiceHandle.None;
@@ -51,6 +51,8 @@ public sealed class AudioSystem : IDisposable
         var voice = _soloud.Play3D(wav, position.X, position.Y, position.Z, volume: volume);
         _soloud.Set3DSourceMinMaxDistance(voice, minDist, maxDist);
         _soloud.Set3DSourceAttenuation(voice, AttenuationModel.InverseDistance, 1.0f);
+        if (pitch !=  1.0f)
+            _soloud.SetRelativePlaySpeed(voice, pitch);
         return voice;
     }
 
