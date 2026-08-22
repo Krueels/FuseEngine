@@ -48,6 +48,8 @@ public sealed class GlockWeapon : IWeapon
     private bool _pendingAutoReload;
 
     private readonly string[] _fireSounds = ["Audio/weapons/glock/Glock_Fire0.wav", "Audio/weapons/glock/Glock_Fire1.wav", "Audio/weapons/glock/Glock_Fire2.wav", "Audio/weapons/glock/Glock_Fire3.wav"];
+    private const float WalkAnimSpeedMax = 1.2f;
+    private const float WalkAnimSpeedDivisor = 5.0f;
 
     public string CurrentAnimState => _animState.ToString();
     public float CurrentAnimTime => (float)(_animator?.TimeSeconds ?? 0);
@@ -195,6 +197,9 @@ public sealed class GlockWeapon : IWeapon
                 string idleOrWalk = speed > 0.5f ? "Walk" : "Idle";
                 if (_animator.CurrentClip?.Name != idleOrWalk)
                     _animator.Play(idleOrWalk);
+
+                // Velocidade da animação proporcional à velocidade do jogador
+                _animator.Speed = speed > 0.5f ? MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax) : 0.8f;
                 break;
         }
     }

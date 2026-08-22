@@ -298,6 +298,7 @@ public unsafe class Application : IDisposable
                 _window.CursorCaptureEnabled = !_paused;
                 if (_paused) Input.Input.ShowCursor();
                 else Input.Input.DisableCursor();
+                _audio.SetPaused(_paused);
             }
         };
     }
