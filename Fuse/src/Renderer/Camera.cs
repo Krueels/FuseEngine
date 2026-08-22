@@ -35,6 +35,14 @@ public class Camera
     public float Pitch => _pitch;
     public float Roll { get => _roll; set => _roll = value; }
 
+    // Quaternion representing the camera's full orientation (yaw + pitch + roll)
+    // Note: _yaw increases when turning RIGHT (CW), but standard math uses CCW positive.
+    // Negate yaw to match standard math convention (CCW = positive).
+    public Quaternion Rotation => Quaternion.CreateFromYawPitchRoll(
+        float.DegreesToRadians(-_yaw),
+        float.DegreesToRadians(_roll),
+        float.DegreesToRadians(-_pitch));
+
     public float FOV { get => _fov; set => _fov = value; }
 
     public Matrix4x4 GetViewMatrix()

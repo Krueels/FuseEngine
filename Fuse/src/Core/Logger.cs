@@ -48,6 +48,13 @@ public static class Logger
         Console.WriteLine($"[ WARN ] {message}");
         Console.ResetColor();
     }
+    public static void InfoGold(string message)
+    {
+        _log.Add(new LogEntry(LogLevel.Warn, message, DateTime.Now));
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"[ INFO GOLD ] {message}");
+        Console.ResetColor();
+    }
 
     public static void WarnPopup(string message, string popupMessage)
     {

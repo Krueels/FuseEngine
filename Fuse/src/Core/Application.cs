@@ -2,6 +2,7 @@ using System.Numerics;
 using Fuse.Imgui;
 using Fuse.Input;
 using Fuse.Physics;
+using Fuse.Renderer;
 using JoltPhysicsSharp;
 using Silk.NET.OpenGL;
 
@@ -41,6 +42,14 @@ public unsafe class Application : IDisposable
     private Imgui.Console _console = null!;
     private float _loadProgress;
     private string _loadStatus = "";
+
+    // ViewModel
+    private Entity? _glockViewModelEntity;
+    private Vector3 _glockLocalOffset = new Vector3(0.0f, -0.83f, 0.0f);
+    private Vector3 _glockLocalEulerDeg = new Vector3(0f, 90f, 0f);
+    private Quaternion _glockLocalRotation = Quaternion.Identity;
+    private bool _updateViewmodelTransform = true;
+    private bool _invertViewmodelRotation = false; // toggle if rotation is inverted
 
     // Skinned model test
     private Renderer.Entity? _skinnedTestEntity;
@@ -146,7 +155,7 @@ public unsafe class Application : IDisposable
         }
         _sceneManager.InitTriggerSystem(_player);
         _sceneManager.ActiveScene.AddLight(_flashlight);
-        SpawnGlockTest();
+        SpawnGlockViewModel();
     }
     
     private void ReloadMap(Action<float, string>? onProgress = null)
@@ -160,10 +169,10 @@ public unsafe class Application : IDisposable
             _player.Camera.SetRotation(spawn.Value.Yaw, spawn.Value.Pitch);
         }
         _sceneManager.InitTriggerSystem(_player);
-        SpawnGlockTest();
+        SpawnGlockViewModel();
     }
 
-    private void SpawnGlockTest()
+    private void SpawnGlockViewModel()
     {
         string path = $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
         var model = _assets.GetSkinnedModel(path);
@@ -176,25 +185,57 @@ public unsafe class Application : IDisposable
         var animator = new Animation.Animator(model.Skeleton);
         model.Link(animator);
 
-        var entity = _sceneManager.ActiveScene.Add(null, "glock_test");
+        var entity = _sceneManager.ActiveScene.Add(null, "glock_viewmodel");
         entity.SkinnedModel = model;
         entity.Animator = animator;
 
         if (!string.IsNullOrEmpty(model.DefaultClipName))
             animator.Play(model.DefaultClipName);
 
-        // Place it a couple meters in front of the player
+        animator.Play("Idle");
+
+        // Position in front of player initially (will be updated each frame)
         Vector3 front = _player.Camera.Front;
         front.Y = 0;
         if (front.LengthSquared() > 0.001f) front = Vector3.Normalize(front);
         else front = -Vector3.UnitZ;
 
-entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _player.NativeCharacter.Position.Y, _player.NativeCharacter.Position.Z) + front * 2.5f;
+        entity.Transform.Position = _player.NativeCharacter.Position + front * 2.5f;
         // GlobalScale já normaliza vértices (cm→m). Entity scale = 1.0 (como Hell2025).
         entity.Transform.Scale = new Vector3(1.0f);
 
+        _glockViewModelEntity = entity;
         _skinnedTestEntity = entity;
-        Logger.Important($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
+        Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
+    }
+
+    private void UpdateViewmodelTransform()
+    {
+        if (_glockViewModelEntity == null || !_updateViewmodelTransform) return;
+
+        var cam = _player.Camera;
+        var camPos = cam.Position;
+        
+        // Camera's rotation quaternion has inverted yaw (camera turns right = positive yaw, but math is CCW)
+        // Fix: negate yaw component or use inverse rotation
+        var camRot = cam.Rotation;
+        
+        // Fix inverted yaw: negate Y and W components of quaternion (negates rotation around Y)
+        var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
+
+        // Viewmodel position: camera position + rotated offset
+        var offset = Vector3.Transform(_glockLocalOffset, camRot);
+        var viewmodelPos = camPos + offset;
+
+        // Local rotation in camera space (Euler degrees -> quaternion)
+        var rad = Vector3.DegreesToRadians(_glockLocalEulerDeg);
+        _glockLocalRotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
+
+        // Viewmodel rotation = FIXED camera rotation * local rotation
+        var viewmodelRot = camRotFixed * _glockLocalRotation;
+
+        _glockViewModelEntity.Transform.Position = camPos + Vector3.Transform(_glockLocalOffset, camRotFixed);
+        _glockViewModelEntity.Transform.Rotation = viewmodelRot;
     }
 
     private void CycleSkinnedClip()
@@ -209,7 +250,7 @@ entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _pla
         int idx = clips.IndexOf(current);
         string next = clips[(idx + 1) % clips.Count];
         _skinnedTestEntity.Animator.Play(next);
-        Logger.Important($"[Skinned] Clip: {next}");
+        Logger.InfoGold($"[Skinned] Clip: {next}");
     }
 
     private void RegisterWindowCallbacks()
@@ -282,6 +323,8 @@ entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _pla
 
                 HandleInput();
 
+                UpdateViewmodelTransform();
+
                 // Render
                 _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
                 if (_screenshotRequested)
@@ -333,21 +376,21 @@ entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _pla
                         if (ImGuiNET.ImGui.Checkbox("Bind Pose Only", ref bindPose))
                         {
                             Animation.Skeleton.DebugBindPoseOnly = bindPose;
-                            Logger.Important($"[Skinned] BindPoseOnly = {bindPose}");
+                            Logger.InfoGold($"[Skinned] BindPoseOnly = {bindPose}");
                         }
                         
                         bool freezeTime = Animation.Skeleton.DebugFreezeTime;
                         if (ImGuiNET.ImGui.Checkbox("Freeze Time (Key0)", ref freezeTime))
                         {
                             Animation.Skeleton.DebugFreezeTime = freezeTime;
-                            Logger.Important($"[Skinned] FreezeTime = {freezeTime}");
+                            Logger.InfoGold($"[Skinned] FreezeTime = {freezeTime}");
                         }
                         
                         bool uploadRaw = Animation.Skeleton.DebugUploadRawGrid;
                         if (ImGuiNET.ImGui.Checkbox("Upload Raw Grid", ref uploadRaw))
                         {
                             Animation.Skeleton.DebugUploadRawGrid = uploadRaw;
-                            Logger.Important($"[Skinned] UploadRawGrid = {uploadRaw}");
+                            Logger.InfoGold($"[Skinned] UploadRawGrid = {uploadRaw}");
                         }
                     }
 
@@ -382,7 +425,7 @@ entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _pla
                                 if (ImGuiNET.ImGui.Selectable(clipName, isCurrent))
                                 {
                                     animator.Play(clipName);
-                                    Logger.Important($"[Skinned] Clip: {clipName}");
+                                    Logger.InfoGold($"[Skinned] Clip: {clipName}");
                                 }
                             }
                         }
@@ -396,18 +439,49 @@ entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _pla
                     //{
                     //    if (ImGuiNET.ImGui.Button("Dump Debug Now"))
                     //        _skinnedTestEntity?.Animator?.DumpDebug();
-                        
+
                     //    if (ImGuiNET.ImGui.Button("Spawn Glock Test"))
                     //    {
                     //        SpawnGlockTest();
                     //        var keys = _skinnedTestEntity?.SkinnedModel?.Clips.Keys;
                     //        var keyList = keys != null ? new List<string>(keys) : new List<string>();
-                    //        Logger.Important($"[Skinned] Glock spawned. Clips: {string.Join(", ", keyList)} (UI to cycle)");
+                    //        Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", keyList)} (UI to cycle)");
                     //    }
                     //}
 
                     ImGuiNET.ImGui.End();
                 }
+
+                //if (ImGuiNET.ImGui.CollapsingHeader("Viewmodel (Glock) Positioning", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
+                //{
+                //    if (_glockViewModelEntity != null)
+                //    {
+                //        var offset = _glockLocalOffset;
+                //        if (ImGuiNET.ImGui.DragFloat3("Local Offset", ref offset, 0.01f, -1f, 1f))
+                //            _glockLocalOffset = offset;
+
+                //        var eulerDeg = _glockLocalEulerDeg;
+                //        if (ImGuiNET.ImGui.DragFloat3("Local Rotation (deg)", ref eulerDeg, 1f, -180f, 180f))
+                //            _glockLocalEulerDeg = eulerDeg;
+
+                //        if (ImGuiNET.ImGui.Checkbox("Invert Rotation Order", ref _invertViewmodelRotation))
+                //            Logger.InfoGold($"[Skinned] InvertViewmodelRotation = {_invertViewmodelRotation}");
+
+                //        if (ImGuiNET.ImGui.Button("Reset to Default"))
+                //        {
+                //            _glockLocalOffset = new Vector3(0.2f, -0.15f, 0.3f);
+                //            _glockLocalEulerDeg = Vector3.Zero;
+                //        }
+
+                //        ImGuiNET.ImGui.Checkbox("Auto-update transform", ref _updateViewmodelTransform);
+                //    }
+                //    else
+                //    {
+                //        ImGuiNET.ImGui.TextColored(new Vector4(1, 0.3f, 0.3f, 1), "Glock viewmodel not spawned yet");
+                //        if (ImGuiNET.ImGui.Button("Spawn Viewmodel"))
+                //            SpawnGlockViewModel();
+                //    }
+                //}
 
                 _console.Draw();
                 _imgui.Render();
