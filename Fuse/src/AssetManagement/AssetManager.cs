@@ -12,6 +12,7 @@ public class AssetManager
     private readonly Dictionary<string, Renderer.Mesh> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Renderer.LoadedModel> _models = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loadedCleanPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Animation.SkinnedModel> _skinnedModels = new(StringComparer.OrdinalIgnoreCase);
 
     public AssetManager(GL gl)
     {
@@ -93,6 +94,19 @@ public class AssetManager
         return loaded;
     }
 
+    public Animation.SkinnedModel? GetSkinnedModel(string path)
+    {
+        if (_skinnedModels.TryGetValue(path, out var cached))
+            return cached;
+
+        var loaded = Renderer.SkinnedModelLoader.Load(_gl, path, texPath => GetTexture(texPath));
+        if (loaded == null)
+            return null;
+
+        _skinnedModels[path] = loaded;
+        return loaded;
+    }
+
     public void Clear()
     {
         foreach (var t in _textures.Values) t.Dispose();
@@ -103,10 +117,12 @@ public class AssetManager
             if (m != null && m.Mesh != null)
                 m.Mesh.Dispose();
         }
+        foreach (var sm in _skinnedModels.Values) sm.Dispose();
         _textures.Clear();
         _shaders.Clear();
         _meshes.Clear();
         _models.Clear();
+        _skinnedModels.Clear();
         _loadedCleanPaths.Clear();
     }
 

@@ -14,6 +14,9 @@ public class MasterRenderer
     private Shader _shader = null!;
     private Shader _skyboxShader = null!;
     private Shader _shadowShader = null!;
+    private Shader _skinnedShader = null!;
+    private Shader _skinnedShadowShader = null!;
+    private Shader _skinnedPointShadowShader = null!;
     private ShadowMap _shadowMap = null!;
     private ShadowMap _spotShadowMap = null!;
     private Shader _pointShadowShader = null!;
@@ -66,6 +69,9 @@ public class MasterRenderer
         _skyboxShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/skybox.vert", $"{Fuse.ResPath.Path}/Shaders/skybox.frag")!;
         _shadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/shadow.vert", $"{Fuse.ResPath.Path}/Shaders/shadow.frag")!;
         _pointShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/point_shadow.vert", $"{Fuse.ResPath.Path}/Shaders/point_shadow.frag")!;
+        _skinnedShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/skinned.vert", $"{Fuse.ResPath.Path}/Shaders/default.frag")!;
+        _skinnedShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/shadow_skinned.vert", $"{Fuse.ResPath.Path}/Shaders/shadow.frag")!;
+        _skinnedPointShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/point_shadow_skinned.vert", $"{Fuse.ResPath.Path}/Shaders/point_shadow.frag")!;
         
         _shadowMap = new ShadowMap(_gl, ShadowResolution * 2, ShadowResolution * 2);
         _spotShadowMap = new ShadowMap(_gl, ShadowResolution, ShadowResolution, 4);
@@ -117,17 +123,20 @@ public class MasterRenderer
             _gl.Enable(EnableCap.CullFace);
             _gl.CullFace(GLEnum.Back); // Use Back instead of Front to prevent backface clipping issues
 
-            _shadowShader.Use();
-            
             for (int i = 0; i < 3; i++)
             {
                 float near = i == 0 ? camera.NearPlane : cascadeLevels[i - 1];
                 float far = cascadeLevels[i];
                 lightSpaceMatrices[i] = GetLightSpaceMatrix(camera, aspect, near, far, lightDir);
-                
+
+                _shadowShader.Use();
                 _shadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrices[i]);
                 _shadowMap.BindForWriting(i);
-                scene.Render(_shadowShader, _crateTexture, lightSpaceMatrices[i]); 
+                scene.Render(_shadowShader, _crateTexture, lightSpaceMatrices[i]);
+
+                _skinnedShadowShader.Use();
+                _skinnedShadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrices[i]);
+                RenderSkinned(scene, _skinnedShadowShader);
             }
         }
 
@@ -141,25 +150,29 @@ public class MasterRenderer
         {
             _gl.Enable(EnableCap.DepthTest);
             _gl.Enable(EnableCap.CullFace);
-            _gl.CullFace(GLEnum.Back); 
-            _shadowShader.Use();
-            
+            _gl.CullFace(GLEnum.Back);
+
             for (int i = 0; i < spotLights.Count; i++)
             {
                 var sl = spotLights[i];
                 if (!sl.CastShadows) continue;
-                
+
                 var viewDir = Vector3.Normalize(sl.Direction);
                 // Evitar erro de lookat caso dir seja vetor UP
                 var up = MathF.Abs(Vector3.Dot(viewDir, Vector3.UnitY)) > 0.999f ? Vector3.UnitZ : Vector3.UnitY;
                 var spotView = Matrix4x4.CreateLookAt(sl.Position, sl.Position + viewDir, up);
-                
+
                 var projSpot = Matrix4x4.CreatePerspectiveFieldOfView(sl.OuterConeAngle * 2.0f, 1.0f, 0.1f, sl.Radius);
                 spotSpaceMatrices[i] = spotView * projSpot;
-                
+
+                _shadowShader.Use();
                 _shadowShader.SetMat4("uLightSpaceMatrix", spotSpaceMatrices[i]);
                 _spotShadowMap.BindForWriting(i);
-                scene.Render(_shadowShader, _crateTexture, spotSpaceMatrices[i]); 
+                scene.Render(_shadowShader, _crateTexture, spotSpaceMatrices[i]);
+
+                _skinnedShadowShader.Use();
+                _skinnedShadowShader.SetMat4("uLightSpaceMatrix", spotSpaceMatrices[i]);
+                RenderSkinned(scene, _skinnedShadowShader);
             }
         }
 
@@ -172,15 +185,19 @@ public class MasterRenderer
             _gl.Enable(EnableCap.DepthTest);
             _gl.Enable(EnableCap.CullFace);
             _gl.CullFace(GLEnum.Back);
-            _pointShadowShader.Use();
 
             for (int i = 0; i < shadowPointLights.Count; i++)
             {
                 var pl = shadowPointLights[i];
                 var shadowMap = i == 0 ? _pointShadowMap0 : i == 1 ? _pointShadowMap1 : i == 2 ? _pointShadowMap2 : _pointShadowMap3;
-                
+
+                _pointShadowShader.Use();
                 _pointShadowShader.SetVec3("uLightPos", pl.Position);
                 _pointShadowShader.SetFloat("uRadius", pl.Radius);
+
+                _skinnedPointShadowShader.Use();
+                _skinnedPointShadowShader.SetVec3("uLightPos", pl.Position);
+                _skinnedPointShadowShader.SetFloat("uRadius", pl.Radius);
 
                 var targets = new Vector3[]
                 {
@@ -202,9 +219,14 @@ public class MasterRenderer
                     var viewPoint = Matrix4x4.CreateLookAt(pl.Position, pl.Position + targets[face], ups[face]);
                     var lightSpaceMatrix = viewPoint * projPoint;
 
+                    _pointShadowShader.Use();
                     _pointShadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrix);
                     shadowMap.BindForWriting(face);
                     scene.Render(_pointShadowShader, _crateTexture, lightSpaceMatrix);
+
+                    _skinnedPointShadowShader.Use();
+                    _skinnedPointShadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrix);
+                    RenderSkinned(scene, _skinnedPointShadowShader);
                 }
             }
         }
@@ -242,89 +264,132 @@ public class MasterRenderer
             _gl.Enable(EnableCap.CullFace);
             _gl.CullFace(GLEnum.Back);
             _gl.DepthFunc(DepthFunction.Less);
-            _shader.Use();
-            _shader.SetVec3("uLightDir", lightDir);
-
-            float lum = _skyboxDominantColor.X * 0.2126f + _skyboxDominantColor.Y * 0.7152f + _skyboxDominantColor.Z * 0.0722f;
-            _shader.SetFloat("uAmbient", 0.02f + 0.28f * lum);
-            
-            if (dirLight != null)
-            {
-                _shader.SetVec3("uLightColor", dirLight.Color * dirLight.Intensity);
-            }
-            else
-            {
-                _shader.SetVec3("uLightColor", Vector3.Zero);
-            }
-            
-            _shader.SetMat4("uView", view);
-            _shader.SetMat4("uProj", proj);
-            
-            for (int i = 0; i < 3; i++)
-            {
-                _shader.SetMat4($"uLightSpaceMatrices[{i}]", lightSpaceMatrices[i]);
-                _shader.SetFloat($"uCascadePlaneDistances[{i}]", cascadeLevels[i]);
-            }
-            
-            _shader.SetBool("uEnableShadows", ShadowsEnabled);
-            
-            _shader.SetFloat("uShadowBiasFactor", ShadowBiasFactor);
-            _shader.SetFloat("uShadowBiasBase", ShadowBiasBase);
-            _shader.SetFloat("uShadowSpread", ShadowSpread);
-            
-            _shader.SetVec3("uColor", Vector3.One);
-            _shader.SetBool("uUseTexture", true);
-            
-            _shader.SetInt("uTexture", 0);
-            _shader.SetInt("uShadowMap", 1);
-            _shader.SetInt("uSpotShadowMap", 2);
-            _shader.SetInt("uPointShadowMap0", 3);
-            _shader.SetInt("uPointShadowMap1", 4);
-            _shader.SetInt("uPointShadowMap2", 5);
-            _shader.SetInt("uPointShadowMap3", 6);
-            _shadowMap.BindForReading(TextureUnit.Texture1);
-            _spotShadowMap.BindForReading(TextureUnit.Texture2);
-            _pointShadowMap0.BindForReading(TextureUnit.Texture3);
-            _pointShadowMap1.BindForReading(TextureUnit.Texture4);
-            _pointShadowMap2.BindForReading(TextureUnit.Texture5);
-            _pointShadowMap3.BindForReading(TextureUnit.Texture6);
-            
-            _shader.SetBool("uEnableShadowFilter", EnableShadowFilter);
-
-            _shader.SetVec3("uCameraPos", camera.Position);
-
             var pointLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Point)
                 .OrderBy(l => Vector3.DistanceSquared(l.Position, camera.Position))
                 .Take(8).ToList();
-            _shader.SetInt("uPointLightCount", pointLights.Count);
-            for (int i = 0; i < pointLights.Count; i++)
-            {
-                var l = pointLights[i];
-                _shader.SetVec3($"uPointLights[{i}].position", l.Position);
-                _shader.SetVec3($"uPointLights[{i}].color", l.Color * l.Intensity);
-                _shader.SetFloat($"uPointLights[{i}].radius", l.Radius);
-                
-                int shadowMapIndex = ShadowsEnabled ? shadowPointLights.IndexOf(l) : -1;
-                _shader.SetInt($"uPointLights[{i}].shadowMapIndex", shadowMapIndex);
-                _shader.SetFloat($"uPointLights[{i}].shadowBias", l.ShadowBias);
-            }
 
-            _shader.SetInt("uSpotLightCount", spotLights.Count);
-            for (int i = 0; i < spotLights.Count; i++)
-            {
-                var l = spotLights[i];
-                _shader.SetVec3($"uSpotLights[{i}].position", l.Position);
-                _shader.SetVec3($"uSpotLights[{i}].direction", Vector3.Normalize(l.Direction));
-                _shader.SetVec3($"uSpotLights[{i}].color", l.Color * l.Intensity);
-                _shader.SetFloat($"uSpotLights[{i}].radius", l.Radius);
-                _shader.SetFloat($"uSpotLights[{i}].innerCos", l.InnerCos);
-                _shader.SetFloat($"uSpotLights[{i}].outerCos", l.OuterCos);
-                _shader.SetBool($"uSpotLights[{i}].castShadows", l.CastShadows && ShadowsEnabled);
-                _shader.SetFloat($"uSpotLights[{i}].shadowBias", l.ShadowBias);
-                _shader.SetMat4($"uSpotLightSpaceMatrices[{i}]", spotSpaceMatrices[i]);
-            }
+            _shader.Use();
+            SetupWorldUniforms(_shader, camera, view, proj, lightDir, dirLight,
+                cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
 
             scene.Render(_shader, _crateTexture, null);
+
+            // Skinned entities (main pass)
+            _skinnedShader.Use();
+            SetupWorldUniforms(_skinnedShader, camera, view, proj, lightDir, dirLight,
+                cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
+            RenderSkinned(scene, _skinnedShader);
+        }
+    }
+
+    private void SetupWorldUniforms(Shader shader, Camera camera, Matrix4x4 view, Matrix4x4 proj,
+        Vector3 lightDir, Light? dirLight, float[] cascadeLevels, Matrix4x4[] lightSpaceMatrices,
+        List<Light> spotLights, Matrix4x4[] spotSpaceMatrices, List<Light> pointLights, List<Light> shadowPointLights)
+    {
+        shader.SetVec3("uLightDir", lightDir);
+
+        float lum = _skyboxDominantColor.X * 0.2126f + _skyboxDominantColor.Y * 0.7152f + _skyboxDominantColor.Z * 0.0722f;
+        shader.SetFloat("uAmbient", 0.02f + 0.28f * lum);
+
+        if (dirLight != null)
+            shader.SetVec3("uLightColor", dirLight.Color * dirLight.Intensity);
+        else
+            shader.SetVec3("uLightColor", Vector3.Zero);
+
+        shader.SetMat4("uView", view);
+        shader.SetMat4("uProj", proj);
+
+        for (int i = 0; i < 3; i++)
+        {
+            shader.SetMat4($"uLightSpaceMatrices[{i}]", lightSpaceMatrices[i]);
+            shader.SetFloat($"uCascadePlaneDistances[{i}]", cascadeLevels[i]);
+        }
+
+        shader.SetBool("uEnableShadows", ShadowsEnabled);
+
+        shader.SetFloat("uShadowBiasFactor", ShadowBiasFactor);
+        shader.SetFloat("uShadowBiasBase", ShadowBiasBase);
+        shader.SetFloat("uShadowSpread", ShadowSpread);
+
+        shader.SetVec3("uColor", Vector3.One);
+        shader.SetBool("uUseTexture", true);
+
+        shader.SetInt("uTexture", 0);
+        shader.SetInt("uShadowMap", 1);
+        shader.SetInt("uSpotShadowMap", 2);
+        shader.SetInt("uPointShadowMap0", 3);
+        shader.SetInt("uPointShadowMap1", 4);
+        shader.SetInt("uPointShadowMap2", 5);
+        shader.SetInt("uPointShadowMap3", 6);
+        _shadowMap.BindForReading(TextureUnit.Texture1);
+        _spotShadowMap.BindForReading(TextureUnit.Texture2);
+        _pointShadowMap0.BindForReading(TextureUnit.Texture3);
+        _pointShadowMap1.BindForReading(TextureUnit.Texture4);
+        _pointShadowMap2.BindForReading(TextureUnit.Texture5);
+        _pointShadowMap3.BindForReading(TextureUnit.Texture6);
+
+        shader.SetBool("uEnableShadowFilter", EnableShadowFilter);
+
+        shader.SetVec3("uCameraPos", camera.Position);
+
+        shader.SetInt("uPointLightCount", pointLights.Count);
+        for (int i = 0; i < pointLights.Count; i++)
+        {
+            var l = pointLights[i];
+            shader.SetVec3($"uPointLights[{i}].position", l.Position);
+            shader.SetVec3($"uPointLights[{i}].color", l.Color * l.Intensity);
+            shader.SetFloat($"uPointLights[{i}].radius", l.Radius);
+
+            int shadowMapIndex = ShadowsEnabled ? shadowPointLights.IndexOf(l) : -1;
+            shader.SetInt($"uPointLights[{i}].shadowMapIndex", shadowMapIndex);
+            shader.SetFloat($"uPointLights[{i}].shadowBias", l.ShadowBias);
+        }
+
+        shader.SetInt("uSpotLightCount", spotLights.Count);
+        for (int i = 0; i < spotLights.Count; i++)
+        {
+            var l = spotLights[i];
+            shader.SetVec3($"uSpotLights[{i}].position", l.Position);
+            shader.SetVec3($"uSpotLights[{i}].direction", Vector3.Normalize(l.Direction));
+            shader.SetVec3($"uSpotLights[{i}].color", l.Color * l.Intensity);
+            shader.SetFloat($"uSpotLights[{i}].radius", l.Radius);
+            shader.SetFloat($"uSpotLights[{i}].innerCos", l.InnerCos);
+            shader.SetFloat($"uSpotLights[{i}].outerCos", l.OuterCos);
+            shader.SetBool($"uSpotLights[{i}].castShadows", l.CastShadows && ShadowsEnabled);
+            shader.SetFloat($"uSpotLights[{i}].shadowBias", l.ShadowBias);
+            shader.SetMat4($"uSpotLightSpaceMatrices[{i}]", spotSpaceMatrices[i]);
+        }
+    }
+
+    private void RenderSkinned(Scene scene, Shader shader)
+    {
+        foreach (var e in scene.Entities)
+        {
+            if (!e.Visible || e.SkinnedModel == null || e.Animator == null) continue;
+
+            shader.Use();
+
+            shader.SetMat4("uModel", e.Transform.Matrix);
+            shader.SetVec2("uUvScale", e.UvScale);
+            shader.SetVec2("uUvOffset", e.UvOffset);
+            shader.SetFloat("uUvRotation", e.UvRotation);
+            shader.SetBonesSSBO(e.Animator.FinalBoneMatrices);
+
+            foreach (var sub in e.SkinnedModel.Submeshes)
+            {
+                var tex = sub.Texture ?? e.Texture ?? _crateTexture;
+                if (tex != null)
+                {
+                    shader.SetBool("uUseTexture", true);
+                    tex.Bind(0);
+                }
+                else
+                {
+                    shader.SetBool("uUseTexture", false);
+                }
+
+                sub.Mesh.Draw();
+            }
         }
     }
 

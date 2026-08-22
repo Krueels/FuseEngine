@@ -32,6 +32,8 @@ public class Entity
     public RigidBody? Body { get; set; }
     public Transform Transform { get; set; } = new();
     public bool Visible { get; set; } = true;
+    public Animation.SkinnedModel? SkinnedModel { get; set; }
+    public Animation.Animator? Animator { get; set; }
     public string ParentId { get; set; } = "";
     public Vector3 InitialRelativePosition { get; set; }
     public Quaternion InitialRelativeRotation { get; set; } = Quaternion.Identity;
@@ -203,6 +205,7 @@ public class Scene
         foreach (var e in _entities)
         {
             if (!e.Visible || e.Mesh == null) continue;
+            if (e.SkinnedModel != null) continue; // rendered by the skinned passes
 
             if (cullMatrix.HasValue)
             {
@@ -258,6 +261,15 @@ public class Scene
             }
 
             e.Mesh.Draw();
+        }
+    }
+
+    public void UpdateAnimators(float dt)
+    {
+        foreach (var e in _entities)
+        {
+            if (e.Animator != null && e.Visible)
+                e.Animator.Update(dt);
         }
     }
 

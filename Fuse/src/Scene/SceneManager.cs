@@ -176,6 +176,8 @@ public class SceneManager
 
     public void Update(float dt)
     {
+        _scene.UpdateAnimators(dt);
+
         foreach (var interactable in _interactables)
             interactable.Update(dt);
             

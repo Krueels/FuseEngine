@@ -37,9 +37,13 @@ public unsafe class Application : IDisposable
     private Debug.DebugDrawer _debugDrawer = null!;
     private Imgui.ImGuiBackEnd _imgui = null!;
     private bool _showImgui = false;
+    private bool _showSkinnedDebug = false;
     private Imgui.Console _console = null!;
     private float _loadProgress;
     private string _loadStatus = "";
+
+    // Skinned model test
+    private Renderer.Entity? _skinnedTestEntity;
 
     public Application()
     {
@@ -142,6 +146,7 @@ public unsafe class Application : IDisposable
         }
         _sceneManager.InitTriggerSystem(_player);
         _sceneManager.ActiveScene.AddLight(_flashlight);
+        SpawnGlockTest();
     }
     
     private void ReloadMap(Action<float, string>? onProgress = null)
@@ -155,7 +160,56 @@ public unsafe class Application : IDisposable
             _player.Camera.SetRotation(spawn.Value.Yaw, spawn.Value.Pitch);
         }
         _sceneManager.InitTriggerSystem(_player);
-        _sceneManager.ActiveScene.AddLight(_flashlight);
+        SpawnGlockTest();
+    }
+
+    private void SpawnGlockTest()
+    {
+        string path = $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
+        var model = _assets.GetSkinnedModel(path);
+        if (model == null)
+        {
+            Logger.Error($"Skinned test model failed to load: {path}");
+            return;
+        }
+
+        var animator = new Animation.Animator(model.Skeleton);
+        model.Link(animator);
+
+        var entity = _sceneManager.ActiveScene.Add(null, "glock_test");
+        entity.SkinnedModel = model;
+        entity.Animator = animator;
+
+        if (!string.IsNullOrEmpty(model.DefaultClipName))
+            animator.Play(model.DefaultClipName);
+
+        // Place it a couple meters in front of the player
+        Vector3 front = _player.Camera.Front;
+        front.Y = 0;
+        if (front.LengthSquared() > 0.001f) front = Vector3.Normalize(front);
+        else front = -Vector3.UnitZ;
+
+entity.Transform.Position = new Vector3(_player.NativeCharacter.Position.X, _player.NativeCharacter.Position.Y, _player.NativeCharacter.Position.Z) + front * 2.5f;
+        // GlobalScale já normaliza vértices (cm→m). Entity scale = 1.0 (como Hell2025).
+        entity.Transform.Scale = new Vector3(1.0f);
+
+        _skinnedTestEntity = entity;
+        Logger.Important($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
+    }
+
+    private void CycleSkinnedClip()
+    {
+        if (_skinnedTestEntity?.SkinnedModel == null || _skinnedTestEntity.Animator == null)
+            return;
+
+        var clips = _skinnedTestEntity.SkinnedModel.Clips.Keys.OrderBy(k => k).ToList();
+        if (clips.Count == 0) return;
+
+        string current = _skinnedTestEntity.Animator.CurrentClip?.Name ?? "";
+        int idx = clips.IndexOf(current);
+        string next = clips[(idx + 1) % clips.Count];
+        _skinnedTestEntity.Animator.Play(next);
+        Logger.Important($"[Skinned] Clip: {next}");
     }
 
     private void RegisterWindowCallbacks()
@@ -268,6 +322,93 @@ public unsafe class Application : IDisposable
                     ImGuiNET.ImGui.End();
                 }
 
+                // Skinned Model Debug Window (separate from main menu)
+                if (_showSkinnedDebug)
+                {
+                    ImGuiNET.ImGui.Begin("Skinned Model Debug", ref _showSkinnedDebug, ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
+                    
+                    if (ImGuiNET.ImGui.CollapsingHeader("Skeleton Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
+                    {
+                        bool bindPose = Animation.Skeleton.DebugBindPoseOnly;
+                        if (ImGuiNET.ImGui.Checkbox("Bind Pose Only", ref bindPose))
+                        {
+                            Animation.Skeleton.DebugBindPoseOnly = bindPose;
+                            Logger.Important($"[Skinned] BindPoseOnly = {bindPose}");
+                        }
+                        
+                        bool freezeTime = Animation.Skeleton.DebugFreezeTime;
+                        if (ImGuiNET.ImGui.Checkbox("Freeze Time (Key0)", ref freezeTime))
+                        {
+                            Animation.Skeleton.DebugFreezeTime = freezeTime;
+                            Logger.Important($"[Skinned] FreezeTime = {freezeTime}");
+                        }
+                        
+                        bool uploadRaw = Animation.Skeleton.DebugUploadRawGrid;
+                        if (ImGuiNET.ImGui.Checkbox("Upload Raw Grid", ref uploadRaw))
+                        {
+                            Animation.Skeleton.DebugUploadRawGrid = uploadRaw;
+                            Logger.Important($"[Skinned] UploadRawGrid = {uploadRaw}");
+                        }
+                    }
+
+                    if (ImGuiNET.ImGui.CollapsingHeader("Animation Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
+                    {
+                        if (_skinnedTestEntity?.Animator != null && _skinnedTestEntity.SkinnedModel != null)
+                        {
+                            var model = _skinnedTestEntity.SkinnedModel;
+                            var animator = _skinnedTestEntity.Animator;
+                            
+                            ImGuiNET.ImGui.Text($"Current Clip: {animator.CurrentClip?.Name ?? "none"}");
+                            ImGuiNET.ImGui.Text($"Time: {animator.TimeSeconds:F3} / {animator.CurrentClip?.DurationTicks.ToString() ?? "?"} ticks");
+                            
+                            float speed = animator.Speed;
+                            ImGuiNET.ImGui.Text($"Speed: {speed:F2}");
+                            if (ImGuiNET.ImGui.SliderFloat("Speed", ref speed, 0.0f, 3.0f))
+                                animator.Speed = speed;
+                            
+                            bool playing = animator.Playing;
+                            if (ImGuiNET.ImGui.Checkbox("Playing", ref playing))
+                                animator.Playing = playing;
+                            
+                            if (ImGuiNET.ImGui.Button("Dump Debug (F6)"))
+                                _skinnedTestEntity?.Animator?.DumpDebug();
+                            
+                            ImGuiNET.ImGui.Separator();
+                            ImGuiNET.ImGui.Text("Available Clips:");
+                            var clipNames = new List<string>(model.Clips.Keys);
+                            foreach (var clipName in clipNames)
+                            {
+                                bool isCurrent = animator.CurrentClip?.Name == clipName;
+                                if (ImGuiNET.ImGui.Selectable(clipName, isCurrent))
+                                {
+                                    animator.Play(clipName);
+                                    Logger.Important($"[Skinned] Clip: {clipName}");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            ImGuiNET.ImGui.TextColored(new System.Numerics.Vector4(1, 0.5f, 0, 1), "No skinned entity spawned");
+                        }
+                    }
+
+                    //if (ImGuiNET.ImGui.CollapsingHeader("Debug Actions"))
+                    //{
+                    //    if (ImGuiNET.ImGui.Button("Dump Debug Now"))
+                    //        _skinnedTestEntity?.Animator?.DumpDebug();
+                        
+                    //    if (ImGuiNET.ImGui.Button("Spawn Glock Test"))
+                    //    {
+                    //        SpawnGlockTest();
+                    //        var keys = _skinnedTestEntity?.SkinnedModel?.Clips.Keys;
+                    //        var keyList = keys != null ? new List<string>(keys) : new List<string>();
+                    //        Logger.Important($"[Skinned] Glock spawned. Clips: {string.Join(", ", keyList)} (UI to cycle)");
+                    //    }
+                    //}
+
+                    ImGuiNET.ImGui.End();
+                }
+
                 _console.Draw();
                 _imgui.Render();
 
@@ -300,7 +441,7 @@ public unsafe class Application : IDisposable
         //    Fuse.Scene.MapSerializer.SaveToFile(_sceneManager.ActiveScene, _physics, savePath, spawn);
         //}
 
-        if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
+if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
 
         if (Input.Input.KeyPressed(KeyCodes.GraveAccent))
         {
@@ -310,7 +451,10 @@ public unsafe class Application : IDisposable
         }
 
         if (Input.Input.KeyPressed(KeyCodes.Insert))
-            _showImgui = !_showImgui;
+            {
+                _showImgui = !_showImgui;
+                _showSkinnedDebug = _showImgui; // Abre o menu de skinned junto com o menu principal
+            }
 
         if (Input.Input.KeyPressed(KeyCodes.G))
         {

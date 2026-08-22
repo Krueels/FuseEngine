@@ -37,11 +37,6 @@ public unsafe class Shader : IDisposable
         return new Shader(gl, File.ReadAllText(vertexPath), File.ReadAllText(fragmentPath));
     }
 
-    public void Dispose()
-    {
-        _gl.DeleteProgram(_id);
-    }
-
     public uint ID => _id;
 
     public void Use()
@@ -52,6 +47,65 @@ public unsafe class Shader : IDisposable
     public void SetMat4(string name, Matrix4x4 mat)
     {
         _gl.UniformMatrix4(GetUniformLoc(name), 1, false, GetMatrixValues(mat));
+    }
+
+    public unsafe void SetMat4(string name, Matrix4x4[] matrices)
+    {
+        if (matrices.Length == 0) return;
+        fixed (Matrix4x4* ptr = matrices)
+        {
+            _gl.UniformMatrix4(GetUniformLoc(name), (uint)matrices.Length, false, (float*)ptr);
+        }
+    }
+
+    // SSBO (std430) para matrizes de ossos — binding point 0 conforme shaders
+    private uint _bonesSSBO = 0;
+    private Matrix4x4[] _transposedMatrices;
+
+    public unsafe void SetBonesSSBO(Matrix4x4[] matrices)
+    {
+        if (matrices.Length == 0) return;
+
+        if (_bonesSSBO == 0)
+        {
+            _bonesSSBO = _gl.GenBuffer();
+        }
+
+        // System.Numerics é row-major; GLSL std430 espera column-major.
+        // Transpor cada matriz antes do upload.
+        if (_transposedMatrices == null || _transposedMatrices.Length < matrices.Length)
+        {
+            _transposedMatrices = new Matrix4x4[matrices.Length];
+        }
+
+        for (int i = 0; i < matrices.Length; i++)
+        {
+            var m = matrices[i];
+            _transposedMatrices[i] = Matrix4x4.Transpose(m);
+        }
+
+        if (_bonesSSBO == 0)
+        {
+            _bonesSSBO = _gl.GenBuffer();
+        }
+
+        _gl.BindBuffer(GLEnum.ShaderStorageBuffer, _bonesSSBO);
+        fixed (Matrix4x4* ptr = _transposedMatrices)
+        {
+            _gl.BufferData(GLEnum.ShaderStorageBuffer, (nuint)(matrices.Length * sizeof(Matrix4x4)), ptr, GLEnum.DynamicDraw);
+        }
+        _gl.BindBufferBase(GLEnum.ShaderStorageBuffer, 0, _bonesSSBO);
+        _gl.BindBuffer(GLEnum.ShaderStorageBuffer, 0);
+    }
+
+    public void Dispose()
+    {
+        if (_bonesSSBO != 0)
+        {
+            _gl.DeleteBuffer(_bonesSSBO);
+            _bonesSSBO = 0;
+        }
+        _gl.DeleteProgram(_id);
     }
 
     public void SetVec3(string name, Vector3 vec)
