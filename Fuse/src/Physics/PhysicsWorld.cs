@@ -57,6 +57,7 @@ public class PhysicsWorld : IDisposable
 
     public PhysicsSystem Native => _system;
     public BodyInterface BodyInterface => _system.BodyInterface;
+    public BodyLockInterface BodyLockInterface => _system.BodyLockInterface;
 
     public void Step(float deltaTime)
     {

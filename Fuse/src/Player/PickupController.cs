@@ -2,6 +2,7 @@ using System.Numerics;
 using JoltPhysicsSharp;
 using Fuse.Renderer;
 using Fuse.Core;
+using Fuse.Input;
 
 namespace Fuse.Player;
 
@@ -48,6 +49,9 @@ public class PickupController
         UpdateLookMomentum(dt);
 
         if (!Input.Input.IsCursorDisabled()) return;
+
+        // Só processa pickup se NÃO estiver em contexto de arma
+        if (InputManager.IsContextActive(InputContext.Weapon)) return;
 
         if (Input.Input.KeyPressed(Input.KeyCodes.E))
         {

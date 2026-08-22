@@ -3,8 +3,11 @@ using Fuse.Imgui;
 using Fuse.Input;
 using Fuse.Physics;
 using Fuse.Renderer;
+using Fuse.Player;
+using Fuse.Player.Weapons;
 using JoltPhysicsSharp;
 using Silk.NET.OpenGL;
+using System.Drawing.Printing;
 
 namespace Fuse.Core;
 
@@ -29,12 +32,14 @@ public unsafe class Application : IDisposable
     private Player.Player _player = null!;
     private Player.PickupController _pickup = null!;
     private Renderer.Light _flashlight = null!;
+    private Player.WeaponSystem _weaponSystem = null!;
 
     // UI & Debug
     private Renderer.UIRenderer _ui = null!;
     private UI.HUD _hud = null!;
     private UI.HUDText _fpsText = null!;
     private UI.HUDImage _crosshairNode = null!;
+    private UI.HUDText _weaponDebugText = null!;
     private Debug.DebugDrawer _debugDrawer = null!;
     private Imgui.ImGuiBackEnd _imgui = null!;
     private bool _showImgui = false;
@@ -44,12 +49,12 @@ public unsafe class Application : IDisposable
     private string _loadStatus = "";
 
     // ViewModel
-    private Entity? _glockViewModelEntity;
-    private Vector3 _glockLocalOffset = new Vector3(0.0f, -0.83f, 0.0f);
-    private Vector3 _glockLocalEulerDeg = new Vector3(0f, 90f, 0f);
-    private Quaternion _glockLocalRotation = Quaternion.Identity;
-    private bool _updateViewmodelTransform = true;
-    private bool _invertViewmodelRotation = false; // toggle if rotation is inverted
+    //private Entity? _glockViewModelEntity;
+    //private Vector3 _glockLocalOffset = new Vector3(0.0f, -0.83f, 0.0f);
+    //private Vector3 _glockLocalEulerDeg = new Vector3(0f, 90f, 0f);
+    //private Quaternion _glockLocalRotation = Quaternion.Identity;
+    //private bool _updateViewmodelTransform = true;
+    //private bool _invertViewmodelRotation = false; // toggle if rotation is inverted
 
     // Skinned model test
     private Renderer.Entity? _skinnedTestEntity;
@@ -127,15 +132,21 @@ public unsafe class Application : IDisposable
         var crosshairTexture = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/crosshair.png");
         var crosshairInteractTexture = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/crosshair_interact.png");
         _crosshairNode = _hud.AddImage(crosshairTexture, UI.HUDAnchor.Center, Vector2.Zero, new Vector2(8, 8));
+        _weaponDebugText = _hud.AddText("Weapon Debug", UI.HUDAnchor.TopLeft, new Vector2(20, 50), 1.0f, new Vector4(0, 1, 0, 1));
 
         // Initialization
         _renderer.Init(_assets, _scrWidth, _scrHeight);
         _interaction = new Interaction.PlayerInteraction(_physics, _player, _crosshairNode, crosshairTexture, crosshairInteractTexture);
 
+        // Weapon System
+        _weaponSystem = new Player.WeaponSystem(_player, _player.Camera, _physics, _assets, _audio, _sceneManager);
+        _weaponSystem.RegisterWeapon(new GlockWeapon());
+
         // Default Map Loading
         LoadMap(initialMap, OnLoadProgress);
         _sceneManager.ActiveScene.AddLight(_flashlight);
 
+        _weaponSystem.Equip("glock");
         RegisterWindowCallbacks();
 
         _lastTime = _window.GlfwApi.GetTime();
@@ -155,7 +166,7 @@ public unsafe class Application : IDisposable
         }
         _sceneManager.InitTriggerSystem(_player);
         _sceneManager.ActiveScene.AddLight(_flashlight);
-        SpawnGlockViewModel();
+        //SpawnGlockViewModel();
     }
     
     private void ReloadMap(Action<float, string>? onProgress = null)
@@ -169,89 +180,92 @@ public unsafe class Application : IDisposable
             _player.Camera.SetRotation(spawn.Value.Yaw, spawn.Value.Pitch);
         }
         _sceneManager.InitTriggerSystem(_player);
-        SpawnGlockViewModel();
+        //SpawnGlockViewModel();
+        _sceneManager.InitTriggerSystem(_player);
+        _sceneManager.ActiveScene.AddLight(_flashlight);
+        _weaponSystem?.Equip("glock"); // Re-equipa a arma após reload (mapa foi limpo)
     }
 
-    private void SpawnGlockViewModel()
-    {
-        string path = $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
-        var model = _assets.GetSkinnedModel(path);
-        if (model == null)
-        {
-            Logger.Error($"Skinned test model failed to load: {path}");
-            return;
-        }
+    //private void SpawnGlockViewModel()
+    //{
+    //    string path = $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
+    //    var model = _assets.GetSkinnedModel(path);
+    //    if (model == null)
+    //    {
+    //        Logger.Error($"Skinned test model failed to load: {path}");
+    //        return;
+    //    }
 
-        var animator = new Animation.Animator(model.Skeleton);
-        model.Link(animator);
+    //    var animator = new Animation.Animator(model.Skeleton);
+    //    model.Link(animator);
 
-        var entity = _sceneManager.ActiveScene.Add(null, "glock_viewmodel");
-        entity.SkinnedModel = model;
-        entity.Animator = animator;
+    //    var entity = _sceneManager.ActiveScene.Add(null, "glock_viewmodel");
+    //    entity.SkinnedModel = model;
+    //    entity.Animator = animator;
 
-        if (!string.IsNullOrEmpty(model.DefaultClipName))
-            animator.Play(model.DefaultClipName);
+    //    if (!string.IsNullOrEmpty(model.DefaultClipName))
+    //        animator.Play(model.DefaultClipName);
 
-        animator.Play("Idle");
+    //    animator.Play("Idle");
 
-        // Position in front of player initially (will be updated each frame)
-        Vector3 front = _player.Camera.Front;
-        front.Y = 0;
-        if (front.LengthSquared() > 0.001f) front = Vector3.Normalize(front);
-        else front = -Vector3.UnitZ;
+    //    // Position in front of player initially (will be updated each frame)
+    //    Vector3 front = _player.Camera.Front;
+    //    front.Y = 0;
+    //    if (front.LengthSquared() > 0.001f) front = Vector3.Normalize(front);
+    //    else front = -Vector3.UnitZ;
 
-        entity.Transform.Position = _player.NativeCharacter.Position + front * 2.5f;
-        // GlobalScale já normaliza vértices (cm→m). Entity scale = 1.0 (como Hell2025).
-        entity.Transform.Scale = new Vector3(1.0f);
+    //    entity.Transform.Position = _player.NativeCharacter.Position + front * 2.5f;
+    //    // GlobalScale já normaliza vértices (cm→m). Entity scale = 1.0 (como Hell2025).
+    //    entity.Transform.Scale = new Vector3(1.0f);
 
-        _glockViewModelEntity = entity;
-        _skinnedTestEntity = entity;
-        Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
-    }
+    //    _glockViewModelEntity = entity;
+    //    _skinnedTestEntity = entity;
+    //    Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
+    //}
 
-    private void UpdateViewmodelTransform()
-    {
-        if (_glockViewModelEntity == null || !_updateViewmodelTransform) return;
+    //private void UpdateViewmodelTransform()
+    //{
+    //    if (_glockViewModelEntity == null || !_updateViewmodelTransform) return;
 
-        var cam = _player.Camera;
-        var camPos = cam.Position;
+    //    var cam = _player.Camera;
+    //    var camPos = cam.Position;
         
-        // Camera's rotation quaternion has inverted yaw (camera turns right = positive yaw, but math is CCW)
-        // Fix: negate yaw component or use inverse rotation
-        var camRot = cam.Rotation;
+    //    // Camera's rotation quaternion has inverted yaw (camera turns right = positive yaw, but math is CCW)
+    //    // Fix: negate yaw component or use inverse rotation
+    //    var camRot = cam.Rotation;
         
-        // Fix inverted yaw: negate Y and W components of quaternion (negates rotation around Y)
-        var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
+    //    // Fix inverted yaw: negate Y and W components of quaternion (negates rotation around Y)
+    //    var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
 
-        // Viewmodel position: camera position + rotated offset
-        var offset = Vector3.Transform(_glockLocalOffset, camRot);
-        var viewmodelPos = camPos + offset;
+    //    // Viewmodel position: camera position + rotated offset
+    //    var offset = Vector3.Transform(_glockLocalOffset, camRot);
+    //    var viewmodelPos = camPos + offset;
 
-        // Local rotation in camera space (Euler degrees -> quaternion)
-        var rad = Vector3.DegreesToRadians(_glockLocalEulerDeg);
-        _glockLocalRotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
+    //    // Local rotation in camera space (Euler degrees -> quaternion)
+    //    var rad = Vector3.DegreesToRadians(_glockLocalEulerDeg);
+    //    _glockLocalRotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
 
-        // Viewmodel rotation = FIXED camera rotation * local rotation
-        var viewmodelRot = camRotFixed * _glockLocalRotation;
+    //    // Viewmodel rotation = FIXED camera rotation * local rotation
+    //    var viewmodelRot = camRotFixed * _glockLocalRotation;
 
-        _glockViewModelEntity.Transform.Position = camPos + Vector3.Transform(_glockLocalOffset, camRotFixed);
-        _glockViewModelEntity.Transform.Rotation = viewmodelRot;
-    }
+    //    _glockViewModelEntity.Transform.Position = camPos + Vector3.Transform(_glockLocalOffset, camRotFixed);
+    //    _glockViewModelEntity.Transform.Rotation = viewmodelRot;
+    //}
 
-    private void CycleSkinnedClip()
-    {
-        if (_skinnedTestEntity?.SkinnedModel == null || _skinnedTestEntity.Animator == null)
-            return;
+    //private void CycleSkinnedClip()
+    //{
+    //    if (_skinnedTestEntity?.SkinnedModel == null || _skinnedTestEntity.Animator == null)
+    //        return;
 
-        var clips = _skinnedTestEntity.SkinnedModel.Clips.Keys.OrderBy(k => k).ToList();
-        if (clips.Count == 0) return;
+    //    var clips = _skinnedTestEntity.SkinnedModel.Clips.Keys.OrderBy(k => k).ToList();
+    //    if (clips.Count == 0) return;
 
-        string current = _skinnedTestEntity.Animator.CurrentClip?.Name ?? "";
-        int idx = clips.IndexOf(current);
-        string next = clips[(idx + 1) % clips.Count];
-        _skinnedTestEntity.Animator.Play(next);
-        Logger.InfoGold($"[Skinned] Clip: {next}");
-    }
+    //    string current = _skinnedTestEntity.Animator.CurrentClip?.Name ?? "";
+    //    int idx = clips.IndexOf(current);
+    //    string next = clips[(idx + 1) % clips.Count];
+    //    _skinnedTestEntity.Animator.Play(next);
+    //    Logger.InfoGold($"[Skinned] Clip: {next}");
+    //}
 
     private void RegisterWindowCallbacks()
     {
@@ -315,6 +329,9 @@ public unsafe class Application : IDisposable
                     _pickup.Update(dt);
                     
                     _sceneManager.Update(dt);
+                    _weaponSystem?.Update(dt);
+                    _weaponSystem?.PhysicsUpdate(dt);
+
                     if (_sceneManager.CheckPendingResets())
                     {
                         ReloadMap(OnLoadProgress);
@@ -323,7 +340,7 @@ public unsafe class Application : IDisposable
 
                 HandleInput();
 
-                UpdateViewmodelTransform();
+                //UpdateViewmodelTransform();
 
                 // Render
                 _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
@@ -366,122 +383,134 @@ public unsafe class Application : IDisposable
                 }
 
                 // Skinned Model Debug Window (separate from main menu)
-                if (_showSkinnedDebug)
-                {
-                    ImGuiNET.ImGui.Begin("Skinned Model Debug", ref _showSkinnedDebug, ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
-                    
-                    if (ImGuiNET.ImGui.CollapsingHeader("Skeleton Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
-                    {
-                        bool bindPose = Animation.Skeleton.DebugBindPoseOnly;
-                        if (ImGuiNET.ImGui.Checkbox("Bind Pose Only", ref bindPose))
-                        {
-                            Animation.Skeleton.DebugBindPoseOnly = bindPose;
-                            Logger.InfoGold($"[Skinned] BindPoseOnly = {bindPose}");
-                        }
-                        
-                        bool freezeTime = Animation.Skeleton.DebugFreezeTime;
-                        if (ImGuiNET.ImGui.Checkbox("Freeze Time (Key0)", ref freezeTime))
-                        {
-                            Animation.Skeleton.DebugFreezeTime = freezeTime;
-                            Logger.InfoGold($"[Skinned] FreezeTime = {freezeTime}");
-                        }
-                        
-                        bool uploadRaw = Animation.Skeleton.DebugUploadRawGrid;
-                        if (ImGuiNET.ImGui.Checkbox("Upload Raw Grid", ref uploadRaw))
-                        {
-                            Animation.Skeleton.DebugUploadRawGrid = uploadRaw;
-                            Logger.InfoGold($"[Skinned] UploadRawGrid = {uploadRaw}");
-                        }
-                    }
-
-                    if (ImGuiNET.ImGui.CollapsingHeader("Animation Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
-                    {
-                        if (_skinnedTestEntity?.Animator != null && _skinnedTestEntity.SkinnedModel != null)
-                        {
-                            var model = _skinnedTestEntity.SkinnedModel;
-                            var animator = _skinnedTestEntity.Animator;
-                            
-                            ImGuiNET.ImGui.Text($"Current Clip: {animator.CurrentClip?.Name ?? "none"}");
-                            ImGuiNET.ImGui.Text($"Time: {animator.TimeSeconds:F3} / {animator.CurrentClip?.DurationTicks.ToString() ?? "?"} ticks");
-                            
-                            float speed = animator.Speed;
-                            ImGuiNET.ImGui.Text($"Speed: {speed:F2}");
-                            if (ImGuiNET.ImGui.SliderFloat("Speed", ref speed, 0.0f, 3.0f))
-                                animator.Speed = speed;
-                            
-                            bool playing = animator.Playing;
-                            if (ImGuiNET.ImGui.Checkbox("Playing", ref playing))
-                                animator.Playing = playing;
-                            
-                            if (ImGuiNET.ImGui.Button("Dump Debug (F6)"))
-                                _skinnedTestEntity?.Animator?.DumpDebug();
-                            
-                            ImGuiNET.ImGui.Separator();
-                            ImGuiNET.ImGui.Text("Available Clips:");
-                            var clipNames = new List<string>(model.Clips.Keys);
-                            foreach (var clipName in clipNames)
-                            {
-                                bool isCurrent = animator.CurrentClip?.Name == clipName;
-                                if (ImGuiNET.ImGui.Selectable(clipName, isCurrent))
-                                {
-                                    animator.Play(clipName);
-                                    Logger.InfoGold($"[Skinned] Clip: {clipName}");
-                                }
-                            }
-                        }
-                        else
-                        {
-                            ImGuiNET.ImGui.TextColored(new System.Numerics.Vector4(1, 0.5f, 0, 1), "No skinned entity spawned");
-                        }
-                    }
-
-                    //if (ImGuiNET.ImGui.CollapsingHeader("Debug Actions"))
-                    //{
-                    //    if (ImGuiNET.ImGui.Button("Dump Debug Now"))
-                    //        _skinnedTestEntity?.Animator?.DumpDebug();
-
-                    //    if (ImGuiNET.ImGui.Button("Spawn Glock Test"))
-                    //    {
-                    //        SpawnGlockTest();
-                    //        var keys = _skinnedTestEntity?.SkinnedModel?.Clips.Keys;
-                    //        var keyList = keys != null ? new List<string>(keys) : new List<string>();
-                    //        Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", keyList)} (UI to cycle)");
-                    //    }
-                    //}
-
-                    ImGuiNET.ImGui.End();
-                }
-
-                //if (ImGuiNET.ImGui.CollapsingHeader("Viewmodel (Glock) Positioning", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
+                //if (_showSkinnedDebug)
                 //{
-                //    if (_glockViewModelEntity != null)
+                //    ImGuiNET.ImGui.Begin("Skinned Model Debug", ref _showSkinnedDebug, ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
+                    
+                //    if (ImGuiNET.ImGui.CollapsingHeader("Skeleton Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
                 //    {
-                //        var offset = _glockLocalOffset;
-                //        if (ImGuiNET.ImGui.DragFloat3("Local Offset", ref offset, 0.01f, -1f, 1f))
-                //            _glockLocalOffset = offset;
+                //        bool bindPose = Animation.Skeleton.DebugBindPoseOnly;
+                //        if (ImGuiNET.ImGui.Checkbox("Bind Pose Only", ref bindPose))
+                //        {
+                //            Animation.Skeleton.DebugBindPoseOnly = bindPose;
+                //            Logger.InfoGold($"[Skinned] BindPoseOnly = {bindPose}");
+                //        }
+                        
+                //        bool freezeTime = Animation.Skeleton.DebugFreezeTime;
+                //        if (ImGuiNET.ImGui.Checkbox("Freeze Time (Key0)", ref freezeTime))
+                //        {
+                //            Animation.Skeleton.DebugFreezeTime = freezeTime;
+                //            Logger.InfoGold($"[Skinned] FreezeTime = {freezeTime}");
+                //        }
+                        
+                //        bool uploadRaw = Animation.Skeleton.DebugUploadRawGrid;
+                //        if (ImGuiNET.ImGui.Checkbox("Upload Raw Grid", ref uploadRaw))
+                //        {
+                //            Animation.Skeleton.DebugUploadRawGrid = uploadRaw;
+                //            Logger.InfoGold($"[Skinned] UploadRawGrid = {uploadRaw}");
+                //        }
+                //    }
 
-                //        var eulerDeg = _glockLocalEulerDeg;
-                //        if (ImGuiNET.ImGui.DragFloat3("Local Rotation (deg)", ref eulerDeg, 1f, -180f, 180f))
-                //            _glockLocalEulerDeg = eulerDeg;
+                //    if (ImGuiNET.ImGui.CollapsingHeader("Animation Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
+                //    {
+                //        if (_skinnedTestEntity?.Animator != null && _skinnedTestEntity.SkinnedModel != null)
+                //        {
+                //            var model = _skinnedTestEntity.SkinnedModel;
+                //            var animator = _skinnedTestEntity.Animator;
+                            
+                //            ImGuiNET.ImGui.Text($"Current Clip: {animator.CurrentClip?.Name ?? "none"}");
+                //            ImGuiNET.ImGui.Text($"Time: {animator.TimeSeconds:F3} / {animator.CurrentClip?.DurationTicks.ToString() ?? "?"} ticks");
+                            
+                //            float speed = animator.Speed;
+                //            ImGuiNET.ImGui.Text($"Speed: {speed:F2}");
+                //            if (ImGuiNET.ImGui.SliderFloat("Speed", ref speed, 0.0f, 3.0f))
+                //                animator.Speed = speed;
+                            
+                //            bool playing = animator.Playing;
+                //            if (ImGuiNET.ImGui.Checkbox("Playing", ref playing))
+                //                animator.Playing = playing;
+                            
+                //            if (ImGuiNET.ImGui.Button("Dump Debug (F6)"))
+                //                _skinnedTestEntity?.Animator?.DumpDebug();
+                            
+                //            ImGuiNET.ImGui.Separator();
+                //            ImGuiNET.ImGui.Text("Available Clips:");
+                //            var clipNames = new List<string>(model.Clips.Keys);
+                //            foreach (var clipName in clipNames)
+                //            {
+                //                bool isCurrent = animator.CurrentClip?.Name == clipName;
+                //                if (ImGuiNET.ImGui.Selectable(clipName, isCurrent))
+                //                {
+                //                    animator.Play(clipName);
+                //                    Logger.InfoGold($"[Skinned] Clip: {clipName}");
+                //                }
+                //            }
+                //        }
+                //        else
+                //        {
+                //            ImGuiNET.ImGui.TextColored(new System.Numerics.Vector4(1, 0.5f, 0, 1), "No skinned entity spawned");
+                //        }
+                //    }
 
-                //        if (ImGuiNET.ImGui.Checkbox("Invert Rotation Order", ref _invertViewmodelRotation))
-                //            Logger.InfoGold($"[Skinned] InvertViewmodelRotation = {_invertViewmodelRotation}");
+                //    //if (ImGuiNET.ImGui.CollapsingHeader("Debug Actions"))
+                //    //{
+                //    //    if (ImGuiNET.ImGui.Button("Dump Debug Now"))
+                //    //        _skinnedTestEntity?.Animator?.DumpDebug();
+
+                //    //    if (ImGuiNET.ImGui.Button("Spawn Glock Test"))
+                //    //    {
+                //    //        SpawnGlockTest();
+                //    //        var keys = _skinnedTestEntity?.SkinnedModel?.Clips.Keys;
+                //    //        var keyList = keys != null ? new List<string>(keys) : new List<string>();
+                //    //        Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", keyList)} (UI to cycle)");
+                //    //    }
+                //    //}
+
+                //    ImGuiNET.ImGui.End();
+                //}
+
+                // Weapon Viewmodel Debug
+                //if (_weaponSystem != null && _weaponSystem.HasWeapon)
+                //{
+                //    if (ImGuiNET.ImGui.Begin("Weapon Viewmodel Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
+                //    {
+                //        var vmOffset = _weaponSystem.ViewmodelOffset;
+                //        if (ImGuiNET.ImGui.DragFloat3("Offset (X=Right, Y=Up, Z=Forward)", ref vmOffset, 0.01f, -2f, 2f))
+                //            _weaponSystem.ViewmodelOffset = vmOffset;
+
+                //        var vmRot = _weaponSystem.ViewmodelRotationDeg;
+                //        if (ImGuiNET.ImGui.DragFloat3("Rotation Deg (Yaw, Pitch, Roll)", ref vmRot, 1f, -180f, 180f))
+                //            _weaponSystem.ViewmodelRotationDeg = vmRot;
 
                 //        if (ImGuiNET.ImGui.Button("Reset to Default"))
                 //        {
-                //            _glockLocalOffset = new Vector3(0.2f, -0.15f, 0.3f);
-                //            _glockLocalEulerDeg = Vector3.Zero;
+                //            _weaponSystem.ViewmodelOffset = new Vector3(0.25f, -0.35f, 0.5f);
+                //            _weaponSystem.ViewmodelRotationDeg = Vector3.Zero;
                 //        }
 
-                //        ImGuiNET.ImGui.Checkbox("Auto-update transform", ref _updateViewmodelTransform);
+                //        ImGuiNET.ImGui.Separator();
+
+                //        // NOVO: Freeze viewmodel para debug
+                //        bool freezeVM = _weaponSystem.FreezeViewmodel;
+                //        if (ImGuiNET.ImGui.Checkbox("Freeze Viewmodel (stop following camera)", ref freezeVM))
+                //            _weaponSystem.FreezeViewmodel = freezeVM;
+
+                //        if (freezeVM)
+                //        {
+                //            ImGuiNET.ImGui.TextColored(new Vector4(1, 1, 0, 1), "VIEWMODEL FROZEN - Move camera to find it");
+                //            if (ImGuiNET.ImGui.Button("Teleport to Camera"))
+                //            {
+                //                _weaponSystem.TeleportViewmodelToCamera();
+                //            }
+                //        }
+
+                //        ImGuiNET.ImGui.Separator();
+                //        ImGuiNET.ImGui.Text($"Current Weapon: {_weaponSystem.CurrentWeaponId}");
+                //        ImGuiNET.ImGui.Text($"Viewmodel Entity: {(_weaponSystem.GetType().GetField("_viewmodelEntity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_weaponSystem) as Entity)?.Id ?? "null"}");
                 //    }
-                //    else
-                //    {
-                //        ImGuiNET.ImGui.TextColored(new Vector4(1, 0.3f, 0.3f, 1), "Glock viewmodel not spawned yet");
-                //        if (ImGuiNET.ImGui.Button("Spawn Viewmodel"))
-                //            SpawnGlockViewModel();
-                //    }
+                //    ImGuiNET.ImGui.End();
                 //}
+
 
                 _console.Draw();
                 _imgui.Render();
@@ -500,11 +529,14 @@ public unsafe class Application : IDisposable
 
     private void HandleInput()
     {
+        if (_paused) return;
+
         if (Input.Input.KeyPressed(KeyCodes.F2)) _screenshotRequested = true;
         
 
         if (Input.Input.KeyPressed(KeyCodes.F5)) ReloadMap(OnLoadProgress);
 
+        //use para edição de mapas futuros
         //if (Input.Input.KeyPressed(KeyCodes.F6))
         //{
         //    string savePath = _sceneManager.CurrentMapPath;
@@ -515,7 +547,38 @@ public unsafe class Application : IDisposable
         //    Fuse.Scene.MapSerializer.SaveToFile(_sceneManager.ActiveScene, _physics, savePath, spawn);
         //}
 
-if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
+        // Weapon input - troca/desequipar sempre funciona (fora do contexto)
+
+        // Switch weapon (1, 2, 3...)
+        if (Input.Input.KeyPressed(KeyCodes.D1))
+            _weaponSystem?.SwitchWeapon("glock");
+        if (Input.Input.KeyPressed(KeyCodes.D0))
+            _weaponSystem?.Unequip();
+        // Adicionar mais armas aqui no futuro
+
+        // Shoot/Reload - só quando contexto Weapon ativo
+        if (InputManager.IsContextActive(InputContext.Weapon))
+        {
+            // Shoot (Left Mouse - seguro para auto, pressionado para semi-auto)
+            if (_weaponSystem?.CurrentWeapon?.IsAutomatic == true)
+            {
+                if (Input.Input.LeftMouseDown())
+                    _weaponSystem?.TryShoot();
+            }
+            else
+            {
+                if (Input.Input.LeftMousePressed())
+                    _weaponSystem?.TryShoot();
+            }
+
+            // Reload
+            if (Input.Input.KeyPressed(KeyCodes.R))
+            {
+                _weaponSystem?.Reload();
+            }
+        }
+
+        if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
 
         if (Input.Input.KeyPressed(KeyCodes.GraveAccent))
         {
@@ -591,7 +654,18 @@ if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
         gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
         if (_fpsText != null) _fpsText.Text = $"FPS: {Engine.FPS}";
-        
+
+        // Weapon debug
+        if (_weaponDebugText != null && _weaponSystem?.CurrentWeapon != null)
+        {
+            var w = _weaponSystem.CurrentWeapon;
+            _weaponDebugText.Text = $"Anim: {w.CurrentAnimState} | Time: {w.CurrentAnimTime:F2}s / {w.CurrentAnimDuration:F2}s";
+        }
+        else if (_weaponDebugText != null)
+        {
+            _weaponDebugText.Text = "No weapon equipped";
+        }
+
         if (!_paused) _interaction.Update();
 
         _hud.Update(_scrWidth, _scrHeight);
@@ -675,6 +749,7 @@ if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
     public void Dispose()
     {
         _sceneManager.Dispose();
+        _weaponSystem?.Dispose();
         _console.StopCapture();
         _player.Dispose();
         _impactSound.Dispose();

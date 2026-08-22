@@ -558,10 +558,18 @@ public class Player : IDisposable
                     {
                         float impulseMag = relVel * mass * 0.3f;
                         Vector3 impulse = -c.ContactNormal * impulseMag;
-                        bodyLock.Body.AddImpulse(impulse);
+                        _bli.UnlockWrite(bodyLock);
+                        _world.BodyInterface.AddImpulse(bodyID, impulse);
+                    }
+                    else
+                    {
+                        _bli.UnlockWrite(bodyLock);
                     }
                 }
-                _bli.UnlockWrite(bodyLock);
+                else
+                {
+                    _bli.UnlockWrite(bodyLock);
+                }
             }
         }
     }

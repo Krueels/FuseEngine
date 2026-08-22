@@ -26,6 +26,8 @@ public sealed class AnimationClip
     public double TicksPerSecond { get; init; }
     public AnimationChannel[] Channels { get; init; } = [];
 
+    public double DurationSeconds => TicksPerSecond > 0 ? DurationTicks / TicksPerSecond : 0;
+
     public void Apply(double timeSeconds, Skeleton skeleton)
     {
         if (DurationTicks <= 0)

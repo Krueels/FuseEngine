@@ -278,4 +278,14 @@ public class Scene
         var entity = _entities.FirstOrDefault(e => e.Id == id);
         return entity?.Body?.IsTrigger ?? false;
     }
+
+    public void Remove(Entity entity)
+    {
+        if (entity == null) return;
+
+        if (entity.Body != null && entity.Body.IsBuilt)
+            _bodyEntityMap.Remove(entity.Body.Native);
+
+        _entities.Remove(entity);
+    }
 }
