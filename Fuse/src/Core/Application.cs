@@ -85,7 +85,7 @@ public unsafe class Application : IDisposable
         _audio = new Audio.AudioSystem();
         _audio.GlobalVolume = 1.0f;
         _impactSound = new Audio.ImpactSoundSystem(_physics, _audio);
-        
+
         // UI & ImGui
         _ui = new Renderer.UIRenderer(gl, _scrWidth, _scrHeight);
         _imgui = new Imgui.ImGuiBackEnd(gl);
@@ -168,7 +168,7 @@ public unsafe class Application : IDisposable
         _sceneManager.ActiveScene.AddLight(_flashlight);
         //SpawnGlockViewModel();
     }
-    
+
     private void ReloadMap(Action<float, string>? onProgress = null)
     {
         _impactSound?.Clear();
@@ -229,11 +229,11 @@ public unsafe class Application : IDisposable
 
     //    var cam = _player.Camera;
     //    var camPos = cam.Position;
-        
+
     //    // Camera's rotation quaternion has inverted yaw (camera turns right = positive yaw, but math is CCW)
     //    // Fix: negate yaw component or use inverse rotation
     //    var camRot = cam.Rotation;
-        
+
     //    // Fix inverted yaw: negate Y and W components of quaternion (negates rotation around Y)
     //    var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
 
@@ -328,7 +328,7 @@ public unsafe class Application : IDisposable
                     _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
                     _impactSound.Update(dt);
                     _pickup.Update(dt);
-                    
+
                     _sceneManager.Update(dt);
                     _weaponSystem?.Update(dt);
                     _weaponSystem?.PhysicsUpdate(dt);
@@ -387,7 +387,7 @@ public unsafe class Application : IDisposable
                 //if (_showSkinnedDebug)
                 //{
                 //    ImGuiNET.ImGui.Begin("Skinned Model Debug", ref _showSkinnedDebug, ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize);
-                    
+
                 //    if (ImGuiNET.ImGui.CollapsingHeader("Skeleton Controls", ImGuiNET.ImGuiTreeNodeFlags.DefaultOpen))
                 //    {
                 //        bool bindPose = Animation.Skeleton.DebugBindPoseOnly;
@@ -396,14 +396,14 @@ public unsafe class Application : IDisposable
                 //            Animation.Skeleton.DebugBindPoseOnly = bindPose;
                 //            Logger.InfoGold($"[Skinned] BindPoseOnly = {bindPose}");
                 //        }
-                        
+
                 //        bool freezeTime = Animation.Skeleton.DebugFreezeTime;
                 //        if (ImGuiNET.ImGui.Checkbox("Freeze Time (Key0)", ref freezeTime))
                 //        {
                 //            Animation.Skeleton.DebugFreezeTime = freezeTime;
                 //            Logger.InfoGold($"[Skinned] FreezeTime = {freezeTime}");
                 //        }
-                        
+
                 //        bool uploadRaw = Animation.Skeleton.DebugUploadRawGrid;
                 //        if (ImGuiNET.ImGui.Checkbox("Upload Raw Grid", ref uploadRaw))
                 //        {
@@ -418,22 +418,22 @@ public unsafe class Application : IDisposable
                 //        {
                 //            var model = _skinnedTestEntity.SkinnedModel;
                 //            var animator = _skinnedTestEntity.Animator;
-                            
+
                 //            ImGuiNET.ImGui.Text($"Current Clip: {animator.CurrentClip?.Name ?? "none"}");
                 //            ImGuiNET.ImGui.Text($"Time: {animator.TimeSeconds:F3} / {animator.CurrentClip?.DurationTicks.ToString() ?? "?"} ticks");
-                            
+
                 //            float speed = animator.Speed;
                 //            ImGuiNET.ImGui.Text($"Speed: {speed:F2}");
                 //            if (ImGuiNET.ImGui.SliderFloat("Speed", ref speed, 0.0f, 3.0f))
                 //                animator.Speed = speed;
-                            
+
                 //            bool playing = animator.Playing;
                 //            if (ImGuiNET.ImGui.Checkbox("Playing", ref playing))
                 //                animator.Playing = playing;
-                            
+
                 //            if (ImGuiNET.ImGui.Button("Dump Debug (F6)"))
                 //                _skinnedTestEntity?.Animator?.DumpDebug();
-                            
+
                 //            ImGuiNET.ImGui.Separator();
                 //            ImGuiNET.ImGui.Text("Available Clips:");
                 //            var clipNames = new List<string>(model.Clips.Keys);
@@ -470,47 +470,47 @@ public unsafe class Application : IDisposable
                 //    ImGuiNET.ImGui.End();
                 //}
 
-                // Weapon Viewmodel Debug
-                //if (_weaponSystem != null && _weaponSystem.HasWeapon)
-                //{
-                //    if (ImGuiNET.ImGui.Begin("Weapon Viewmodel Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
-                //    {
-                //        var vmOffset = _weaponSystem.ViewmodelOffset;
-                //        if (ImGuiNET.ImGui.DragFloat3("Offset (X=Right, Y=Up, Z=Forward)", ref vmOffset, 0.01f, -2f, 2f))
-                //            _weaponSystem.ViewmodelOffset = vmOffset;
+                //Weapon Viewmodel Debug
+                if (_weaponSystem != null && _weaponSystem.HasWeapon)
+                {
+                    if (ImGuiNET.ImGui.Begin("Weapon Viewmodel Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
+                    {
+                        var vmOffset = _weaponSystem.ViewmodelOffset;
+                        if (ImGuiNET.ImGui.DragFloat3("Offset (X=Right, Y=Up, Z=Forward)", ref vmOffset, 0.01f, -2f, 2f))
+                            _weaponSystem.ViewmodelOffset = vmOffset;
 
-                //        var vmRot = _weaponSystem.ViewmodelRotationDeg;
-                //        if (ImGuiNET.ImGui.DragFloat3("Rotation Deg (Yaw, Pitch, Roll)", ref vmRot, 1f, -180f, 180f))
-                //            _weaponSystem.ViewmodelRotationDeg = vmRot;
+                        var vmRot = _weaponSystem.ViewmodelRotationDeg;
+                        if (ImGuiNET.ImGui.DragFloat3("Rotation Deg (Yaw, Pitch, Roll)", ref vmRot, 1f, -180f, 180f))
+                            _weaponSystem.ViewmodelRotationDeg = vmRot;
 
-                //        if (ImGuiNET.ImGui.Button("Reset to Default"))
-                //        {
-                //            _weaponSystem.ViewmodelOffset = new Vector3(0.25f, -0.35f, 0.5f);
-                //            _weaponSystem.ViewmodelRotationDeg = Vector3.Zero;
-                //        }
+                        if (ImGuiNET.ImGui.Button("Reset to Default"))
+                        {
+                            _weaponSystem.ViewmodelOffset = new Vector3(0.25f, -0.35f, 0.5f);
+                            _weaponSystem.ViewmodelRotationDeg = Vector3.Zero;
+                        }
 
-                //        ImGuiNET.ImGui.Separator();
+                        ImGuiNET.ImGui.Separator();
 
-                //        // NOVO: Freeze viewmodel para debug
-                //        bool freezeVM = _weaponSystem.FreezeViewmodel;
-                //        if (ImGuiNET.ImGui.Checkbox("Freeze Viewmodel (stop following camera)", ref freezeVM))
-                //            _weaponSystem.FreezeViewmodel = freezeVM;
+                        // NOVO: Freeze viewmodel para debug
+                        bool freezeVM = _weaponSystem.FreezeViewmodel;
+                        if (ImGuiNET.ImGui.Checkbox("Freeze Viewmodel (stop following camera)", ref freezeVM))
+                            _weaponSystem.FreezeViewmodel = freezeVM;
 
-                //        if (freezeVM)
-                //        {
-                //            ImGuiNET.ImGui.TextColored(new Vector4(1, 1, 0, 1), "VIEWMODEL FROZEN - Move camera to find it");
-                //            if (ImGuiNET.ImGui.Button("Teleport to Camera"))
-                //            {
-                //                _weaponSystem.TeleportViewmodelToCamera();
-                //            }
-                //        }
+                        if (freezeVM)
+                        {
+                            ImGuiNET.ImGui.TextColored(new Vector4(1, 1, 0, 1), "VIEWMODEL FROZEN - Move camera to find it");
+                            if (ImGuiNET.ImGui.Button("Teleport to Camera"))
+                            {
+                                _weaponSystem.TeleportViewmodelToCamera();
+                            }
+                        }
 
-                //        ImGuiNET.ImGui.Separator();
-                //        ImGuiNET.ImGui.Text($"Current Weapon: {_weaponSystem.CurrentWeaponId}");
-                //        ImGuiNET.ImGui.Text($"Viewmodel Entity: {(_weaponSystem.GetType().GetField("_viewmodelEntity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_weaponSystem) as Entity)?.Id ?? "null"}");
-                //    }
-                //    ImGuiNET.ImGui.End();
-                //}
+                        ImGuiNET.ImGui.Separator();
+                        ImGuiNET.ImGui.Text($"Current Weapon: {_weaponSystem.CurrentWeaponId}");
+                        ImGuiNET.ImGui.Text($"Viewmodel Entity: {(_weaponSystem.GetType().GetField("_viewmodelEntity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_weaponSystem) as Entity)?.Id ?? "null"}");
+                    }
+                    ImGuiNET.ImGui.End();
+                }
 
 
                 _console.Draw();
@@ -533,7 +533,7 @@ public unsafe class Application : IDisposable
         if (_paused) return;
 
         if (Input.Input.KeyPressed(KeyCodes.F2)) _screenshotRequested = true;
-        
+
 
         if (Input.Input.KeyPressed(KeyCodes.F5)) ReloadMap(OnLoadProgress);
 
@@ -589,10 +589,10 @@ public unsafe class Application : IDisposable
         }
 
         if (Input.Input.KeyPressed(KeyCodes.Insert))
-            {
-                _showImgui = !_showImgui;
-                _showSkinnedDebug = _showImgui; // Abre o menu de skinned junto com o menu principal
-            }
+        {
+            _showImgui = !_showImgui;
+            _showSkinnedDebug = _showImgui; // Abre o menu de skinned junto com o menu principal
+        }
 
         if (Input.Input.KeyPressed(KeyCodes.G))
         {

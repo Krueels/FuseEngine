@@ -46,10 +46,12 @@ public sealed class GlockWeapon : IWeapon
     private float _animEndTime = 0f;
     private readonly Random _fireRng = new();
     private bool _pendingAutoReload;
+    private bool _wasMoving;
+    private Vector3 _lastMoveDir;
 
     private readonly string[] _fireSounds = ["Audio/weapons/glock/Glock_Fire0.wav", "Audio/weapons/glock/Glock_Fire1.wav", "Audio/weapons/glock/Glock_Fire2.wav", "Audio/weapons/glock/Glock_Fire3.wav"];
-    private const float WalkAnimSpeedMax = 1.2f;
-    private const float WalkAnimSpeedDivisor = 5.0f;
+    private const float WalkAnimSpeedMax = 1.8f;
+    private const float WalkAnimSpeedDivisor = 6.25f;
 
     public string CurrentAnimState => _animState.ToString();
     public float CurrentAnimTime => (float)(_animator?.TimeSeconds ?? 0);
@@ -63,15 +65,19 @@ public sealed class GlockWeapon : IWeapon
         _isReloading = false;
         _reloadTimer = 0f;
         _nextFireTime = 0f;
+        _wasMoving = false;
+        _lastMoveDir = Vector3.UnitX;
 
         if (!string.IsNullOrEmpty(ViewmodelDrawAnim))
         {
+            _animator.Speed = 1.0f;
             _animator.Play(ViewmodelDrawAnim);
             _animState = AnimState.Drawing;
             _animEndTime = (float)(_animator.CurrentClip?.DurationSeconds ?? 0.5f);
         }
         else
         {
+            _animator.Speed = 1.0f;
             _animator.Play(ViewmodelIdleAnim);
             _animState = AnimState.Idle;
         }
@@ -81,6 +87,21 @@ public sealed class GlockWeapon : IWeapon
     {
         _system = null;
         _animator = null;
+    }
+
+    private void TransitionToIdle()
+    {
+        _animState = AnimState.Idle;
+        Vector3 vel = _system?.PlayerVelocity ?? Vector3.Zero;
+        float speed = MathF.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
+        _wasMoving = speed > 0.5f;
+        if (_wasMoving)
+            _lastMoveDir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
+        if (_animator != null)
+        {
+            _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.2f);
+            _animator.Speed = _wasMoving ? MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax)) : 1.0f;
+        }
     }
 
     public bool CanFire()
@@ -105,6 +126,7 @@ public sealed class GlockWeapon : IWeapon
         if (_animator != null)
         {
             string anim = _fireAnims[_fireRng.Next(_fireAnims.Length)];
+            _animator.Speed = 1.0f;
             _animator.Play(anim);
             _animState = AnimState.Firing;
             _animEndTime = (float)(_animator.CurrentClip?.DurationSeconds ?? 0.2f);
@@ -137,7 +159,10 @@ public sealed class GlockWeapon : IWeapon
             string reloadAnim = CurrentAmmo == 0 && !string.IsNullOrEmpty(ViewmodelReloadEmptyAnim)
                 ? ViewmodelReloadEmptyAnim : ViewmodelReloadAnim;
             if (!string.IsNullOrEmpty(reloadAnim))
+            {
+                _animator.Speed = 1.0f;
                 _animator.Play(reloadAnim);
+            }
         }
 
         _animState = AnimState.Reloading;
@@ -153,12 +178,11 @@ public sealed class GlockWeapon : IWeapon
         float clipDuration = (float)_animator.CurrentClip.DurationSeconds;
         float currentTime = (float)_animator.TimeSeconds;
 
-        // Handle animation state transitions
         switch (_animState)
         {
             case AnimState.Drawing:
-                if (currentTime >= clipDuration * 0.95f) // Near end
-                    _animState = AnimState.Idle;
+                if (currentTime >= clipDuration * 0.95f)
+                    TransitionToIdle();
                 break;
 
             case AnimState.Firing:
@@ -171,7 +195,7 @@ public sealed class GlockWeapon : IWeapon
                     }
                     else
                     {
-                        _animState = AnimState.Idle;
+                        TransitionToIdle();
                     }
                 }
                 break;
@@ -185,21 +209,35 @@ public sealed class GlockWeapon : IWeapon
                     int taken = System.Math.Min(needed, ReserveAmmo);
                     CurrentAmmo += taken;
                     ReserveAmmo -= taken;
-
-                    _animState = AnimState.Idle;
+                    TransitionToIdle();
                 }
                 break;
 
             case AnimState.Idle:
-                // Walk/Idle baseado no movimento do jogador
                 Vector3 vel = _system?.PlayerVelocity ?? Vector3.Zero;
                 float speed = MathF.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
-                string idleOrWalk = speed > 0.5f ? "Walk" : "Idle";
-                if (_animator.CurrentClip?.Name != idleOrWalk)
-                    _animator.Play(idleOrWalk);
+                bool isMoving = speed > 0.5f;
 
-                // Velocidade da animação proporcional à velocidade do jogador
-                _animator.Speed = speed > 0.5f ? MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax) : 0.8f;
+                if (isMoving != _wasMoving)
+                {
+                    if (_animator != null)
+                    {
+                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.2f);
+                        _animator.Speed = isMoving ? MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax)) : 1.0f;
+                    }
+                    _wasMoving = isMoving;
+                }
+                else if (isMoving)
+                {
+                    _animator.Speed = MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax));
+
+                    Vector3 dir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
+                    float dot = Vector3.Dot(_lastMoveDir, dir);
+                    if (dot < 0.3f && _animator != null)
+                        _animator.CrossFade("Walk", 0.2f);
+                    _lastMoveDir = dir;
+                }
+
                 break;
         }
     }

@@ -288,6 +288,7 @@ public static unsafe class SkinnedModelLoader
                 DurationTicks = duration,
                 TicksPerSecond = anim->MTicksPerSecond,
                 Channels = [.. channels],
+                Loop = name is "Idle" or "Walk",
             });
         }
 

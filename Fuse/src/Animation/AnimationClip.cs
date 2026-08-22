@@ -27,6 +27,7 @@ public sealed class AnimationClip
     public AnimationChannel[] Channels { get; init; } = [];
 
     public double DurationSeconds => TicksPerSecond > 0 ? DurationTicks / TicksPerSecond : 0;
+    public bool Loop { get; init; } = false;
 
     public void Apply(double timeSeconds, Skeleton skeleton)
     {
@@ -35,9 +36,16 @@ public sealed class AnimationClip
 
         double tps = TicksPerSecond > 0 ? TicksPerSecond : 30.0;
         double ticks = timeSeconds * tps;
-        ticks %= DurationTicks;
-        if (ticks < 0)
-            ticks += DurationTicks;
+        if (Loop)
+        {
+            ticks %= DurationTicks;
+            if (ticks < 0)
+                ticks += DurationTicks;
+        }
+        else
+        {
+            ticks = System.Math.Clamp(ticks, 0, DurationTicks);
+        }
 
         foreach (var ch in Channels)
         {
