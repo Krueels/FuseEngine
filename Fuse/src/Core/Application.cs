@@ -49,6 +49,7 @@ public unsafe class Application : IDisposable
     private bool _showImgui = false;
     private bool _showSkinnedDebug = false;
     private Imgui.Console _console = null!;
+    private bool _consoleJustToggled = false;
     private float _loadProgress;
     private string _loadStatus = "";
 
@@ -179,7 +180,7 @@ public unsafe class Application : IDisposable
         }
         _sceneManager.InitTriggerSystem(_player);
         _sceneManager.ActiveScene.AddLight(_flashlight);
-        //SpawnGlockViewModel();
+        _weaponSystem?.Equip("glock");
     }
 
     private void ReloadMap(Action<float, string>? onProgress = null)
@@ -337,7 +338,30 @@ public unsafe class Application : IDisposable
                 {
                     _pickup.PhysicsUpdate(dt);
                     _physics.Step(float.Min(dt, 0.0333f));
-                    _player.Update(dt);
+
+                    // ImGui focus detection — gerencia contexto UI automaticamente
+                    bool imguiWantsKeyboard = ImGuiNET.ImGui.GetIO().WantCaptureKeyboard;
+                    bool imguiWantsMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
+                    bool uiFocused = imguiWantsKeyboard || imguiWantsMouse;
+
+                    if (uiFocused && !InputManager.IsContextActive(InputContext.UI))
+                        InputManager.RequestContext(InputContext.UI);
+                    else if (!uiFocused && InputManager.IsContextActive(InputContext.UI))
+                        InputManager.ReleaseContext(InputContext.UI);
+
+                    // Auto-close console se ImGui perdeu foco (clicou fora) — ignora frame do toggle
+                    if (_console.IsOpen && !uiFocused && !_consoleJustToggled)
+                    {
+                        _console.Toggle();
+                        Input.Input.DisableCursor();
+                        InputManager.ReleaseContext(InputContext.UI);
+                    }
+                    _consoleJustToggled = false;
+
+                    // Player input só se ImGui NÃO quer keyboard
+                    if (!imguiWantsKeyboard)
+                        _player.Update(dt);
+
                     _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
                     _impactSound.Update(dt);
                     _pickup.Update(dt);
@@ -638,52 +662,44 @@ public unsafe class Application : IDisposable
         //    Fuse.Scene.MapSerializer.SaveToFile(_sceneManager.ActiveScene, _physics, savePath, spawn);
         //}
 
-        // Weapon input - troca/desequipar sempre funciona (fora do contexto)
-
-        // Switch weapon (1, 2, 3...)
-        if (Input.Input.KeyPressed(KeyCodes.D1))
-            _weaponSystem?.SwitchWeapon("glock");
-        if (Input.Input.KeyPressed(KeyCodes.D0))
-            _weaponSystem?.Unequip();
-        // Adicionar mais armas aqui no futuro
-
-        // Shoot/Reload - só quando contexto Weapon ativo
-        if (InputManager.IsContextActive(InputContext.Weapon))
-        {
-            // Shoot (Left Mouse - seguro para auto, pressionado para semi-auto)
-            if (_weaponSystem?.CurrentWeapon?.IsAutomatic == true)
-            {
-                if (Input.Input.LeftMouseDown())
-                    _weaponSystem?.TryShoot();
-            }
-            else
-            {
-                if (Input.Input.LeftMousePressed())
-                    _weaponSystem?.TryShoot();
-            }
-
-            // Reload
-            if (Input.Input.KeyPressed(KeyCodes.R))
-            {
-                _weaponSystem?.Reload();
-            }
-        }
-
-        if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
-
+        // Console toggle — SEMPRE funciona (prioridade Debug/fora do bloqueio)
         if (Input.Input.KeyPressed(KeyCodes.GraveAccent))
         {
             _console.Toggle();
-            if (_console.IsOpen) Input.Input.ShowCursor();
-            else Input.Input.DisableCursor();
+            _consoleJustToggled = true;
+            if (_console.IsOpen)
+            {
+                Input.Input.ShowCursor();
+                InputManager.RequestContext(InputContext.UI);
+            }
+            else
+            {
+                Input.Input.DisableCursor();
+                InputManager.ReleaseContext(InputContext.UI);
+            }
         }
 
+        // Insert menu — SEMPRE funciona
         if (Input.Input.KeyPressed(KeyCodes.Insert))
         {
             _showImgui = !_showImgui;
             _showSkinnedDebug = _showImgui; // Abre o menu de skinned junto com o menu principal
+            if (_showImgui)
+            {
+                Input.Input.ShowCursor();
+                InputManager.RequestContext(InputContext.UI);
+            }
+            else
+            {
+                Input.Input.DisableCursor();
+                InputManager.ReleaseContext(InputContext.UI);
+            }
         }
 
+        // Debug keys sempre funcionam (contexto Debug prioridade 100)
+        if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
+
+        // G: spawnar explosão no raycast
         if (Input.Input.KeyPressed(KeyCodes.G))
         {
             var cam = _player.Camera;
@@ -706,6 +722,7 @@ public unsafe class Application : IDisposable
             Physics.Explosion.Apply(_physics, target, 105f, 10000.0f, _audio);
         }
 
+        // J: spawnar inimigo no raycast
         if (Input.Input.KeyPressed(KeyCodes.J))
         {
             var cam = _player.Camera;
@@ -721,11 +738,35 @@ public unsafe class Application : IDisposable
 
             Vector3 spawnPos;
             if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
-                spawnPos = origin + front * maxDist * hit.Fraction - front * 1f; // 0.5f para trás da superfície
+                spawnPos = origin + front * maxDist * hit.Fraction - front * 1f;
             else
                 spawnPos = origin + front * maxDist;
 
             _enemySystem?.SpawnEnemy(spawnPos, 50f);
+        }
+
+        // Switch weapon (1, 2, 3...)
+        if (Input.Input.KeyPressed(KeyCodes.D1))
+            _weaponSystem?.SwitchWeapon("glock");
+        if (Input.Input.KeyPressed(KeyCodes.D0))
+            _weaponSystem?.Unequip();
+
+        // Weapon input só se CurrentContext == Weapon
+        if (InputManager.CurrentContext == InputContext.Weapon)
+        {
+            // Shoot/Reload
+            if (_weaponSystem?.CurrentWeapon?.IsAutomatic == true)
+            {
+                if (Input.Input.LeftMouseDown())
+                    _weaponSystem?.TryShoot();
+            }
+            else
+            {
+                if (Input.Input.LeftMousePressed())
+                    _weaponSystem?.TryShoot();
+            }
+            if (Input.Input.KeyPressed(KeyCodes.R))
+                _weaponSystem?.Reload();
         }
     }
 

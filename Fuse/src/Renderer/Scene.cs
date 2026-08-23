@@ -34,6 +34,7 @@ public class Entity
     public bool Visible { get; set; } = true;
     public Animation.SkinnedModel? SkinnedModel { get; set; }
     public Animation.Animator? Animator { get; set; }
+    public Vector3 ModelOffset { get; set; } = Vector3.Zero;
     public string ParentId { get; set; } = "";
     public Vector3 InitialRelativePosition { get; set; }
     public Quaternion InitialRelativeRotation { get; set; } = Quaternion.Identity;

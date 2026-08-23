@@ -404,7 +404,10 @@ public class MasterRenderer
 
             shader.Use();
 
-            shader.SetMat4("uModel", e.Transform.Matrix);
+            var modelMatrix = Matrix4x4.CreateScale(e.Transform.Scale * e.ModelScale) *
+                              Matrix4x4.CreateFromQuaternion(e.Transform.Rotation) *
+                              Matrix4x4.CreateTranslation(e.Transform.Position + e.ModelOffset);
+            shader.SetMat4("uModel", modelMatrix);
             shader.SetVec2("uUvScale", e.UvScale);
             shader.SetVec2("uUvOffset", e.UvOffset);
             shader.SetFloat("uUvRotation", e.UvRotation);

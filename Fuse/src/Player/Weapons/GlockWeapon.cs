@@ -5,6 +5,7 @@ using Fuse.Physics;
 using Fuse.AssetManagement;
 using Fuse.Core;
 using Fuse.Audio;
+using Fuse.Math;
 using JoltPhysicsSharp;
 using Silk.NET.OpenGL;
 
@@ -124,7 +125,7 @@ public sealed class GlockWeapon : IWeapon
         return MathF.Min(WalkAnimSpeedWalk + (WalkAnimSpeedSprint - WalkAnimSpeedWalk) * t2, WalkAnimSpeedSprint);
     }
 
-    private void TransitionToIdle()
+    private void TransitionToIdle(bool crossfade = true)
     {
         _animState = AnimState.Idle;
         float speed = GetHorizontalSpeed();
@@ -136,7 +137,10 @@ public sealed class GlockWeapon : IWeapon
         }
         if (_animator != null)
         {
-            _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.5f);
+            if (crossfade)
+                _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.2f);
+            else
+                _animator.Play(_wasMoving ? "Walk" : "Idle");
             _animator.Speed = _wasMoving ? GetWalkAnimSpeed(speed) : 1.0f;
         }
     }
@@ -162,6 +166,7 @@ public sealed class GlockWeapon : IWeapon
         // Trigger fire animation
         if (_animator != null)
         {
+            _animator.CancelTransition();
             string anim = _fireAnims[_fireRng.Next(_fireAnims.Length)];
             _animator.Speed = 1.0f;
             _animator.Play(anim);
@@ -193,6 +198,7 @@ public sealed class GlockWeapon : IWeapon
 
         if (_animator != null)
         {
+            _animator.CancelTransition();
             string reloadAnim = CurrentAmmo == 0 && !string.IsNullOrEmpty(ViewmodelReloadEmptyAnim)
                 ? ViewmodelReloadEmptyAnim : ViewmodelReloadAnim;
             if (!string.IsNullOrEmpty(reloadAnim))
@@ -232,7 +238,7 @@ public sealed class GlockWeapon : IWeapon
                     }
                     else
                     {
-                        TransitionToIdle();
+                        TransitionToIdle(false);
                     }
                 }
                 break;
@@ -259,20 +265,19 @@ public sealed class GlockWeapon : IWeapon
                 {
                     if (_animator != null)
                     {
-                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.5f);
-                        _animator.Speed = isMoving ? GetWalkAnimSpeed(speed) : 1.0f;
+                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.2f);
+                        if (isMoving)
+                            _animator.Speed = GetWalkAnimSpeed(speed);
+                        else
+                            _animator.Speed = 1.0f;
                     }
                     _wasMoving = isMoving;
                 }
                 else if (isMoving)
                 {
+                    // Velocidade da animação = velocidade do player em tempo real, direto
                     _animator.Speed = GetWalkAnimSpeed(speed);
-
-                    Vector3 dir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
-                    float dot = Vector3.Dot(_lastMoveDir, dir);
-                    if (dot < 0.3f && _animator != null)
-                        _animator.CrossFade("Walk", 0.2f);
-                    _lastMoveDir = dir;
+                    _lastMoveDir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
                 }
 
                 break;

@@ -60,6 +60,8 @@ namespace Fuse.Enemy
                 Entity.SkinnedModel = model;
                 Entity.Animator = _animator;
                 Entity.Visible = true;
+                Entity.ModelOffset = new System.Numerics.Vector3(0f, -1.25f, 0f);
+                Entity.ModelScale = new System.Numerics.Vector3(1.4f, 1.4f, 1.4f);
 
                 // Play idle se existir
                 //if (!string.IsNullOrEmpty(model.DefaultClipName))

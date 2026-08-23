@@ -75,6 +75,16 @@ public sealed class Animator
         _nextNodeLocals = new Matrix4x4[_skeleton.Nodes.Length];
     }
 
+    public void CancelTransition()
+    {
+        _prevClip = null;
+        _fadeDuration = 0f;
+        _fadeTimer = 0f;
+        _fadeProgress = 1f;  // 1.0 = transição "concluída" (cancelada)
+        _prevNodeLocals = null;
+        _nextNodeLocals = null;
+    }
+
     public AnimationClip? GetClip(string name) => Model?.Clips.GetValueOrDefault(name);
 
     internal SkinnedModel? Model { get; set; }
