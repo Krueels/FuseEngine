@@ -392,6 +392,33 @@ public unsafe class Application : IDisposable
                             }
                         }
                     }
+                    // Skinned model skeleton debug
+                    foreach (var e in _sceneManager.ActiveScene.Entities)
+                    {
+                        if (e.SkinnedModel != null && e.Animator != null && e.Visible)
+                        {
+                            _debugDrawer.DrawSkeletonFromBones(
+                                e.Animator.FinalBoneMatrices,
+                                e.SkinnedModel.Skeleton.Bones,
+                                e.SkinnedModel.Skeleton.Nodes,
+                                e.Transform.Matrix);
+                        }
+                    }
+                    //foreach (var e in _sceneManager.ActiveScene.Entities)
+                    //{
+                    //    if (e.SkinnedModel != null && e.Animator != null && e.Visible)
+                    //    {
+                    //        var bones = e.SkinnedModel.Skeleton.Bones;
+                    //        var mats = e.Animator.FinalBoneMatrices;
+                    //        for (int b = 0; b < MathF.Min(bones.Length, 3); b++)
+                    //        {
+                    //            var bone = bones[b];
+                    //            if (bone.NodeIndex < 0) continue;
+                    //            var m = mats[bone.Index];
+                    //            Logger.Info($"[BoneDebug] '{bone.Name}' pos=({m.M14:F2}, {m.M24:F2}, {m.M34:F2})");
+                    //        }
+                    //    }
+                    //}
                     foreach (var light in _sceneManager.ActiveScene.Lights)
                         _debugDrawer.DrawLight(light);
                     float aspect = (float)_scrWidth / _scrHeight;

@@ -81,6 +81,7 @@ public sealed class Animator
 
     public void Update(float dt)
     {
+        //Logger.Info($"[AnimatorUpdate] clip={CurrentClip?.Name} playing={Playing} dt={dt:F4} bones={FinalBoneMatrices.Length}");
         bool animate = CurrentClip != null && Playing && dt > 0f;
         bool fading = _prevClip != null && _fadeProgress < 1.0f;
 

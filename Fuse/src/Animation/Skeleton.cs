@@ -1,4 +1,5 @@
 using System.Numerics;
+using Fuse.Core;
 
 namespace Fuse.Animation;
 
@@ -35,6 +36,21 @@ public sealed class Skeleton
 
     public void ComputeGlobalTransforms()
     {
+        //for (int i = 0; i < MathF.Min(Nodes.Length, 10); i++)
+        //{
+        //    var n = Nodes[i];
+        //    Logger.Info($"[SkeletonDebug] node[{i}]='{n.Name}' parent={n.Parent} restLocalT=({n.RestLocal.M41:F2},{n.RestLocal.M42:F2},{n.RestLocal.M43:F2}) localT=({n.Local.M41:F2},{n.Local.M42:F2},{n.Local.M43:F2})");
+        //}
+
+        // Log do resultado final
+        //for (int b = 0; b < MathF.Min(Bones.Length, 5); b++)
+        //{
+        //    var bone = Bones[b];
+        //    if (bone.NodeIndex < 0 || bone.NodeIndex >= Nodes.Length) continue;
+        //    var g = Nodes[bone.NodeIndex].Global;
+        //    var final = g * bone.OffsetMatrix;
+        //    Logger.Info($"[FinalResult] '{bone.Name}' final=({final.M11:F2},{final.M12:F2},{final.M13:F2},{final.M14:F2} | {final.M21:F2},{final.M22:F2},{final.M23:F2},{final.M24:F2} | {final.M31:F2},{final.M32:F2},{final.M33:F2},{final.M34:F2} | {final.M41:F2},{final.M42:F2},{final.M43:F2},{final.M44:F2})");
+        //}
         for (int i = 0; i < Nodes.Length; i++)
         {
             var n = Nodes[i];
@@ -57,6 +73,17 @@ public sealed class Skeleton
         }
 
         ComputeGlobalTransforms();
+
+        // Log temporário
+        //if (Bones.Length > 0)
+        //{
+        //    var b0 = Bones[0];
+        //    if (b0.NodeIndex >= 0 && b0.NodeIndex < Nodes.Length)
+        //    {
+        //        var g = Nodes[b0.NodeIndex].Global;
+        //        Logger.Info($"[SkeletonDebug] bone0='{b0.Name}' nodeIdx={b0.NodeIndex} globalT=({g.M41:F2},{g.M42:F2},{g.M43:F2}) offsetT=({b0.OffsetMatrix.M41:F2},{b0.OffsetMatrix.M42:F2},{b0.OffsetMatrix.M43:F2})");
+        //    }
+        //}
 
         // Hell2025 style: final = global * OffsetMatrix (OffsetMatrix = inverse bind matrix)
         // Sem GlobalInverse, sem BindGlobal, sem transpose — SSBO std430 é column-major nativo.

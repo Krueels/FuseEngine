@@ -43,7 +43,10 @@ public static unsafe class SkinnedModelLoader
         {
             int idx = nodes.Count;
             string name = n->MName.ToString();
+            var aiMat = n->MTransformation;
             nodes.Add(new AnimationNode { Name = name, Parent = parent, RestLocal = n->MTransformation });
+            if (nodes.Count <= 10)
+                Logger.Info($"[LoaderDebug] node='{name}' mat=({aiMat.M11:F2},{aiMat.M12:F2},{aiMat.M13:F2},{aiMat.M14:F2} | {aiMat.M21:F2},{aiMat.M22:F2},{aiMat.M23:F2},{aiMat.M24:F2} | {aiMat.M31:F2},{aiMat.M32:F2},{aiMat.M33:F2},{aiMat.M34:F2} | {aiMat.M41:F2},{aiMat.M42:F2},{aiMat.M43:F2},{aiMat.M44:F2})");
             if (!string.IsNullOrEmpty(name))
                 nodeMap.TryAdd(name, idx);
 

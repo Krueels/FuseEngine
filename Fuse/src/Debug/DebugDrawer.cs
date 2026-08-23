@@ -377,6 +377,32 @@ public unsafe class DebugDrawer : IDisposable
         _gl.BindVertexArray(0);
     }
 
+    public void DrawSkeletonFromBones(Matrix4x4[] boneMatrices, Fuse.Animation.Bone[] bones, Fuse.Animation.AnimationNode[] nodes, Matrix4x4 entityTransform)
+    {
+        // Usar Global dos nodes (posições dos joints)
+        var nodePositions = new Dictionary<int, Vector3>();
+
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            var node = nodes[i];
+            var g = node.Global;
+            Vector3 localPos = new Vector3(g.M14, g.M24, g.M34); // translação em M14/M24/M34
+            Vector3 worldPos = Vector3.Transform(localPos, entityTransform);
+            nodePositions[i] = worldPos;
+        }
+
+        foreach (var kvp in nodePositions)
+        {
+            var node = nodes[kvp.Key];
+            if (node.Parent < 0) continue;
+
+            if (nodePositions.TryGetValue(node.Parent, out var parentPos))
+            {
+                PushLine(kvp.Value, parentPos, new Vector3(0, 1, 0));
+            }
+        }
+    }
+
     private void DrawCircleXZ(Vector3 center, float radius, Vector3 color, int segments = 24)
     {
         float step = MathF.PI * 2.0f / segments;
@@ -473,6 +499,7 @@ public unsafe class DebugDrawer : IDisposable
         _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(DebugVert), (void*)(3 * sizeof(float)));
 
         _gl.UseProgram(_shader);
+        _gl.Disable(GLEnum.DepthTest);
 
         float[] viewArr = GetMatrixValues(view);
         float[] projArr = GetMatrixValues(proj);
@@ -491,6 +518,7 @@ public unsafe class DebugDrawer : IDisposable
         _gl.DrawArrays(GLEnum.Lines, 0, (uint)verts.Length);
 
         _gl.BindVertexArray(0);
+        _gl.Enable(GLEnum.DepthTest);
         FlushBillboards(view, proj);
     }
 
