@@ -377,6 +377,9 @@ public class MasterRenderer
 
             foreach (var sub in e.SkinnedModel.Submeshes)
             {
+                if (e.SkinnedModel.HiddenSubmeshes.Contains(sub.Name))
+                    continue;
+
                 var tex = sub.Texture ?? e.Texture ?? _crateTexture;
                 if (tex != null)
                 {

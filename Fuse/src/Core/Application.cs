@@ -40,6 +40,8 @@ public unsafe class Application : IDisposable
     private UI.HUDText _fpsText = null!;
     private UI.HUDImage _crosshairNode = null!;
     private UI.HUDText _weaponDebugText = null!;
+    private UI.HUDText _ammoText = null!;
+    private UI.HUDText _reserveAmmoText = null!;
     private Debug.DebugDrawer _debugDrawer = null!;
     private Imgui.ImGuiBackEnd _imgui = null!;
     private bool _showImgui = false;
@@ -133,6 +135,9 @@ public unsafe class Application : IDisposable
         var crosshairInteractTexture = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/crosshair_interact.png");
         _crosshairNode = _hud.AddImage(crosshairTexture, UI.HUDAnchor.Center, Vector2.Zero, new Vector2(8, 8));
         _weaponDebugText = _hud.AddText("Weapon Debug", UI.HUDAnchor.TopLeft, new Vector2(20, 50), 1.0f, new Vector4(0, 1, 0, 1));
+        
+        _ammoText = _hud.AddText("0", UI.HUDAnchor.BottomRight, new Vector2(-320, -120), 2.5f, new Vector4(1, 1, 1, 1));
+        _reserveAmmoText = _hud.AddText("0", UI.HUDAnchor.BottomRight, new Vector2(-320, -100), 1.5f, new Vector4(0.7f, 0.7f, 0.7f, 1));
 
         // Initialization
         _renderer.Init(_assets, _scrWidth, _scrHeight);
@@ -471,46 +476,46 @@ public unsafe class Application : IDisposable
                 //}
 
                 //Weapon Viewmodel Debug
-                if (_weaponSystem != null && _weaponSystem.HasWeapon)
-                {
-                    if (ImGuiNET.ImGui.Begin("Weapon Viewmodel Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
-                    {
-                        var vmOffset = _weaponSystem.ViewmodelOffset;
-                        if (ImGuiNET.ImGui.DragFloat3("Offset (X=Right, Y=Up, Z=Forward)", ref vmOffset, 0.01f, -2f, 2f))
-                            _weaponSystem.ViewmodelOffset = vmOffset;
+                //if (_weaponSystem != null && _weaponSystem.HasWeapon)
+                //{
+                //    if (ImGuiNET.ImGui.Begin("Weapon Viewmodel Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
+                //    {
+                //        var vmOffset = _weaponSystem.ViewmodelOffset;
+                //        if (ImGuiNET.ImGui.DragFloat3("Offset (X=Right, Y=Up, Z=Forward)", ref vmOffset, 0.01f, -2f, 2f))
+                //            _weaponSystem.ViewmodelOffset = vmOffset;
 
-                        var vmRot = _weaponSystem.ViewmodelRotationDeg;
-                        if (ImGuiNET.ImGui.DragFloat3("Rotation Deg (Yaw, Pitch, Roll)", ref vmRot, 1f, -180f, 180f))
-                            _weaponSystem.ViewmodelRotationDeg = vmRot;
+                //        var vmRot = _weaponSystem.ViewmodelRotationDeg;
+                //        if (ImGuiNET.ImGui.DragFloat3("Rotation Deg (Yaw, Pitch, Roll)", ref vmRot, 1f, -180f, 180f))
+                //            _weaponSystem.ViewmodelRotationDeg = vmRot;
 
-                        if (ImGuiNET.ImGui.Button("Reset to Default"))
-                        {
-                            _weaponSystem.ViewmodelOffset = new Vector3(0.25f, -0.35f, 0.5f);
-                            _weaponSystem.ViewmodelRotationDeg = Vector3.Zero;
-                        }
+                //        if (ImGuiNET.ImGui.Button("Reset to Default"))
+                //        {
+                //            _weaponSystem.ViewmodelOffset = new Vector3(0.25f, -0.35f, 0.5f);
+                //            _weaponSystem.ViewmodelRotationDeg = Vector3.Zero;
+                //        }
 
-                        ImGuiNET.ImGui.Separator();
+                //        ImGuiNET.ImGui.Separator();
 
-                        // NOVO: Freeze viewmodel para debug
-                        bool freezeVM = _weaponSystem.FreezeViewmodel;
-                        if (ImGuiNET.ImGui.Checkbox("Freeze Viewmodel (stop following camera)", ref freezeVM))
-                            _weaponSystem.FreezeViewmodel = freezeVM;
+                //        // NOVO: Freeze viewmodel para debug
+                //        bool freezeVM = _weaponSystem.FreezeViewmodel;
+                //        if (ImGuiNET.ImGui.Checkbox("Freeze Viewmodel (stop following camera)", ref freezeVM))
+                //            _weaponSystem.FreezeViewmodel = freezeVM;
 
-                        if (freezeVM)
-                        {
-                            ImGuiNET.ImGui.TextColored(new Vector4(1, 1, 0, 1), "VIEWMODEL FROZEN - Move camera to find it");
-                            if (ImGuiNET.ImGui.Button("Teleport to Camera"))
-                            {
-                                _weaponSystem.TeleportViewmodelToCamera();
-                            }
-                        }
+                //        if (freezeVM)
+                //        {
+                //            ImGuiNET.ImGui.TextColored(new Vector4(1, 1, 0, 1), "VIEWMODEL FROZEN - Move camera to find it");
+                //            if (ImGuiNET.ImGui.Button("Teleport to Camera"))
+                //            {
+                //                _weaponSystem.TeleportViewmodelToCamera();
+                //            }
+                //        }
 
-                        ImGuiNET.ImGui.Separator();
-                        ImGuiNET.ImGui.Text($"Current Weapon: {_weaponSystem.CurrentWeaponId}");
-                        ImGuiNET.ImGui.Text($"Viewmodel Entity: {(_weaponSystem.GetType().GetField("_viewmodelEntity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_weaponSystem) as Entity)?.Id ?? "null"}");
-                    }
-                    ImGuiNET.ImGui.End();
-                }
+                //        ImGuiNET.ImGui.Separator();
+                //        ImGuiNET.ImGui.Text($"Current Weapon: {_weaponSystem.CurrentWeaponId}");
+                //        ImGuiNET.ImGui.Text($"Viewmodel Entity: {(_weaponSystem.GetType().GetField("_viewmodelEntity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_weaponSystem) as Entity)?.Id ?? "null"}");
+                //    }
+                //    ImGuiNET.ImGui.End();
+                //}
 
 
                 _console.Draw();
@@ -665,6 +670,17 @@ public unsafe class Application : IDisposable
         else if (_weaponDebugText != null)
         {
             _weaponDebugText.Text = "No weapon equipped";
+        }
+
+        if (_ammoText != null && _weaponSystem?.CurrentWeapon != null)
+        {
+            _ammoText.Text = $"{_weaponSystem.CurrentWeapon.CurrentAmmo}";
+            _reserveAmmoText.Text = $"/{_weaponSystem.CurrentWeapon.ReserveAmmo}";
+        }
+        else if (_ammoText != null)
+        {
+            _ammoText.Text = "";
+            _reserveAmmoText.Text = "";
         }
 
         if (!_paused) _interaction.Update();

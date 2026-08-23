@@ -14,6 +14,18 @@ public sealed class GlockWeapon : IWeapon
 {
     public string Id => "glock";
     public string ViewmodelModelPath => $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
+
+    public Dictionary<string, string> ViewmodelTextures => new()
+    {
+        {"GlockBarrel", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockMagazine", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockMagazine_02", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockReceiver", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockSlide", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockSlideUnLock", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+        {"GlockTrigger", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
+    };
+
     public string ViewmodelIdleAnim => "Idle";
     public string ViewmodelFireAnim => "Fire1";
 
@@ -29,7 +41,7 @@ public sealed class GlockWeapon : IWeapon
     public float Damage => 25f;
     public float Range => 100f;
     public int MagazineSize => 17;
-    public int CurrentAmmo { get; private set; }
+    public int CurrentAmmo { get; set; }
     public int ReserveAmmo { get; set; } = 120;
     public bool IsAutomatic => false;    // Semi-auto
     public float ReloadTime => 1.67f;

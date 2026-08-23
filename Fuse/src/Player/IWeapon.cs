@@ -16,11 +16,13 @@ public interface IWeapon : IDisposable
     string ViewmodelReloadEmptyAnim { get; }
     string ViewmodelDrawAnim { get; }
 
+    Dictionary<string, string> ViewmodelTextures { get; }
+
     float FireRate { get; }             // tiros por segundo
     float Damage { get; }
     float Range { get; }
     int MagazineSize { get; }
-    int CurrentAmmo { get; }
+    int CurrentAmmo { get; set; }
     int ReserveAmmo { get; set; }
     bool IsAutomatic { get; }
     float ReloadTime { get; }

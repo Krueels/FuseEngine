@@ -126,6 +126,7 @@ public static unsafe class SkinnedModelLoader
 
             submeshes.Add(new SkinnedSubmesh
             {
+                Name = mesh->MName.ToString(),
                 Mesh = new SkinnedMesh(gl, vertices, [.. indices]),
                 Texture = tex,
             });

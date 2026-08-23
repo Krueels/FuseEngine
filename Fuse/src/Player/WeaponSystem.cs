@@ -28,6 +28,7 @@ public class WeaponSystem : IDisposable
     private readonly Scene.SceneManager _sceneManager;
 
     private readonly Dictionary<string, IWeapon> _weapons = new();
+    private readonly Dictionary<string, (int CurrentAmmo, int ReserveAmmo)> _ammoState = new();
     private IWeapon? _currentWeapon;
     private string? _currentWeaponId;
 
@@ -72,6 +73,7 @@ public class WeaponSystem : IDisposable
         // Unequip current weapon first
         if (_currentWeapon != null)
         {
+            _ammoState[_currentWeaponId!] = (_currentWeapon.CurrentAmmo, _currentWeapon.ReserveAmmo);
             _currentWeapon.OnUnequip();
             DestroyViewmodel();
         }
@@ -82,8 +84,40 @@ public class WeaponSystem : IDisposable
         // Create viewmodel
         CreateViewmodel(weapon);
 
+        //Texuta padrão para ArmsMale
+        if (_viewmodelModel != null)
+        {
+            var armsTex = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/ArmsMale_ALB.png");
+            foreach (var sub in _viewmodelModel.Submeshes)
+            {
+                if (sub.Name == "ArmsMale" && armsTex != null)
+                    sub.Texture = armsTex;
+            }
+        }
+
+        // aplicar texturas por submesh
+        if (_viewmodelModel != null && weapon.ViewmodelTextures != null)
+        {
+            foreach(var sub in _viewmodelModel.Submeshes)
+            {
+                if (weapon.ViewmodelTextures.TryGetValue(sub.Name, out string? texPath))
+                {
+                    var tex = _assets.GetTexture(texPath);
+                    if (tex != null)
+                        sub.Texture = tex;
+                }
+            }
+        }
+
         // Initialize weapon
         weapon.OnEquip(this, _viewmodelEntity!, _viewmodelAnimator!);
+
+        // restaurar estado de munição
+        if (_ammoState.TryGetValue(weaponId, out var state))
+        {
+            weapon.CurrentAmmo = state.CurrentAmmo;
+            weapon.ReserveAmmo = state.ReserveAmmo;
+        }
 
         // Ativar contexto de arma para permitir input
         InputManager.RequestContext(InputContext.Weapon);
@@ -96,6 +130,7 @@ public class WeaponSystem : IDisposable
     {
         if (_currentWeapon != null)
         {
+            _ammoState[_currentWeaponId!] = (_currentWeapon.CurrentAmmo, _currentWeapon.ReserveAmmo);
             _currentWeapon.OnUnequip();
             _currentWeapon = null;
             _currentWeaponId = null;
@@ -151,6 +186,9 @@ public class WeaponSystem : IDisposable
         }
 
         _viewmodelModel = model;
+        _viewmodelModel.HiddenSubmeshes.Add("Supressor");
+        _viewmodelModel.HiddenSubmeshes.Add("LeupoldRedDot");
+        _viewmodelModel.HiddenSubmeshes.Add("LeupoldRedDotGlass");
         _viewmodelAnimator = new Animator(model.Skeleton);
         model.Link(_viewmodelAnimator);
 
