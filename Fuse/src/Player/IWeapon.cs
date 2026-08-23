@@ -18,6 +18,12 @@ public interface IWeapon : IDisposable
 
     Dictionary<string, string> ViewmodelTextures { get; }
 
+    // Muzzle flash
+    Vector3 MuzzleFlashOffset { get; }        // offset relativo à câmera (em world space)
+    Vector2 MuzzleFlashSize { get; }          // tamanho em units
+    float MuzzleFlashDuration { get; }        // duração em segundos
+    string MuzzleFlashTexturePath { get; }    // caminho da textura
+
     float FireRate { get; }             // tiros por segundo
     float Damage { get; }
     float Range { get; }

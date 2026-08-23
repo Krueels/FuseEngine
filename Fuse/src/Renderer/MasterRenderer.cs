@@ -24,6 +24,9 @@ public class MasterRenderer
     private PointShadowMap _pointShadowMap1 = null!;
     private PointShadowMap _pointShadowMap2 = null!;
     private PointShadowMap _pointShadowMap3 = null!;
+    private uint _bbShader;
+    private int _bbUView, _bbUProj, _bbUWorldPos, _bbUSize, _bbUColor, _bbUTexture;
+    private uint _bbVao, _bbVbo;
 
     // Textures
     private Texture _crateTexture = null!;
@@ -60,7 +63,7 @@ public class MasterRenderer
         _gl = gl;
     }
 
-    public void Init(AssetManagement.AssetManager assets, int width, int height)
+    public unsafe void Init(AssetManagement.AssetManager assets, int width, int height)
     {
         _scrWidth = width; 
         _scrHeight = height;
@@ -92,6 +95,38 @@ public class MasterRenderer
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
         }
+
+        // Billboard shader (muzzle flash) - carregar de arquivos
+        _bbShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/billboard.vert", $"{Fuse.ResPath.Path}/Shaders/billboard.frag")!.ID;
+        _bbUView = _gl.GetUniformLocation(_bbShader, "uView");
+        _bbUProj = _gl.GetUniformLocation(_bbShader, "uProj");
+        _bbUWorldPos = _gl.GetUniformLocation(_bbShader, "uWorldPos");
+        _bbUSize = _gl.GetUniformLocation(_bbShader, "uSize");
+        _bbUColor = _gl.GetUniformLocation(_bbShader, "uColor");
+        _bbUTexture = _gl.GetUniformLocation(_bbShader, "uTexture");
+
+        float[] quadVerts = [
+            -0.5f, -0.5f,  0, 0,
+             0.5f, -0.5f,  1, 0,
+             0.5f,  0.5f,  1, 1,
+            -0.5f, -0.5f,  0, 0,
+             0.5f,  0.5f,  1, 1,
+            -0.5f,  0.5f,  0, 1,
+        ];
+        _bbVao = _gl.GenVertexArray();
+        _bbVbo = _gl.GenBuffer();
+        _gl.BindVertexArray(_bbVao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _bbVbo);
+        unsafe
+        {
+            fixed (float* ptr = quadVerts)
+                _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(quadVerts.Length * sizeof(float)), ptr, BufferUsageARB.DynamicDraw);
+        }
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
+        _gl.EnableVertexAttribArray(1);
+        _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+        _gl.BindVertexArray(0);
     }
 
     public void Resize(int width, int height)
@@ -394,6 +429,44 @@ public class MasterRenderer
                 sub.Mesh.Draw();
             }
         }
+    }
+
+    public unsafe void RenderBillboard(Matrix4x4 view, Matrix4x4 proj, uint texture, Vector3 worldPos, Vector2 size, Vector4 color)
+    {
+        _gl.Enable(GLEnum.Blend);
+        _gl.BlendFunc(GLEnum.SrcAlpha, GLEnum.OneMinusSrcAlpha);
+
+        _gl.UseProgram(_bbShader);
+
+        float[] viewArr = [
+            view.M11, view.M12, view.M13, view.M14,
+            view.M21, view.M22, view.M23, view.M24,
+            view.M31, view.M32, view.M33, view.M34,
+            view.M41, view.M42, view.M43, view.M44,
+        ];
+        float[] projArr = [
+            proj.M11, proj.M12, proj.M13, proj.M14,
+            proj.M21, proj.M22, proj.M23, proj.M24,
+            proj.M31, proj.M32, proj.M33, proj.M34,
+            proj.M41, proj.M42, proj.M43, proj.M44,
+        ];
+        fixed (float* vp = viewArr, pp = projArr)
+        {
+            _gl.UniformMatrix4(_bbUView, 1, false, vp);
+            _gl.UniformMatrix4(_bbUProj, 1, false, pp);
+        }
+        _gl.Uniform3(_bbUWorldPos, worldPos.X, worldPos.Y, worldPos.Z);
+        _gl.Uniform2(_bbUSize, size.X, size.Y);
+        _gl.Uniform4(_bbUColor, color.X, color.Y, color.Z, color.W);
+        _gl.Uniform1(_bbUTexture, 0);
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+
+        _gl.BindVertexArray(_bbVao);
+        _gl.DrawArrays(GLEnum.Triangles, 0, 6);
+        _gl.BindVertexArray(0);
+
+        _gl.Disable(GLEnum.Blend);
     }
 
     private Vector4[] GetFrustumCornersWorldSpace(Matrix4x4 proj, Matrix4x4 view)

@@ -38,12 +38,29 @@ public class WeaponSystem : IDisposable
     private Animator? _viewmodelAnimator;
     private SkinnedModel? _viewmodelModel;
 
+    // Muzzle flash
+    private bool _muzzleFlashVisible;
+    private float _muzzleFlashTimer;
+    private Vector3 _muzzleFlashOffset;
+    private Vector2 _muzzleFlashSize;
+    private Texture? _muzzleFlashTexture;
+
     // Viewmodel offset (ajustável via debug UI)
     public Vector3 ViewmodelOffset { get; set; } = new Vector3(0.0f, -0.83f, 0.0f);
     public Vector3 ViewmodelRotationDeg { get; set; } = new Vector3(0f, 90f, 0f);
 
     // Debug: freeze viewmodel position
     public bool FreezeViewmodel { get; set; } = false;
+    public bool MuzzleFlashVisible => _muzzleFlashVisible;
+    public Vector3 MuzzleFlashPosition { get; private set; }
+    public Vector2 MuzzleFlashSize => _muzzleFlashSize;
+    public Texture? MuzzleFlashTexture => _muzzleFlashTexture;
+    public bool ForceMuzzleFlash { get; set; }
+    public Vector2 MuzzleFlashSizeEdit { get; set; } = new(0.3f, 0.3f);
+
+    // ImGui editável
+    public Vector3 MuzzleFlashOffsetEdit { get; set; }
+
     private Vector3 _frozenPosition;
     private Quaternion _frozenRotation;
 
@@ -114,6 +131,10 @@ public class WeaponSystem : IDisposable
         // Initialize weapon
         weapon.OnEquip(this, _viewmodelEntity!, _viewmodelAnimator!);
 
+        // Inicializar offset/size editáveis com os valores padrão da arma
+        MuzzleFlashOffsetEdit = weapon.MuzzleFlashOffset;
+        MuzzleFlashSizeEdit = weapon.MuzzleFlashSize;
+
         // restaurar estado de munição
         if (_ammoState.TryGetValue(weaponId, out var state))
         {
@@ -166,7 +187,34 @@ public class WeaponSystem : IDisposable
         if (_viewmodelAnimator != null)
             _currentWeapon?.UpdateViewmodel(dt, _viewmodelAnimator);
 
+        // Atualizar muzzle flash
+        if (_muzzleFlashVisible)
+        {
+            if (!ForceMuzzleFlash)
+            {
+                _muzzleFlashTimer -= dt;
+                if (_muzzleFlashTimer <= 0)
+                    _muzzleFlashVisible = false;
+            }
+            UpdateMuzzleFlashPosition();
+        }
+
         UpdateViewmodelTransform();
+    }
+
+    private void UpdateMuzzleFlashPosition()
+    {
+        if (_player == null) return;
+
+        var cam = _player.Camera;
+        var camPos = cam.Position;
+
+        // Usar offset editável no ImGui em tempo real
+        var offset = MuzzleFlashOffsetEdit;
+        MuzzleFlashPosition = camPos
+            + cam.Front * offset.Z    // frente
+            + cam.Up * offset.Y       // cima
+            + cam.Right * offset.X;   // direita
     }
 
     public void PhysicsUpdate(float dt)
@@ -264,6 +312,22 @@ public class WeaponSystem : IDisposable
         _viewmodelEntity.Transform.Position = viewmodelPos;
         _viewmodelEntity.Transform.Rotation = camRotFixed * rotOffsetQuat;
         _viewmodelEntity.Transform.Scale = Vector3.One;
+    }
+
+    public void ShowMuzzleFlash(Vector3 offset, Vector2 size, float duration)
+    {
+        _muzzleFlashOffset = offset;
+        _muzzleFlashSize = MuzzleFlashSizeEdit;
+        _muzzleFlashTimer = duration;
+        _muzzleFlashVisible = true;
+
+        if (_muzzleFlashTexture == null && _currentWeapon != null)
+        {
+            _muzzleFlashTexture = _assets.GetTexture(_currentWeapon.MuzzleFlashTexturePath);
+        }
+
+        // Atualizar posição imediatamente para evitar frame com posição desatualizada
+        UpdateMuzzleFlashPosition();
     }
 
     public void TeleportViewmodelToCamera()

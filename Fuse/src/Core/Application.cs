@@ -359,6 +359,23 @@ public unsafe class Application : IDisposable
 
                 // Render
                 _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
+
+                // Muzzle flash billboard
+                if (_weaponSystem?.MuzzleFlashVisible == true && _weaponSystem.MuzzleFlashTexture != null)
+                {
+                    var view = _player.Camera.GetViewMatrix();
+                    var proj = _player.Camera.GetProjectionMatrix((float)_scrWidth / _scrHeight);
+                    _renderer.RenderBillboard(view, proj,
+                        _weaponSystem.MuzzleFlashTexture.ID,
+                        _weaponSystem.MuzzleFlashPosition,
+                        _weaponSystem.MuzzleFlashSize,
+                        new Vector4(1, 1, 1, 1));
+                }
+                else if (_weaponSystem?.MuzzleFlashVisible == true)
+                {
+                    Logger.Warn("[MuzzleFlash] Visível mas textura é null!");
+                }
+
                 if (_screenshotRequested)
                 {
                     _screenshotRequested = false;
@@ -566,6 +583,25 @@ public unsafe class Application : IDisposable
                 //    ImGuiNET.ImGui.End();
                 //}
 
+                // Muzzle Flash Offset Debug
+                //if (_weaponSystem?.HasWeapon == true && ImGuiNET.ImGui.Begin("Muzzle Flash Debug", ImGuiNET.ImGuiWindowFlags.AlwaysAutoResize))
+                //{
+                //    bool forceOn = _weaponSystem.ForceMuzzleFlash;
+                //    if (ImGuiNET.ImGui.Checkbox("Force Always On", ref forceOn))
+                //        _weaponSystem.ForceMuzzleFlash = forceOn;
+
+                //    var offset = _weaponSystem.MuzzleFlashOffsetEdit;
+                //    if (ImGuiNET.ImGui.DragFloat3("Offset (X, Y, Z)", ref offset, 0.01f))
+                //        _weaponSystem.MuzzleFlashOffsetEdit = offset;
+
+                //    var size = _weaponSystem.MuzzleFlashSizeEdit;
+                //    if (ImGuiNET.ImGui.DragFloat2("Size (X, Y)", ref size, 0.01f))
+                //        _weaponSystem.MuzzleFlashSizeEdit = size;
+
+                //    ImGuiNET.ImGui.Text($"Visible: {_weaponSystem.MuzzleFlashVisible}");
+                //    ImGuiNET.ImGui.Text($"Position: {_weaponSystem.MuzzleFlashPosition.X:F2}, {_weaponSystem.MuzzleFlashPosition.Y:F2}, {_weaponSystem.MuzzleFlashPosition.Z:F2}");
+                //    ImGuiNET.ImGui.End();
+                //}
 
                 _console.Draw();
                 _imgui.Render();

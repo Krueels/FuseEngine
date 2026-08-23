@@ -1,9 +1,10 @@
 ﻿using System.Numerics;
-using Fuse.Renderer;
-using Fuse.Physics;
+using Fuse.Animation;
 using Fuse.AssetManagement;
-using Fuse.Scene;
 using Fuse.Core;
+using Fuse.Physics;
+using Fuse.Renderer;
+using Fuse.Scene;
 using Fuse.Scene.Model;
 using JoltPhysicsSharp;
 using Silk.NET.OpenGL;
@@ -25,6 +26,7 @@ namespace Fuse.Enemy
         private readonly float _capsuleHeight = 1.8f;
         private bool _initialized;
         private bool _hasDied;
+        private Animation.Animator? _animator;
 
         public Enemy(string id, float maxHealth = 100f, AssetManager? assets = null)
         {
@@ -48,11 +50,29 @@ namespace Fuse.Enemy
                 .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
                 .Build(physics);
 
-            var meshData = MeshGenerator.GenerateCapsule(_capsuleRadius, _capsuleHeight, 12);
-            var capsuleMesh = new Mesh(_assets.Gl, meshData.Vertices, meshData.Indices);
-            Entity = sceneManager.ActiveScene.Add(capsuleMesh, Id, Body);
-            Entity.Visible = true;
-            Entity.Texture = null;
+            var model = _assets.GetSkinnedModel($"{Fuse.ResPath.Path}/skinned_models/TrapKing.fbx");
+            if (model != null)
+            {
+                _animator = new Animation.Animator(model.Skeleton);
+                model.Link(_animator);
+
+                Entity = sceneManager.ActiveScene.Add(null, Id, Body);
+                Entity.SkinnedModel = model;
+                Entity.Animator = _animator;
+                Entity.Visible = true;
+
+                // Play idle se existir
+                //if (!string.IsNullOrEmpty(model.DefaultClipName))
+                //    _animator.Play(model.DefaultClipName);
+            }
+            else
+            {
+                var meshData = MeshGenerator.GenerateCapsule(_capsuleRadius, _capsuleHeight, 12);
+                var capsuleMesh = new Mesh(_assets.Gl, meshData.Vertices, meshData.Indices);
+                Entity = sceneManager.ActiveScene.Add(capsuleMesh, Id, Body);
+                Entity.Visible = true;
+                Entity.Texture = null;
+            }
 
             sceneManager.ActiveScene.RegisterBody(Entity);
             _initialized = true;

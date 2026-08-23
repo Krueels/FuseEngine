@@ -15,21 +15,19 @@ public sealed class GlockWeapon : IWeapon
     public string Id => "glock";
     public string ViewmodelModelPath => $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
 
-    public Dictionary<string, string> ViewmodelTextures => new()
-    {
-        {"GlockBarrel", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockMagazine", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockMagazine_02", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockReceiver", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockSlide", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockSlideUnLock", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-        {"GlockTrigger", $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png" },
-    };
+    private static readonly string[] _glockSubmeshes = ["GlockBarrel", "GlockMagazine", "GlockMagazine_02", "GlockReceiver", "GlockSlide", "GlockSlideUnLock", "GlockTrigger"];
+    public Dictionary<string, string> ViewmodelTextures => _glockSubmeshes.ToDictionary(s => s, _ => $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png");
+
+    // Muzzle flash
+    public Vector3 MuzzleFlashOffset => new(0.1f, -0.08f, 0.58f);
+    public Vector2 MuzzleFlashSize => new(0.5f, 0.5f);
+    public float MuzzleFlashDuration => 0.02f;
+    public string MuzzleFlashTexturePath => $"{Fuse.ResPath.Path}/Textures/FX/muzzle_flash.png";
 
     public string ViewmodelIdleAnim => "Idle";
     public string ViewmodelFireAnim => "Fire1";
 
-    public readonly string[] _fireAnims = ["Fire1", "Fire2", "Fire3"];
+    public readonly string[] _fireAnims = Enumerable.Range(1, 3).Select(i => $"Fire{i}").ToArray();
     public string ViewmodelReloadAnim => "Reload";
     public string ViewmodelReloadEmptyAnim => "ReloadEmpty";
     public string ViewmodelDrawAnim => "Draw";
@@ -61,9 +59,15 @@ public sealed class GlockWeapon : IWeapon
     private bool _wasMoving;
     private Vector3 _lastMoveDir;
 
-    private readonly string[] _fireSounds = ["Audio/weapons/glock/Glock_Fire0.wav", "Audio/weapons/glock/Glock_Fire1.wav", "Audio/weapons/glock/Glock_Fire2.wav", "Audio/weapons/glock/Glock_Fire3.wav"];
-    private const float WalkAnimSpeedMax = 1.8f;
-    private const float WalkAnimSpeedDivisor = 6.25f;
+    private readonly string[] _fireSounds = Enumerable.Range(0, 4).Select(i => $"Audio/weapons/glock/Glock_Fire{i}.wav").ToArray();
+
+    // Walk anim speed por estado de movimento
+    private const float WalkAnimSpeedCrouch = 0.5f;
+    private const float WalkAnimSpeedWalk = .8f;
+    private const float WalkAnimSpeedSprint = 1.0f;
+    private const float WalkSpeedCrouch = 2.0f;
+    private const float WalkSpeedWalk = 4.0f;
+    private const float WalkSpeedSprint = 6.0f;
 
     public string CurrentAnimState => _animState.ToString();
     public float CurrentAnimTime => (float)(_animator?.TimeSeconds ?? 0);
@@ -101,18 +105,39 @@ public sealed class GlockWeapon : IWeapon
         _animator = null;
     }
 
+    private float GetHorizontalSpeed()
+    {
+        var vel = _system?.PlayerVelocity ?? Vector3.Zero;
+        return MathF.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
+    }
+
+    private float GetWalkAnimSpeed(float speed)
+    {
+        if (speed <= WalkSpeedCrouch)
+            return WalkAnimSpeedCrouch;
+        if (speed <= WalkSpeedWalk)
+        {
+            float t = (speed - WalkSpeedCrouch) / (WalkSpeedWalk - WalkSpeedCrouch);
+            return WalkAnimSpeedCrouch + (WalkAnimSpeedWalk - WalkAnimSpeedCrouch) * t;
+        }
+        float t2 = (speed - WalkSpeedWalk) / (WalkSpeedSprint - WalkSpeedWalk);
+        return MathF.Min(WalkAnimSpeedWalk + (WalkAnimSpeedSprint - WalkAnimSpeedWalk) * t2, WalkAnimSpeedSprint);
+    }
+
     private void TransitionToIdle()
     {
         _animState = AnimState.Idle;
-        Vector3 vel = _system?.PlayerVelocity ?? Vector3.Zero;
-        float speed = MathF.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
+        float speed = GetHorizontalSpeed();
         _wasMoving = speed > 0.5f;
         if (_wasMoving)
+        {
+            var vel = _system?.PlayerVelocity ?? Vector3.Zero;
             _lastMoveDir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
+        }
         if (_animator != null)
         {
-            _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.2f);
-            _animator.Speed = _wasMoving ? MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax)) : 1.0f;
+            _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.5f);
+            _animator.Speed = _wasMoving ? GetWalkAnimSpeed(speed) : 1.0f;
         }
     }
 
@@ -226,22 +251,22 @@ public sealed class GlockWeapon : IWeapon
                 break;
 
             case AnimState.Idle:
-                Vector3 vel = _system?.PlayerVelocity ?? Vector3.Zero;
-                float speed = MathF.Sqrt(vel.X * vel.X + vel.Z * vel.Z);
+                var vel = _system?.PlayerVelocity ?? Vector3.Zero;
+                float speed = GetHorizontalSpeed();
                 bool isMoving = speed > 0.5f;
 
                 if (isMoving != _wasMoving)
                 {
                     if (_animator != null)
                     {
-                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.2f);
-                        _animator.Speed = isMoving ? MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax)) : 1.0f;
+                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.5f);
+                        _animator.Speed = isMoving ? GetWalkAnimSpeed(speed) : 1.0f;
                     }
                     _wasMoving = isMoving;
                 }
                 else if (isMoving)
                 {
-                    _animator.Speed = MathF.Max(0.8f, MathF.Min(speed / WalkAnimSpeedDivisor, WalkAnimSpeedMax));
+                    _animator.Speed = GetWalkAnimSpeed(speed);
 
                     Vector3 dir = Vector3.Normalize(new Vector3(vel.X, 0, vel.Z));
                     float dot = Vector3.Dot(_lastMoveDir, dir);
@@ -290,15 +315,15 @@ public sealed class GlockWeapon : IWeapon
 
     private void SpawnMuzzleFlash(Vector3 position, Vector3 direction)
     {
-        // TODO: Adicionar particle system ou light temporária
-        // Por enquanto apenas log
-        Logger.Info($"[Glock] Muzzle flash at {position}");
+        _system?.ShowMuzzleFlash(MuzzleFlashOffset, MuzzleFlashSize, MuzzleFlashDuration);
+        //Logger.Info($"[Glock] Muzzle flash at {position}");
     }
 
     private void SpawnHitEffect(Vector3 position, Vector3 normal)
     {
         // TODO: Decal, particle, som de impacto
-        Logger.Info($"[Glock] Hit at {position}, normal {normal}");
+        var idx = Random.Shared.Next(3);
+        _system?.Audio.Play3D($"Audio/weapons/Bullet_Impact_Flesh_{idx:D2}.mp3", position, volume: 0.5f);
     }
 
     private void ApplyDamage(JoltPhysicsSharp.BodyID bodyId, Vector3 hitPos, Vector3 direction)

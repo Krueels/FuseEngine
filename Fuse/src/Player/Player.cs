@@ -443,6 +443,7 @@ public class Player : IDisposable
 
     public void SetSpeed(float speed) => _maxSpeedGround = speed;
     public float Speed => _maxSpeedGround;
+    public float CurrentMaxSpeed => _maxSpeedGround * (_isSprinting ? _sprintSpeedMul : _isCrouching ? _crouchSpeedMul : 1.0f);
     public void SetFlashlight(Light light) => _flashlight = light;
     public void SetAudioSystem(Audio.AudioSystem audio) => _audio = audio;
 
