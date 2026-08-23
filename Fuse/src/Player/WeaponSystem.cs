@@ -106,7 +106,7 @@ public class WeaponSystem : IDisposable
         //Texuta padrão para ArmsMale
         if (_viewmodelModel != null)
         {
-            var armsTex = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/ArmsMale_ALB.png");
+            var armsTex = _assets.GetTexture(Bible.Tex(Bible.ArmsMale));
             foreach (var sub in _viewmodelModel.Submeshes)
             {
                 if (sub.Name == "ArmsMale" && armsTex != null)

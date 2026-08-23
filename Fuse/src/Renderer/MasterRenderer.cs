@@ -68,13 +68,13 @@ public class MasterRenderer
         _scrWidth = width; 
         _scrHeight = height;
 
-        _shader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/default.vert", $"{Fuse.ResPath.Path}/Shaders/default.frag")!;
-        _skyboxShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/skybox.vert", $"{Fuse.ResPath.Path}/Shaders/skybox.frag")!;
-        _shadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/shadow.vert", $"{Fuse.ResPath.Path}/Shaders/shadow.frag")!;
-        _pointShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/point_shadow.vert", $"{Fuse.ResPath.Path}/Shaders/point_shadow.frag")!;
-        _skinnedShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/skinned.vert", $"{Fuse.ResPath.Path}/Shaders/default.frag")!;
-        _skinnedShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/shadow_skinned.vert", $"{Fuse.ResPath.Path}/Shaders/shadow.frag")!;
-        _skinnedPointShadowShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/point_shadow_skinned.vert", $"{Fuse.ResPath.Path}/Shaders/point_shadow.frag")!;
+        _shader = assets.GetShader(Bible.Shader(Bible.ShaderDefaultVert), Bible.Shader(Bible.ShaderDefaultFrag))!;
+        _skyboxShader = assets.GetShader(Bible.Shader(Bible.ShaderSkyboxVert), Bible.Shader(Bible.ShaderSkyboxFrag))!;
+        _shadowShader = assets.GetShader(Bible.Shader(Bible.ShaderShadowVert), Bible.Shader(Bible.ShaderShadowFrag))!;
+        _pointShadowShader = assets.GetShader(Bible.Shader(Bible.ShaderPointShadowVert), Bible.Shader(Bible.ShaderPointShadowFrag))!;
+        _skinnedShader = assets.GetShader(Bible.Shader(Bible.ShaderSkinnedVert), Bible.Shader(Bible.ShaderDefaultFrag))!;
+        _skinnedShadowShader = assets.GetShader(Bible.Shader(Bible.ShaderSkinnedShadowVert), Bible.Shader(Bible.ShaderShadowFrag))!;
+        _skinnedPointShadowShader = assets.GetShader(Bible.Shader(Bible.ShaderPointShadowSkinnedVert), Bible.Shader(Bible.ShaderPointShadowFrag))!;
         
         _shadowMap = new ShadowMap(_gl, ShadowResolution * 2, ShadowResolution * 2);
         _spotShadowMap = new ShadowMap(_gl, ShadowResolution, ShadowResolution, 4);
@@ -85,8 +85,8 @@ public class MasterRenderer
         
         _skyBoxCubeMesh = assets.GetMesh("cube")!;
         
-        _crateTexture = assets.GetTexture($"{Fuse.ResPath.Path}/Textures/dev_measurecrate01.bmp");
-        _skyboxTexture = assets.GetTexture($"{Fuse.ResPath.Path}/Textures/skybox_1.png");
+        _crateTexture = assets.GetTexture(Bible.Tex(Bible.Crate));
+        _skyboxTexture = assets.GetTexture(Bible.Tex(Bible.Skybox));
         
         if (_skyboxTexture.ID != 0)
         {
@@ -97,7 +97,7 @@ public class MasterRenderer
         }
 
         // Billboard shader (muzzle flash) - carregar de arquivos
-        _bbShader = assets.GetShader($"{Fuse.ResPath.Path}/Shaders/billboard.vert", $"{Fuse.ResPath.Path}/Shaders/billboard.frag")!.ID;
+        _bbShader = assets.GetShader(Bible.Shader(Bible.ShaderBillboardVert), Bible.Shader(Bible.ShaderBillboardFrag))!.ID;
         _bbUView = _gl.GetUniformLocation(_bbShader, "uView");
         _bbUProj = _gl.GetUniformLocation(_bbShader, "uProj");
         _bbUWorldPos = _gl.GetUniformLocation(_bbShader, "uWorldPos");

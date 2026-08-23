@@ -50,7 +50,7 @@ namespace Fuse.Enemy
                 .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
                 .Build(physics);
 
-            var model = _assets.GetSkinnedModel($"{Fuse.ResPath.Path}/skinned_models/TrapKing.fbx");
+            var model = _assets.GetSkinnedModel(Bible.Model(Bible.TrapKingModel));
             if (model != null)
             {
                 _animator = new Animation.Animator(model.Skeleton);

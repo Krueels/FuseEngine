@@ -14,16 +14,16 @@ namespace Fuse.Player.Weapons;
 public sealed class GlockWeapon : IWeapon
 {
     public string Id => "glock";
-    public string ViewmodelModelPath => $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
+    public string ViewmodelModelPath => Bible.Model(Bible.GlockModel);
 
     private static readonly string[] _glockSubmeshes = ["GlockBarrel", "GlockMagazine", "GlockMagazine_02", "GlockReceiver", "GlockSlide", "GlockSlideUnLock", "GlockTrigger"];
-    public Dictionary<string, string> ViewmodelTextures => _glockSubmeshes.ToDictionary(s => s, _ => $"{Fuse.ResPath.Path}/Textures/weapons/glock/Glock_ALB.png");
+    public Dictionary<string, string> ViewmodelTextures => _glockSubmeshes.ToDictionary(s => s, _ => Bible.Tex(Bible.GlockAlbedo));
 
     // Muzzle flash
     public Vector3 MuzzleFlashOffset => new(0.1f, -0.08f, 0.58f);
     public Vector2 MuzzleFlashSize => new(0.5f, 0.5f);
     public float MuzzleFlashDuration => 0.02f;
-    public string MuzzleFlashTexturePath => $"{Fuse.ResPath.Path}/Textures/FX/muzzle_flash.png";
+    public string MuzzleFlashTexturePath => Bible.Tex(Bible.MuzzleFlash);
 
     public string ViewmodelIdleAnim => "Idle";
     public string ViewmodelFireAnim => "Fire1";
@@ -33,8 +33,8 @@ public sealed class GlockWeapon : IWeapon
     public string ViewmodelReloadEmptyAnim => "ReloadEmpty";
     public string ViewmodelDrawAnim => "Draw";
 
-    public string ReloadAudioPath => $"{Fuse.ResPath.Path}/Audio/weapons/glock/Glock_Reload.wav";
-    public string ReloadEmptyAudioPath => $"{Fuse.ResPath.Path}/Audio/weapons/glock/Glock_ReloadEmpty.wav";
+    public string ReloadAudioPath => Bible.Audio(Bible.GlockReload);
+    public string ReloadEmptyAudioPath => Bible.Audio(Bible.GlockReloadEmpty);
 
     public float FireRate => 12.0f;      // 720 RPM
     public float Damage => 25f;

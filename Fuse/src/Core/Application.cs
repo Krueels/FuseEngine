@@ -135,8 +135,8 @@ public unsafe class Application : IDisposable
         // HUD
         _hud = new UI.HUD();
         _fpsText = _hud.AddText("FPS: 0", UI.HUDAnchor.TopLeft, new Vector2(20, 20), 2.0f, new Vector4(0, 1, 1, 1));
-        var crosshairTexture = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/crosshair.png");
-        var crosshairInteractTexture = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/crosshair_interact.png");
+        var crosshairTexture = _assets.GetTexture(Bible.Tex(Bible.Crosshair));
+        var crosshairInteractTexture = _assets.GetTexture(Bible.Tex(Bible.CrosshairInteract));
         _crosshairNode = _hud.AddImage(crosshairTexture, UI.HUDAnchor.Center, Vector2.Zero, new Vector2(8, 8));
         _weaponDebugText = _hud.AddText("Weapon Debug", UI.HUDAnchor.TopLeft, new Vector2(20, 50), 1.0f, new Vector4(0, 1, 0, 1));
         
@@ -422,7 +422,7 @@ public unsafe class Application : IDisposable
                     _debugDrawer.DrawPlayerDebug(_player);
                     if (_enemySystem != null)
                     {
-                        var enemyTex = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/enemy_icon.png");
+                        var enemyTex = _assets.GetTexture(Bible.Tex(Bible.EnemyIcon));
                         foreach (var enemy in _enemySystem.GetEnemies())
                         {
                             if (!enemy.IsDead)
