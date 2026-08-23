@@ -4,6 +4,7 @@ using Fuse.Animation;
 using Fuse.AssetManagement;
 using Fuse.Audio;
 using Fuse.Core;
+using Fuse.Enemy;
 using Fuse.Input;
 using Fuse.Physics;
 using Fuse.Renderer;
@@ -19,6 +20,7 @@ public class WeaponSystem : IDisposable
     public AssetManager Assets => _assets;
     public Scene.SceneManager SceneManager => _sceneManager;
     public Vector3 PlayerVelocity => _player.LinearVelocity;
+    public Enemy.EnemySystem? EnemySystem {  get; set; }
 
     private readonly global::Fuse.Player.Player _player;
     private readonly Camera _camera;

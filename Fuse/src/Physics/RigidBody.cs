@@ -28,6 +28,7 @@ public class RigidBody
     private float _friction = 0.5f;
     private float _restitution = 0.3f;
     private bool _isTrigger;
+    private AllowedDOFs _allowedDOFs = AllowedDOFs.All;
 
     private ShapeType _shapeType;
     private Vector3 _boxHalfExtents = new(0.5f);
@@ -122,6 +123,7 @@ public class RigidBody
     public RigidBody SetTrigger(bool trigger) { _isTrigger = trigger; return this; }
     public RigidBody SetFriction(float f) { _friction = f; return this; }
     public RigidBody SetRestitution(float r) { _restitution = r; return this; }
+    public RigidBody SetAllowedDOFs(AllowedDOFs dofs) { _allowedDOFs = dofs; return this; }
 
     public void Build(PhysicsWorld world)
     {
@@ -257,6 +259,8 @@ public class RigidBody
 
         if (_isTrigger)
             settings.IsSensor = true;
+
+        settings.AllowedDOFs = _allowedDOFs;
 
         if (motionType == MotionType.Dynamic)
         {

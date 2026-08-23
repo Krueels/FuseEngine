@@ -5,6 +5,7 @@ using Fuse.Physics;
 using Fuse.Renderer;
 using Fuse.Player;
 using Fuse.Player.Weapons;
+using Fuse.Enemy;
 using JoltPhysicsSharp;
 using Silk.NET.OpenGL;
 using System.Drawing.Printing;
@@ -33,6 +34,7 @@ public unsafe class Application : IDisposable
     private Player.PickupController _pickup = null!;
     private Renderer.Light _flashlight = null!;
     private Player.WeaponSystem _weaponSystem = null!;
+    private Enemy.EnemySystem _enemySystem = null!;
 
     // UI & Debug
     private Renderer.UIRenderer _ui = null!;
@@ -81,6 +83,7 @@ public unsafe class Application : IDisposable
         _assets = new AssetManagement.AssetManager(gl);
         _renderer = new Renderer.MasterRenderer(gl);
         _sceneManager = new Scene.SceneManager(_physics, _assets);
+        _enemySystem = new Enemy.EnemySystem(_physics, _sceneManager, _assets);
         _debugDrawer = new Debug.DebugDrawer(gl);
 
         // Audio
@@ -146,12 +149,17 @@ public unsafe class Application : IDisposable
         // Weapon System
         _weaponSystem = new Player.WeaponSystem(_player, _player.Camera, _physics, _assets, _audio, _sceneManager);
         _weaponSystem.RegisterWeapon(new GlockWeapon());
+        _weaponSystem.EnemySystem = _enemySystem;
 
         // Default Map Loading
         LoadMap(initialMap, OnLoadProgress);
         _sceneManager.ActiveScene.AddLight(_flashlight);
 
         _weaponSystem.Equip("glock");
+
+        //spawn inimigo teste
+        _enemySystem.SpawnEnemy(new Vector3(0, 1, 5), 50);
+
         RegisterWindowCallbacks();
 
         _lastTime = _window.GlfwApi.GetTime();
@@ -337,6 +345,7 @@ public unsafe class Application : IDisposable
                     _sceneManager.Update(dt);
                     _weaponSystem?.Update(dt);
                     _weaponSystem?.PhysicsUpdate(dt);
+                    _enemySystem?.Update(dt);
 
                     if (_sceneManager.CheckPendingResets())
                     {
@@ -620,6 +629,28 @@ public unsafe class Application : IDisposable
 
             Physics.Explosion.Apply(_physics, target, 105f, 10000.0f, _audio);
         }
+
+        if (Input.Input.KeyPressed(KeyCodes.J))
+        {
+            var cam = _player.Camera;
+            var origin = cam.Position;
+            var front = cam.Front;
+            float maxDist = 30f;
+            var dirScaled = front * maxDist;
+            var ray = new Ray(ref origin, ref dirScaled);
+
+            using var bpFilter = new DefaultBroadPhaseLayerFilter();
+            using var olFilter = new DefaultObjectLayerFilter();
+            using var bodyFilter = new DefaultBodyFilter();
+
+            Vector3 spawnPos;
+            if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+                spawnPos = origin + front * maxDist * hit.Fraction - front * 1f; // 0.5f para trás da superfície
+            else
+                spawnPos = origin + front * maxDist;
+
+            _enemySystem?.SpawnEnemy(spawnPos, 50f);
+        }
     }
 
     private unsafe void TakeScreenshot(GL gl)
@@ -766,6 +797,7 @@ public unsafe class Application : IDisposable
     public void Dispose()
     {
         _sceneManager.Dispose();
+        _enemySystem?.Dispose();
         _weaponSystem?.Dispose();
         _console.StopCapture();
         _player.Dispose();

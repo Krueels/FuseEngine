@@ -301,8 +301,15 @@ public sealed class GlockWeapon : IWeapon
         Logger.Info($"[Glock] Hit at {position}, normal {normal}");
     }
 
-    private void ApplyDamage(BodyID bodyId, Vector3 hitPos, Vector3 direction)
+    private void ApplyDamage(JoltPhysicsSharp.BodyID bodyId, Vector3 hitPos, Vector3 direction)
     {
+        // Apply damage at enemy
+        if (_system?.EnemySystem?.TryGetEnemy(bodyId, out var enemy) == true)
+        {
+            enemy.TakeDamage(Damage, hitPos, direction, _system.Physics);
+            return; // não aplicar impulso em inimigos
+        }
+        
         // Try to get interactable
         if (_system.Physics.BodyInterface.IsAdded(bodyId))
         {

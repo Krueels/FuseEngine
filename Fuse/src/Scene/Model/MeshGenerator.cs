@@ -231,6 +231,150 @@ public static class MeshGenerator
         result = (-p1.D * Vector3.Cross(n2, n3) - p2.D * Vector3.Cross(n3, n1) - p3.D * Vector3.Cross(n1, n2)) / det;
         return true;
     }
+
+    public static MeshData GenerateCapsule(float radius, float height, int rings = 12)
+    {
+        var vertices = new List<Vertex>();
+        var indices = new List<uint>();
+
+        float halfHeight = height * 0.5f;
+        int segments = rings;
+        int hemisphereRings = segments / 2;
+
+        // 1. Top hemisphere
+        for (int i = 0; i <= hemisphereRings; i++)
+        {
+            float v = (float)i / hemisphereRings;
+            float phi = (1.0f - v) * MathF.PI * 0.5f;
+            float y = halfHeight + radius * MathF.Sin(phi);
+            float r = radius * MathF.Cos(phi);
+
+            for (int j = 0; j < segments; j++)
+            {
+                float u = (float)j / segments;
+                float theta = u * MathF.PI * 2f;
+                float x = r * MathF.Cos(theta);
+                float z = r * MathF.Sin(theta);
+
+                Vector3 pos = new(x, y, z);
+                Vector3 normal = Vector3.Normalize(new Vector3(x, radius * MathF.Sin(phi), z));
+
+                vertices.Add(new Vertex
+                {
+                    Position = pos,
+                    Normal = normal,
+                    TexCoord = new Vector2(u, v * 0.25f)
+                });
+            }
+        }
+
+        // 2. Cylinder body
+        int cylinderRings = 4;
+        for (int i = 0; i <= cylinderRings; i++)
+        {
+            float v = (float)i / cylinderRings;
+            float y = halfHeight - v * height;
+
+            for (int j = 0; j < segments; j++)
+            {
+                float u = (float)j / segments;
+                float theta = u * MathF.PI * 2f;
+                float x = radius * MathF.Cos(theta);
+                float z = radius * MathF.Sin(theta);
+
+                Vector3 pos = new(x, y, z);
+                Vector3 normal = Vector3.Normalize(new Vector3(x, 0, z));
+
+                vertices.Add(new Vertex
+                {
+                    Position = pos,
+                    Normal = normal,
+                    TexCoord = new Vector2(u, 0.25f + v * 0.5f)
+                });
+            }
+        }
+
+        // 3. Bottom hemisphere
+        for (int i = 0; i <= hemisphereRings; i++)
+        {
+            float v = (float)i / hemisphereRings;
+            float phi = -v * MathF.PI * 0.5f;
+            float y = -halfHeight + radius * MathF.Sin(phi);
+            float r = radius * MathF.Cos(phi);
+
+            for (int j = 0; j < segments; j++)
+            {
+                float u = (float)j / segments;
+                float theta = u * MathF.PI * 2f;
+                float x = r * MathF.Cos(theta);
+                float z = r * MathF.Sin(theta);
+
+                Vector3 pos = new(x, y, z);
+                Vector3 normal = Vector3.Normalize(new Vector3(x, radius * MathF.Sin(phi), z));
+
+                vertices.Add(new Vertex
+                {
+                    Position = pos,
+                    Normal = normal,
+                    TexCoord = new Vector2(u, 0.75f + v * 0.25f)
+                });
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Conexão dos Triângulos (Winding order unificado: a -> b -> c)
+        // -------------------------------------------------------------
+        int vertsPerRing = segments;
+
+        // Top hemisphere connection
+        for (int ring = 0; ring < hemisphereRings; ring++)
+        {
+            for (int seg = 0; seg < segments; seg++)
+            {
+                int a = ring * vertsPerRing + seg;
+                int b = ring * vertsPerRing + (seg + 1) % segments;
+                int c = (ring + 1) * vertsPerRing + seg;
+                int d = (ring + 1) * vertsPerRing + (seg + 1) % segments;
+
+                indices.Add((uint)a); indices.Add((uint)b); indices.Add((uint)c);
+                indices.Add((uint)b); indices.Add((uint)d); indices.Add((uint)c);
+            }
+        }
+
+        // Cylinder body connection
+        int cylinderStart = (hemisphereRings + 1) * vertsPerRing;
+        for (int ring = 0; ring < cylinderRings; ring++)
+        {
+            for (int seg = 0; seg < segments; seg++)
+            {
+                int a = cylinderStart + ring * vertsPerRing + seg;
+                int b = cylinderStart + ring * vertsPerRing + (seg + 1) % segments;
+                int c = cylinderStart + (ring + 1) * vertsPerRing + seg;
+                int d = cylinderStart + (ring + 1) * vertsPerRing + (seg + 1) % segments;
+
+                indices.Add((uint)a); indices.Add((uint)b); indices.Add((uint)c);
+                indices.Add((uint)b); indices.Add((uint)d); indices.Add((uint)c);
+            }
+        }
+
+        // Bottom hemisphere connection
+        int bottomStart = cylinderStart + (cylinderRings + 1) * vertsPerRing;
+        for (int ring = 0; ring < hemisphereRings; ring++)
+        {
+            for (int seg = 0; seg < segments; seg++)
+            {
+                int a = bottomStart + ring * vertsPerRing + seg;
+                int b = bottomStart + ring * vertsPerRing + (seg + 1) % segments;
+                int c = bottomStart + (ring + 1) * vertsPerRing + seg;
+                int d = bottomStart + (ring + 1) * vertsPerRing + (seg + 1) % segments;
+
+                indices.Add((uint)a); indices.Add((uint)b); indices.Add((uint)c);
+                indices.Add((uint)b); indices.Add((uint)d); indices.Add((uint)c);
+            }
+        }
+
+        return new MeshData(vertices.ToArray(), indices.ToArray());
+    }
 }
 
 public class MeshData
