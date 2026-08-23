@@ -379,6 +379,19 @@ public unsafe class Application : IDisposable
                     _debugDrawer.Clear();
                     _sceneManager.DrawDebug(_debugDrawer);
                     _debugDrawer.DrawPlayerDebug(_player);
+                    if (_enemySystem != null)
+                    {
+                        var enemyTex = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/UI/enemy_icon.png");
+                        foreach (var enemy in _enemySystem.GetEnemies())
+                        {
+                            if (!enemy.IsDead)
+                            {
+                                var pos = enemy.Entity.Transform.Position;
+                                pos.Y += 2.0f; // acima da cápsula
+                                _debugDrawer.DrawBillboard(enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
+                            }
+                        }
+                    }
                     foreach (var light in _sceneManager.ActiveScene.Lights)
                         _debugDrawer.DrawLight(light);
                     float aspect = (float)_scrWidth / _scrHeight;

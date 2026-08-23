@@ -16,6 +16,12 @@ public unsafe class DebugDrawer : IDisposable
     private int _uProj = -1;
     private bool _enabled;
 
+    // Billboard
+    private uint _billboardShader;
+    private uint _billboardVao;
+    private uint _billboardVbo;
+    private int _billboardTexture = -1;
+
     private readonly List<Line> _lines = [];
 
     private struct Line
@@ -24,6 +30,16 @@ public unsafe class DebugDrawer : IDisposable
         public Vector3 To;
         public Vector3 Color;
     }
+
+    private struct BillboardQuad
+    {
+        public uint Texture;
+        public Vector3 WorldPos;
+        public Vector2 Size;
+        public Vector4 Color;
+    }
+
+    private readonly List<BillboardQuad> _billboardQuads = [];
 
     [StructLayout(LayoutKind.Sequential)]
     private struct DebugVert
@@ -81,6 +97,47 @@ public unsafe class DebugDrawer : IDisposable
 
         _uView = gl.GetUniformLocation(_shader, "uView");
         _uProj = gl.GetUniformLocation(_shader, "uProj");
+
+        // Billboard shader
+        string bbVs = """
+            #version 330 core
+            layout(location = 0) in vec2 aPos;
+            layout(location = 1) in vec2 aUV;
+            out vec2 vUV;
+            uniform vec3 uWorldPos;
+            uniform vec2 uSize;
+            uniform mat4 uView;
+            uniform mat4 uProj;
+            void main() {
+                vUV = aUV;
+                vec3 right = vec3(uView[0][0], uView[1][0], uView[2][0]);
+                vec3 up = vec3(uView[0][1], uView[1][1], uView[2][1]);
+                vec3 pos = uWorldPos + right * aPos.x * uSize.x + up * aPos.y * uSize.y;
+                gl_Position = uProj * uView * vec4(pos, 1.0);
+            }
+            """;
+        string bbFs = """
+            #version 330 core
+            in vec2 vUV;
+            out vec4 FragColor;
+            uniform sampler2D uTexture;
+            uniform vec4 uColor;
+            void main() {
+                FragColor = texture(uTexture, vUV) * uColor;
+            }
+            """;
+
+        uint bbVsId = CompileShader(ShaderType.VertexShader, bbVs);
+        uint bbFsId = CompileShader(ShaderType.FragmentShader, bbFs);
+        _billboardShader = gl.CreateProgram();
+        gl.AttachShader(_billboardShader, bbVsId);
+        gl.AttachShader(_billboardShader, bbFsId);
+        gl.LinkProgram(_billboardShader);
+        gl.DeleteShader(bbVsId);
+        gl.DeleteShader(bbFsId);
+
+        _billboardVao = gl.GenVertexArray();
+        _billboardVbo = gl.GenBuffer();
 
         _vao = gl.GenVertexArray();
         _vbo = gl.GenBuffer();
@@ -260,6 +317,66 @@ public unsafe class DebugDrawer : IDisposable
         }
     }
 
+    public void DrawBillboard(uint texture, Vector3 worldPos, Vector2 size, Vector4 color)
+    {
+        _billboardQuads.Add(new BillboardQuad { Texture = texture, WorldPos = worldPos, Size = size, Color = color });
+    }
+
+    private void FlushBillboards(Matrix4x4 view, Matrix4x4 proj)
+    {
+        if (_billboardQuads.Count == 0) return;
+
+        _gl.Enable(GLEnum.Blend);
+        _gl.BlendFunc(GLEnum.SrcAlpha, GLEnum.OneMinusSrcAlpha);
+        _gl.DepthMask(false);
+
+        float[] quadVerts = [
+            -0.5f, -0.5f,  0, 0,
+             0.5f, -0.5f,  1, 0,
+             0.5f,  0.5f,  1, 1,
+            -0.5f, -0.5f,  0, 0,
+             0.5f,  0.5f,  1, 1,
+            -0.5f,  0.5f,  0, 1,
+        ];
+
+        _gl.BindVertexArray(_billboardVao);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _billboardVbo);
+        fixed (float* ptr = quadVerts)
+        {
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(quadVerts.Length * sizeof(float)), ptr, BufferUsageARB.DynamicDraw);
+        }
+
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
+        _gl.EnableVertexAttribArray(1);
+        _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+        _gl.UseProgram(_billboardShader);
+
+        float[] viewArr = GetMatrixValues(view);
+        float[] projArr = GetMatrixValues(proj);
+        fixed (float* vp = viewArr, pp = projArr)
+        {
+            _gl.UniformMatrix4(_gl.GetUniformLocation(_billboardShader, "uView"), 1, false, vp);
+            _gl.UniformMatrix4(_gl.GetUniformLocation(_billboardShader, "uProj"), 1, false, pp);
+        }
+
+        foreach (var q in _billboardQuads)
+        {
+            _gl.Uniform3(_gl.GetUniformLocation(_billboardShader, "uWorldPos"), q.WorldPos.X, q.WorldPos.Y, q.WorldPos.Z);
+            _gl.Uniform2(_gl.GetUniformLocation(_billboardShader, "uSize"), q.Size.X, q.Size.Y);
+            _gl.Uniform4(_gl.GetUniformLocation(_billboardShader, "uColor"), q.Color.X, q.Color.Y, q.Color.Z, q.Color.W);
+            _gl.Uniform1(_gl.GetUniformLocation(_billboardShader, "uTexture"), 0);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, q.Texture);
+            _gl.DrawArrays(GLEnum.Triangles, 0, 6);
+        }
+
+        _gl.DepthMask(true);
+        _gl.Disable(GLEnum.Blend);
+        _gl.BindVertexArray(0);
+    }
+
     private void DrawCircleXZ(Vector3 center, float radius, Vector3 color, int segments = 24)
     {
         float step = MathF.PI * 2.0f / segments;
@@ -294,7 +411,11 @@ public unsafe class DebugDrawer : IDisposable
         }
     }
 
-    public void Clear() => _lines.Clear();
+    public void Clear()
+    {
+        _lines.Clear();
+        _billboardQuads.Clear();
+    }
 
     public void DrawPlayerDebug(Player.Player player)
     {
@@ -370,6 +491,7 @@ public unsafe class DebugDrawer : IDisposable
         _gl.DrawArrays(GLEnum.Lines, 0, (uint)verts.Length);
 
         _gl.BindVertexArray(0);
+        FlushBillboards(view, proj);
     }
 
     public void DrawCachedLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Vector3 scale, Vector3 color, Matrix4x4 view, Matrix4x4 proj)

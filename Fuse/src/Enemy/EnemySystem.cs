@@ -60,6 +60,8 @@ public sealed class EnemySystem : IDisposable
         return false;
     }
 
+    public IReadOnlyList<Enemy> GetEnemies() => _enemies;
+
     public void Dispose()
     {
         foreach (var e in _enemies) e.Dispose();
