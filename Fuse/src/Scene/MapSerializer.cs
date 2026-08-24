@@ -485,6 +485,13 @@ public static class MapSerializer
                     Logger.Warn($"Map load: texture file not found '{texPath}' for '{id}' - using fallback");
                     entity.Texture = null;
                 }
+
+                // Auto-detect emissive texture (emi_ prefix)
+                if (texPath.Contains("emi_", StringComparison.OrdinalIgnoreCase))
+                {
+                    entity.EmissiveColor = Vector3.One;
+                    entity.EmissiveStrength = 2.0f;
+                }
             }
 
             if (obj.TryGetPropertyValue("interactable", out var interactableNode))

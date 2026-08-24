@@ -23,7 +23,7 @@ public static unsafe class SkinnedModelLoader
             return null;
         }
 
-// Hell2025 usa aiProcess_GlobalScale para Glock (NEW_RIG_FILE) — normaliza unidades do FBX
+        // Hell2025 usa aiProcess_GlobalScale para Glock (NEW_RIG_FILE) — normaliza unidades do FBX
         // entre nós, canais de animação e offsets. Sem isso, canais e nós ficam em escalas diferentes.
         const uint GlobalScale = 0x8000000u;
         var scene = Api.ImportFile(path,
@@ -286,11 +286,22 @@ public static unsafe class SkinnedModelLoader
             if (unresolved.Count > 0)
                 Logger.Warn($"[Skinned] Clip '{name}' unresolved nodes: {string.Join(", ", unresolved)}");
 
+            double ticksPerSecond = anim->MTicksPerSecond;
+            double durationSeconds = ticksPerSecond > 0 ? duration / ticksPerSecond : 0;
+            Logger.Info($"[AnimLoad] Clip='{name}' DurationTicks={duration} TicksPerSecond={ticksPerSecond} CalcDurationSec={durationSeconds:F3} Loop={name is "Idle" or "Walk"}");
+            if (ticksPerSecond <= 0 || ticksPerSecond > 1000 || durationSeconds < 0.1 || durationSeconds > 60) // valores absurdos = normalizar 
+            {
+                ticksPerSecond = 30.0f;
+                Logger.Warn($"[AnimLoad] Normalizando TicksPerSecond para 30 (original={anim->MTicksPerSecond})");
+            }
+                
+
+
             result.Add(new AnimationClip
             {
                 Name = name,
                 DurationTicks = duration,
-                TicksPerSecond = anim->MTicksPerSecond,
+                TicksPerSecond = ticksPerSecond,
                 Channels = [.. channels],
                 Loop = name is "Idle" or "Walk",
             });
@@ -343,5 +354,57 @@ public static unsafe class SkinnedModelLoader
             return null;
 
         return resolver(candidate);
+    }
+
+    /// <summary>
+    /// Carrega animações de um FBX separado e mergea no modelo existente.
+    /// Requer que o skeleton/node hierarchy seja IDÊNTICO (mesmos nomes de bones).
+    /// </summary>
+    public static void MergeAnimationsFromFile(SkinnedModel model, string animFbxPath)
+    {
+        if (!File.Exists(animFbxPath))
+        {
+            Logger.Error($"Animation FBX not found: {animFbxPath}");
+            return;
+        }
+
+        var scene = Api.ImportFile(animFbxPath,
+            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords) | 0x8000000u);
+
+        if (scene == null || scene->MRootNode == null)
+        {
+            Logger.Error($"Failed to load animation FBX: {animFbxPath}");
+            return;
+        }
+
+        // Build nodeMap do modelo DESTINO (já existe no skeleton)
+        var destNodeMap = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < model.Skeleton.Nodes.Length; i++)
+        {
+            destNodeMap[model.Skeleton.Nodes[i].Name] = i;
+        }
+
+        // Extrai animações do arquivo de animação
+        var newClips = BuildAnimations(scene, destNodeMap);
+
+        foreach (var clip in newClips)
+        {
+            if (model.Clips.ContainsKey(clip.Name))
+            {
+                Logger.Warn($"[MergeAnimations] Clip '{clip.Name}' já existe, sobrescrevendo...");
+            }
+            model.Clips[clip.Name] = clip;
+            Logger.Info($"[MergeAnimations] Adicionado clip: '{clip.Name}' ({clip.DurationSeconds:F2}s, Loop={clip.Loop})");
+        }
+
+        Api.ReleaseImport(scene);
+
+        // Atualiza DefaultClipName se não tinha
+        if (string.IsNullOrEmpty(model.DefaultClipName) && model.Clips.Count > 0)
+        {
+            model.DefaultClipName = model.Clips.Keys.FirstOrDefault(k => k.Contains("Idle", StringComparison.OrdinalIgnoreCase))
+                                 ?? model.Clips.Keys.FirstOrDefault(k => k.Contains("Walk", StringComparison.OrdinalIgnoreCase))
+                                 ?? model.Clips.Keys.FirstOrDefault() ?? "";
+        }
     }
 }

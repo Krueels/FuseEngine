@@ -16,6 +16,13 @@ public class Camera
     private float _fov = 60.0f;
     private float _mouseSensitivity = 0.1f;
 
+    // Recoil
+    private float _recoilYaw;
+    private float _recoilPitch;
+    private float _recoilRoll;
+    private float _recoilRecoverySpeed = 15.0f;     // yaw/roll recovery
+    // Pitch NÃO recupera automaticamente - player deve compensar manualmente
+
     public Camera(Vector3 position)
     {
         _position = position;
@@ -35,13 +42,13 @@ public class Camera
     public float Pitch => _pitch;
     public float Roll { get => _roll; set => _roll = value; }
 
-    // Quaternion representing the camera's full orientation (yaw + pitch + roll)
+    // Quaternion representing the camera's full orientation (yaw + pitch + roll + recoil)
     // Note: _yaw increases when turning RIGHT (CW), but standard math uses CCW positive.
     // Negate yaw to match standard math convention (CCW = positive).
     public Quaternion Rotation => Quaternion.CreateFromYawPitchRoll(
-        float.DegreesToRadians(-_yaw),
-        float.DegreesToRadians(_roll),
-        float.DegreesToRadians(-_pitch));
+        float.DegreesToRadians(-(_yaw + _recoilYaw)),
+        float.DegreesToRadians(_roll + _recoilRoll),
+        float.DegreesToRadians(-(_pitch + _recoilPitch)));
 
     public float FOV { get => _fov; set => _fov = value; }
 
@@ -87,21 +94,71 @@ public class Camera
     {
         _yaw += deltaX * _mouseSensitivity;
         _pitch += (invertY ? deltaY : -deltaY) * _mouseSensitivity;
-        _pitch = float.Clamp(_pitch, -89.0f, 89.0f);
+        
+        // Clamp TOTAL pitch (base + recoil) to avoid lockup
+        float totalPitch = _pitch + _recoilPitch;
+        totalPitch = float.Clamp(totalPitch, -89.0f, 89.0f);
+        _pitch = totalPitch - _recoilPitch;
+        
         UpdateVectors();
     }
 
     private void UpdateVectors()
     {
-        float yawRad = float.DegreesToRadians(_yaw);
-        float pitchRad = float.DegreesToRadians(_pitch);
+        // Combinar yaw/pitch base com recoil
+        float totalYaw = _yaw + _recoilYaw;
+        float totalPitch = _pitch + _recoilPitch;
+
+        float yawRad = float.DegreesToRadians(totalYaw);
+        float pitchRad = float.DegreesToRadians(totalPitch);
 
         _front.X = MathF.Cos(yawRad) * MathF.Cos(pitchRad);
         _front.Y = MathF.Sin(pitchRad);
         _front.Z = MathF.Sin(yawRad) * MathF.Cos(pitchRad);
         _front = Vector3.Normalize(_front);
 
+        // Roll (base + recoil)
+        float totalRoll = _roll + _recoilRoll;
+        float rollRad = float.DegreesToRadians(totalRoll);
+
         _right = Vector3.Normalize(Vector3.Cross(_front, WorldUp));
         _up = Vector3.Normalize(Vector3.Cross(_right, _front));
+
+        // Aplicar roll no up vector
+        if (MathF.Abs(totalRoll) > 0.001f)
+        {
+            _up = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, rollRad));
+            _right = Vector3.Normalize(Vector3.Cross(_front, _up));
+        }
     }
+
+    // === RECOIL SYSTEM ===
+    public void AddRecoil(float yawKick, float pitchKick, float rollKick = 0f)
+    {
+        _recoilYaw += yawKick;
+        _recoilPitch += pitchKick;
+        _recoilRoll += rollKick;
+        UpdateVectors(); // Aplica imediatamente para o frame atual
+    }
+
+    public void UpdateRecoil(float dt)
+    {
+        // APENAS yaw e roll recuperam automaticamente
+        // Pitch NÃO recupera - player deve compensar manualmente
+        if (_recoilYaw != 0 || _recoilRoll != 0)
+        {
+            float yawRollRecovery = _recoilRecoverySpeed * dt;
+            _recoilYaw = MathF.Abs(_recoilYaw) <= yawRollRecovery ? 0 : _recoilYaw - MathF.Sign(_recoilYaw) * yawRollRecovery;
+            _recoilRoll = MathF.Abs(_recoilRoll) <= yawRollRecovery ? 0 : _recoilRoll - MathF.Sign(_recoilRoll) * yawRollRecovery;
+            UpdateVectors();
+        }
+    }
+
+    // Getters para ler o recoil atual (para viewmodel sync)
+    public float RecoilYaw => _recoilYaw;
+    public float RecoilPitch => _recoilPitch;
+    public float RecoilRoll => _recoilRoll;
+
+    // Aplicar recoil na Rotation property (já incluso no UpdateVectors acima)
+    // O recoil já afeta _front/_right/_up via UpdateVectors
 }

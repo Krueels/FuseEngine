@@ -4,7 +4,7 @@ namespace Fuse.Renderer.PostProcess;
 
 public sealed class PostProcessSettings
 {
-    public bool Enabled = true;
+    public bool Enabled = false;
 
     // Exposure / Tonemap
     public float Exposure = 0.58f;
@@ -12,12 +12,12 @@ public sealed class PostProcessSettings
 
     // Bloom
     public bool BloomEnabled = true;
-    public float BloomStrength = 1.0f;
+    public float BloomStrength = 2.0f;
     public float BloomThreshold = 1.0f;
-    public float BloomKnee = 0.1f;
+    public float BloomKnee = 0.0f;
 
-    // Kawase Blur (substitui gaussian blur)
-    public int KawaseRadius = 1;      // 1=pequeno, 2=médio, 3=grande
+    // Kawase Blur
+    public int KawaseRadius = 2;      // 1=pequeno, 2=médio, 3=grande
     public int KawaseIterations = 4;  // 1-2 iterações (cada iteração = 2 passes Kawase)
 
     // Bloom Expansion

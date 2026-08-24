@@ -57,6 +57,11 @@ uniform vec3 uLightDir;     // direção da luz (apontando PARA a fonte)
 uniform vec3 uLightColor;
 uniform float uAmbient;
 
+// Emissive
+uniform bool uIsEmissive;
+uniform vec3 uEmissiveColor;
+uniform float uEmissiveStrength;
+
 // Matriz de Poisson Disk para amostragem difusa (Soft Shadows)
 const vec2 poissonDisk[16] = vec2[]( 
     vec2( -0.94201624, -0.39906216 ), vec2( 0.94558609, -0.76890725 ), 
@@ -279,6 +284,11 @@ void main() {
         
         result += (1.0 - spotShadow) * (diff + spec * 0.5) * col * atten * spotFactor * color;
     }
-    
+
+    // Emissive
+    if (uIsEmissive) {
+        result += uEmissiveColor * uEmissiveStrength;    
+    }
+
     fragColor = vec4(result, 1.0);
 }

@@ -24,10 +24,10 @@ public sealed class AnimationClip
     public required string Name { get; init; }
     public double DurationTicks { get; init; }
     public double TicksPerSecond { get; init; }
+    public bool Loop { get; set; } = false;
     public AnimationChannel[] Channels { get; init; } = [];
 
     public double DurationSeconds => TicksPerSecond > 0 ? DurationTicks / TicksPerSecond : 0;
-    public bool Loop { get; init; } = false;
 
     public void Apply(double timeSeconds, Skeleton skeleton)
     {

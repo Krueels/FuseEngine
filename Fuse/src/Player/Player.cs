@@ -66,7 +66,7 @@ public class Player : IDisposable
     public Player(Physics.PhysicsWorld world, Vector3 position)
     {
         _world = world;
-        _camera = new Camera(position) { FOV = 75 };
+        _camera = new Camera(position) { FOV = 70 };
         _objectLayer = world.ObjectLayer;
         _bli = world.Native.BodyLockInterface;
 
@@ -130,6 +130,8 @@ public class Player : IDisposable
 
         if (!imguiWantsKeyboard)
             ProcessInput(dt);
+
+        _camera.UpdateRecoil(dt);
         
         bool isGrounded = _character.GroundState == GroundState.OnGround;
 

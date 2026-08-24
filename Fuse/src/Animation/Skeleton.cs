@@ -19,6 +19,7 @@ public sealed class Skeleton
     public Bone[] Bones { get; }
     public Matrix4x4 GlobalInverse { get; }
 
+
     public Skeleton(AnimationNode[] nodes, Dictionary<string, int> nodeMap, Bone[] bones, Matrix4x4 globalInverse)
     {
         Nodes = nodes;

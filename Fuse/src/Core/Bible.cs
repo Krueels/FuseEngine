@@ -22,7 +22,11 @@ public static class Bible
 
     // Models
     public const string GlockModel = "skinned_models/Glock.fbx";
-    public const string TrapKingModel = "skinned_models/TrapKing.fbx";
+    public const string UniSexGuy = "skinned_models/UniSexGuyScaled.fbx";
+
+    // UnisexGuy
+    public const string UniSexBody = "UniSexGuyBody_ALB.png";
+    public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
 
     // Shaders
     public const string ShaderDefaultVert = "Shaders/default.vert";
@@ -71,6 +75,10 @@ public static class Bible
         assets.GetTexture(Tex(Skybox));
         assets.GetTexture(Tex(Crate));
         assets.GetSkinnedModel(Model(GlockModel));
-        assets.GetSkinnedModel(Model(TrapKingModel));
+        assets.GetSkinnedModel(Model(UniSexGuy));
     }
+
+    public static bool IsEmissiveTexture(string texturePath)
+        => !string.IsNullOrEmpty(texturePath) &&
+           texturePath.Contains("emi_", StringComparison.OrdinalIgnoreCase);
 }

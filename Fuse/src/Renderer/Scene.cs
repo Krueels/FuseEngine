@@ -42,6 +42,10 @@ public class Entity
     public Quaternion InitialRelativeRotation { get; set; } = Quaternion.Identity;
     public System.Text.Json.Nodes.JsonObject? MapData { get; set; }
     public Light? AttachedLight { get; set; }
+
+    // Emissive material
+    public Vector3 EmissiveColor { get; set; } = Vector3.One;
+    public float EmissiveStrength { get; set; } = 1.0f;
 }
 
 public class Scene
@@ -276,6 +280,19 @@ public class Scene
             else
             {
                 shader.SetBool("uUseTexture", false);
+            }
+
+            // Emissive
+            bool isEmissive = tex != null &&
+                !string.IsNullOrEmpty(e.TexturePath) &&
+                e.TexturePath.Contains("emi_", StringComparison.OrdinalIgnoreCase);
+
+            shader.SetBool("uIsEmissive", isEmissive);
+            if (isEmissive)
+            {
+                Vector3 dominantColor = tex.GetDominantColor();
+                shader.SetVec3("uEmissiveColor", dominantColor);
+                shader.SetFloat("uEmissiveStrength", e.EmissiveStrength);
             }
 
             e.Mesh.Draw();

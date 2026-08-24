@@ -50,10 +50,28 @@ namespace Fuse.Enemy
                 .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
                 .Build(physics);
 
-            var model = _assets.GetSkinnedModel(Bible.Model(Bible.TrapKingModel));
+            var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
             if (model != null)
             {
+                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model("Animations/UnisexGuy_AKS74U_Idle.fbx"));
+
+                model.HiddenSubmeshes.Add("Glock");
+                model.HiddenSubmeshes.Add("Shotgun_Mesh");
+                model.HiddenSubmeshes.Add("SM_Knife_01");
+
+                var bodyTex = _assets.GetTexture(Bible.Tex(Bible.UniSexBody));
+                var eyesTex = _assets.GetTexture(Bible.Tex(Bible.UniSexEyes));
+
+                foreach (var sub in model.Submeshes)
+                {
+                    if (sub.Name == "CC_Base_Body" && bodyTex != null)
+                        sub.Texture = bodyTex;
+                    else if (sub.Name == "CC_Base_Eye" && eyesTex != null)
+                        sub.Texture = eyesTex;
+                }
+
                 _animator = new Animation.Animator(model.Skeleton);
+                _animator.Speed = 0.5f;
                 model.Link(_animator);
 
                 Entity = sceneManager.ActiveScene.Add(null, Id, Body);
@@ -61,11 +79,15 @@ namespace Fuse.Enemy
                 Entity.Animator = _animator;
                 Entity.Visible = true;
                 Entity.ModelOffset = new System.Numerics.Vector3(0f, -1.25f, 0f);
-                Entity.ModelScale = new System.Numerics.Vector3(1.4f, 1.4f, 1.4f);
+                Entity.ModelScale = new System.Numerics.Vector3(145.4f, 145.4f, 145.4f);
 
                 // Play idle se existir
-                //if (!string.IsNullOrEmpty(model.DefaultClipName))
-                //    _animator.Play(model.DefaultClipName);
+                if (!string.IsNullOrEmpty(model.DefaultClipName))
+                {
+                    var idleClip = _animator.GetClip(model.DefaultClipName);
+                    idleClip.Loop = true;
+                    _animator.Play(model.DefaultClipName);
+                }
             }
             else
             {
@@ -98,6 +120,8 @@ namespace Fuse.Enemy
         public void Update(float dt, PhysicsWorld physics)
         {
             if (IsDead || !_initialized) return;
+
+            _animator?.Update(dt);
         }
 
         public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)

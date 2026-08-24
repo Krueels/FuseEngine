@@ -45,6 +45,12 @@ public sealed class GlockWeapon : IWeapon
     public bool IsAutomatic => false;    // Semi-auto
     public float ReloadTime => 1.67f;
 
+    // Recoil - ajustável no ImGui depois
+    public float RecoilYawKick => 0.5f;      // kick horizontal aleatório ±
+    public float RecoilPitchKick => 1.2f;   // sobe (negativo = pitch up)
+    public float RecoilRollKick => 1.3f;     // leve roll lateral
+    public float RecoilRecoverySpeed => 18.0f; // recuperação rápida
+
     private WeaponSystem? _system;
     private float _nextFireTime;
     private bool _isReloading;
@@ -138,7 +144,7 @@ public sealed class GlockWeapon : IWeapon
         if (_animator != null)
         {
             if (crossfade)
-                _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.2f);
+                _animator.CrossFade(_wasMoving ? "Walk" : "Idle", 0.5f);
             else
                 _animator.Play(_wasMoving ? "Walk" : "Idle");
             _animator.Speed = _wasMoving ? GetWalkAnimSpeed(speed) : 1.0f;
@@ -172,6 +178,16 @@ public sealed class GlockWeapon : IWeapon
             _animator.Play(anim);
             _animState = AnimState.Firing;
             _animEndTime = (float)(_animator.CurrentClip?.DurationSeconds ?? 0.2f);
+        }
+
+        // NOVO: Aplicar recoil na câmera via WeaponSystem
+        if (_system != null)
+        {
+            var cam = _system.Player.Camera;
+            float yawKick = (float)(_fireRng.NextDouble() - 0.5) * 2 * RecoilYawKick;
+            float pitchKick = RecoilPitchKick;
+            float rollKick = (float)(_fireRng.NextDouble() - 0.5) * 2 * RecoilRollKick;
+            cam.AddRecoil(yawKick, pitchKick, rollKick);
         }
 
         // Play fire sound
@@ -265,7 +281,7 @@ public sealed class GlockWeapon : IWeapon
                 {
                     if (_animator != null)
                     {
-                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.2f);
+                        _animator.CrossFade(isMoving ? "Walk" : "Idle", 0.5f);
                         if (isMoving)
                             _animator.Speed = GetWalkAnimSpeed(speed);
                         else

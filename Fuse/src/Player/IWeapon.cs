@@ -16,6 +16,12 @@ public interface IWeapon : IDisposable
     string ViewmodelReloadEmptyAnim { get; }
     string ViewmodelDrawAnim { get; }
 
+    // Recoil
+    float RecoilYawKick { get; }      // quanto kick horizontal (graus)
+    float RecoilPitchKick { get; }    // quanto kick vertical (graus) - geralmente negativo (sobe)
+    float RecoilRollKick { get; }     // quanto roll (graus)
+    float RecoilRecoverySpeed { get; } // override da câmera (opcional)
+
     Dictionary<string, string> ViewmodelTextures { get; }
 
     // Muzzle flash

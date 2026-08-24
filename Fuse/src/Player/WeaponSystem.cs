@@ -21,6 +21,7 @@ public class WeaponSystem : IDisposable
     public Scene.SceneManager SceneManager => _sceneManager;
     public Vector3 PlayerVelocity => _player.LinearVelocity;
     public Enemy.EnemySystem? EnemySystem {  get; set; }
+    public global::Fuse.Player.Player Player => _player;
 
     private readonly global::Fuse.Player.Player _player;
     private readonly Camera _camera;
@@ -38,12 +39,16 @@ public class WeaponSystem : IDisposable
     private Animator? _viewmodelAnimator;
     private SkinnedModel? _viewmodelModel;
 
+    private Vector3 _viewmodelRecoilOffset;
+    private Vector3 _viewmodelRecoilRot;
+
     // Muzzle flash
     private bool _muzzleFlashVisible;
     private float _muzzleFlashTimer;
     private Vector3 _muzzleFlashOffset;
     private Vector2 _muzzleFlashSize;
     private Texture? _muzzleFlashTexture;
+    private Light? _muzzleFlashLight;
 
     // Viewmodel offset (ajustável via debug UI)
     public Vector3 ViewmodelOffset { get; set; } = new Vector3(0.0f, -0.83f, 0.0f);
@@ -57,6 +62,7 @@ public class WeaponSystem : IDisposable
     public Texture? MuzzleFlashTexture => _muzzleFlashTexture;
     public bool ForceMuzzleFlash { get; set; }
     public Vector2 MuzzleFlashSizeEdit { get; set; } = new(0.3f, 0.3f);
+
 
     // ImGui editável
     public Vector3 MuzzleFlashOffsetEdit { get; set; }
@@ -194,12 +200,26 @@ public class WeaponSystem : IDisposable
             {
                 _muzzleFlashTimer -= dt;
                 if (_muzzleFlashTimer <= 0)
+                {
                     _muzzleFlashVisible = false;
+
+                    // Remover luz do muzzle flash quando timer acaba
+                    if (_muzzleFlashLight != null && _sceneManager?.ActiveScene != null)
+                    {
+                        _sceneManager.ActiveScene.RemoveLight(_muzzleFlashLight);
+                        _muzzleFlashLight = null;
+                    }
+                }
             }
+
+            // Atualizar posição da luz junto com billboard
+            if (_muzzleFlashLight != null)
+                _muzzleFlashLight.Position = MuzzleFlashPosition;
+
             UpdateMuzzleFlashPosition();
         }
 
-        UpdateViewmodelTransform();
+        UpdateViewmodelTransform(dt);
     }
 
     private void UpdateMuzzleFlashPosition()
@@ -252,7 +272,7 @@ public class WeaponSystem : IDisposable
         else if (!string.IsNullOrEmpty(weapon.ViewmodelIdleAnim))
             _viewmodelAnimator.Play(weapon.ViewmodelIdleAnim);
 
-        UpdateViewmodelTransform();
+        UpdateViewmodelTransform(0f);
 
         // DEBUG
         Logger.Info($"[WeaponSystem] Viewmodel created: {_viewmodelEntity.Id}");
@@ -272,7 +292,7 @@ public class WeaponSystem : IDisposable
         _viewmodelModel = null;
     }
 
-    internal void UpdateViewmodelTransform()
+    internal void UpdateViewmodelTransform(float dt)
     {
         if (_viewmodelEntity == null || _player == null) return;
 
@@ -301,11 +321,11 @@ public class WeaponSystem : IDisposable
         // Fix inverted yaw
         var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
 
-        // Use adjustable offset
+        // Viewmodel segue APENAS a rotação da câmera (que já inclui recoil)
         var offset = ViewmodelOffset;
         var viewmodelPos = camPos + Vector3.Transform(offset, camRotFixed);
 
-        // Apply rotation offset
+        // Rotação base apenas - camera.Rotation já inclui recoil
         var rotOffset = Vector3.DegreesToRadians(ViewmodelRotationDeg);
         var rotOffsetQuat = Quaternion.CreateFromYawPitchRoll(rotOffset.Y, rotOffset.X, rotOffset.Z);
 
@@ -324,6 +344,23 @@ public class WeaponSystem : IDisposable
         if (_muzzleFlashTexture == null && _currentWeapon != null)
         {
             _muzzleFlashTexture = _assets.GetTexture(_currentWeapon.MuzzleFlashTexturePath);
+        }
+
+        if (_sceneManager?.ActiveScene != null)
+        {
+            _muzzleFlashLight = new Light
+            {
+                Id = "muzzle_flash_light",
+                Type = LightType.Point,
+                Position = MuzzleFlashPosition,
+                Color = Vector3.One,
+                Radius = 15.0f,
+                Intensity = 1.0f,
+                CastShadows = false,
+                Dynamic = true,
+                Enabled = true,
+            };
+            _sceneManager.ActiveScene.AddLight(_muzzleFlashLight);
         }
 
         // Atualizar posição imediatamente para evitar frame com posição desatualizada

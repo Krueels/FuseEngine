@@ -115,6 +115,7 @@ public unsafe class Application : IDisposable
             Intensity = 1.0f,
             InnerConeAngle = float.DegreesToRadians(15),
             OuterConeAngle = float.DegreesToRadians(35),
+            CastShadows = true,
             Dynamic = true,
             Enabled = false
         };
@@ -163,7 +164,7 @@ public unsafe class Application : IDisposable
         _weaponSystem.Equip("glock");
 
         //spawn inimigo teste
-        _enemySystem.SpawnEnemy(new Vector3(0, 1, 5), 50);
+        _enemySystem.SpawnEnemy(new Vector3(5, 1, 5), 50);
 
         RegisterWindowCallbacks();
 
@@ -175,7 +176,7 @@ public unsafe class Application : IDisposable
     private void LoadMap(string mapName, Action<float, string>? onProgress = null)
     {
         _impactSound?.Clear();
-        //_enemySystem?.Clear();
+        _enemySystem?.Clear();
         var spawn = _sceneManager.LoadMap(mapName, onProgress);
         if (spawn.HasValue)
         {
@@ -191,7 +192,7 @@ public unsafe class Application : IDisposable
     private void ReloadMap(Action<float, string>? onProgress = null)
     {
         _impactSound?.Clear();
-        //_enemySystem?.Clear();
+        _enemySystem?.Clear();
         var spawn = _sceneManager.ReloadMap(onProgress);
         if (spawn.HasValue)
         {
@@ -395,11 +396,16 @@ public unsafe class Application : IDisposable
                     {
                         if (e.SkinnedModel != null && e.Animator != null && e.Visible)
                         {
+                            // Usar a MESMA model matrix do renderer (com ModelScale + ModelOffset)
+                            var modelMatrix = Matrix4x4.CreateScale(e.Transform.Scale * e.ModelScale) *
+                                              Matrix4x4.CreateFromQuaternion(e.Transform.Rotation) *
+                                              Matrix4x4.CreateTranslation(e.Transform.Position + e.ModelOffset);
+
                             _debugDrawer.DrawSkeletonFromBones(
                                 e.Animator.FinalBoneMatrices,
                                 e.SkinnedModel.Skeleton.Bones,
                                 e.SkinnedModel.Skeleton.Nodes,
-                                e.Transform.Matrix);
+                                modelMatrix);
                         }
                     }
                     //foreach (var e in _sceneManager.ActiveScene.Entities)
