@@ -322,7 +322,7 @@ public sealed class GlockWeapon : IWeapon
         bool isEnemy = _system?.EnemySystem?.TryGetEnemy(hit.BodyID, out _) == true;
         if (!isEnemy)
         {
-            SpawnHitEffect(hit.Position, hit.Normal);
+            SpawnHitEffect(hit.Position, hit.Normal, hit.RigidBody);
         }
     }
 
@@ -332,13 +332,14 @@ public sealed class GlockWeapon : IWeapon
         //Logger.Info($"[Glock] Muzzle flash at {position}");
     }
 
-    private void SpawnHitEffect(Vector3 position, Vector3 normal)
+    private void SpawnHitEffect(Vector3 position, Vector3 normal, Physics.RigidBody? parentBody = null)
     {
         // TODO: Decal, particle, som de impacto
         var idx = Random.Shared.Next(3);
         _system?.Audio.Play3D($"Audio/weapons/Bullet_Impact_Flesh_{idx:D2}.mp3", position, volume: 0.5f);
-        _system?.SpawnImpactDecal(position, normal);
+        _system?.SpawnImpactDecal(position, normal, parentBody: parentBody);
     }
+
 
     private void ApplyDamage(JoltPhysicsSharp.BodyID bodyId, Vector3 hitPos, Vector3 direction)
     {

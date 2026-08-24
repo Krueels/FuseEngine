@@ -226,6 +226,21 @@ public class WeaponSystem : IDisposable
         UpdateViewmodelTransform(dt);
     }
 
+    public void Render(Renderer.MasterRenderer renderer, Camera camera, float aspect)
+    {
+        if (_muzzleFlashVisible && _muzzleFlashTexture != null)
+        {
+            var view = camera.GetViewMatrix();
+            var proj = camera.GetProjectionMatrix(aspect);
+            renderer.QueueBillboard(view, proj,
+                _muzzleFlashTexture.ID,
+                MuzzleFlashPosition,
+                _muzzleFlashSize,
+                new Vector4(1, 1, 1, 1));
+        }
+    }
+
+
     private void UpdateMuzzleFlashPosition()
     {
         if (_player == null) return;
@@ -371,13 +386,15 @@ public class WeaponSystem : IDisposable
         UpdateMuzzleFlashPosition();
     }
 
-    public void SpawnImpactDecal(Vector3 position, Vector3 normal, string decalType = "bullet_hole")
+    public void SpawnImpactDecal(Vector3 position, Vector3 normal, string decalType = "bullet_hole", Physics.RigidBody? parentBody = null)
     {
         if (_sceneManager?.Renderer == null) return;
 
         uint textureId = _assets.GetTexture(Bible.Tex(Bible.DecalBulletHoleAlbedo)).ID;
-        _sceneManager.Renderer.SpawnDecal(position, normal, textureId, size: 0.30f, lifeTime: 30f, fadeStart: 0.7f);
+        _sceneManager.Renderer.SpawnDecal(position, normal, textureId, size: 0.10f, lifeTime: 30f, fadeStart: 0.7f, parentBody: parentBody, physics: _physics);
     }
+
+
 
 
 

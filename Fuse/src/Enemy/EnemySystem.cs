@@ -1,9 +1,11 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Numerics;
 using Fuse.Physics;
 using Fuse.Scene;
 using Fuse.AssetManagement;
+using Fuse.Renderer;
 using JoltPhysicsSharp;
+
 
 namespace Fuse.Enemy;
 
@@ -62,7 +64,26 @@ public sealed class EnemySystem : IDisposable
 
     public IReadOnlyList<Enemy> GetEnemies() => _enemies;
 
+    public void DrawDebug(Renderer.MasterRenderer renderer, Camera camera, float aspect)
+    {
+        var enemyTex = _assets.GetTexture(Core.Bible.Tex(Core.Bible.EnemyIcon));
+        var view = camera.GetViewMatrix();
+        var proj = camera.GetProjectionMatrix(aspect);
+
+        for (int i = 0; i < _enemies.Count; i++)
+        {
+            var enemy = _enemies[i];
+            if (!enemy.IsDead)
+            {
+                var pos = enemy.Entity.Transform.Position;
+                pos.Y += 2.0f; // Acima da cápsula
+                renderer.QueueBillboard(view, proj, enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
+            }
+        }
+    }
+
     public void Clear()
+
     {
         for (int i = _enemies.Count - 1; i >= 0; i--)
         {

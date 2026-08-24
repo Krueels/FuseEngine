@@ -1,10 +1,39 @@
 #version 330 core
+
+#define MAX_POINT_LIGHTS 8
+#define MAX_SPOT_LIGHTS 4
+
+struct PointLight {
+    vec3 position;
+    vec3 color;
+    float radius;
+};
+
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float radius;
+    float innerCos;
+    float outerCos;
+};
+
 uniform sampler2D uDepthTex;
 uniform sampler2D uDecalAlbedo;
 uniform mat4 uInvViewProj;
 uniform mat4 uInvDecalModel;
 uniform vec2 uScreenSize;
 uniform float uOpacity;
+
+// Lighting uniforms
+uniform vec3 uCameraPos;
+uniform float uAmbient;
+uniform vec3 uLightDir;
+uniform vec3 uLightColor;
+uniform int uPointLightCount;
+uniform PointLight uPointLights[MAX_POINT_LIGHTS];
+uniform int uSpotLightCount;
+uniform SpotLight uSpotLights[MAX_SPOT_LIGHTS];
 
 out vec4 outColor;
 
@@ -55,8 +84,50 @@ void main() {
     vec4 albedo = texture(uDecalAlbedo, uv);
     if (albedo.a < 0.01) discard;
 
-    outColor = vec4(albedo.rgb, albedo.a * uOpacity);
+    // Forward Lighting Calculation
+    vec3 totalLight = vec3(uAmbient);
+
+    // Directional Sunlight
+    if (length(uLightColor) > 0.001) {
+        float NdotL = max(dot(surfNormalWorld, uLightDir), 0.0);
+        totalLight += uLightColor * NdotL;
+    }
+
+    // Point Lights
+    for (int i = 0; i < uPointLightCount; i++) {
+        vec3 toLight = uPointLights[i].position - worldPos;
+        float dist = length(toLight);
+        if (dist < uPointLights[i].radius && dist > 0.0001) {
+            vec3 L = toLight / dist;
+            float NdotL = max(dot(surfNormalWorld, L), 0.0);
+            float atten = clamp(1.0 - (dist / uPointLights[i].radius), 0.0, 1.0);
+            atten *= atten; // Quadratic falloff
+            totalLight += uPointLights[i].color * NdotL * atten;
+        }
+    }
+
+    // Spot Lights (including Player Flashlight)
+    for (int i = 0; i < uSpotLightCount; i++) {
+        vec3 toLight = uSpotLights[i].position - worldPos;
+        float dist = length(toLight);
+        if (dist < uSpotLights[i].radius && dist > 0.0001) {
+            vec3 L = toLight / dist;
+            float theta = dot(L, -uSpotLights[i].direction);
+            if (theta > uSpotLights[i].outerCos) {
+                float epsilon = max(uSpotLights[i].innerCos - uSpotLights[i].outerCos, 0.0001);
+                float spotIntensity = clamp((theta - uSpotLights[i].outerCos) / epsilon, 0.0, 1.0);
+                float NdotL = max(dot(surfNormalWorld, L), 0.0);
+                float atten = clamp(1.0 - (dist / uSpotLights[i].radius), 0.0, 1.0);
+                atten *= atten;
+                totalLight += uSpotLights[i].color * NdotL * atten * spotIntensity;
+            }
+        }
+    }
+
+    vec3 litColor = albedo.rgb * totalLight;
+    outColor = vec4(litColor, albedo.a * uOpacity);
 }
+
 
 
 
