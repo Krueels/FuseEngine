@@ -133,9 +133,15 @@ public unsafe class Shader : IDisposable
         _gl.Uniform1(GetUniformLoc(name), value);
     }
 
+    private readonly Dictionary<string, int> _uniformCache = new();
     private int GetUniformLoc(string name)
     {
-        return _gl.GetUniformLocation(_id, name);
+        if (_uniformCache.TryGetValue(name, out int loc))
+            return loc;
+
+        loc = _gl.GetUniformLocation(_id, name);
+        _uniformCache[name] = loc;
+        return loc;
     }
 
     private static float[] GetMatrixValues(Matrix4x4 mat)
