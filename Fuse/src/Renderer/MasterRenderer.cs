@@ -71,6 +71,10 @@ public unsafe class MasterRenderer
     private Shader _decalShader = null!;
     private uint _decalDepthTexture, _decalDepthFbo;
 
+    // Shared bone SSBO (all skinned shaders read from binding point 0)
+    private uint _sharedBonesSSBO;
+    private Matrix4x4[] _sharedTransposedMatrices = [];
+
     // Post-Process
     private PostProcessPipeline _postPipeline = null!;
     private PostProcessSettings _postSettings = new();
@@ -720,6 +724,28 @@ public unsafe class MasterRenderer
         }
     }
 
+    private unsafe void UploadBones(Matrix4x4[] bones)
+    {
+        if (bones.Length == 0) return;
+
+        if (_sharedBonesSSBO == 0)
+            _sharedBonesSSBO = _gl.GenBuffer();
+
+        if (_sharedTransposedMatrices.Length < bones.Length)
+            _sharedTransposedMatrices = new Matrix4x4[bones.Length];
+
+        for (int i = 0; i < bones.Length; i++)
+            _sharedTransposedMatrices[i] = Matrix4x4.Transpose(bones[i]);
+
+        _gl.BindBuffer(GLEnum.ShaderStorageBuffer, _sharedBonesSSBO);
+        fixed (Matrix4x4* ptr = _sharedTransposedMatrices)
+        {
+            _gl.BufferData(GLEnum.ShaderStorageBuffer, (nuint)(bones.Length * sizeof(Matrix4x4)), ptr, GLEnum.DynamicDraw);
+        }
+        _gl.BindBufferBase(GLEnum.ShaderStorageBuffer, 0, _sharedBonesSSBO);
+        _gl.BindBuffer(GLEnum.ShaderStorageBuffer, 0);
+    }
+
     private void RenderSkinned(Scene scene, Shader shader, bool skipViewmodels = false)
     {
         foreach (var e in scene.Entities)
@@ -736,7 +762,7 @@ public unsafe class MasterRenderer
             shader.SetVec2("uUvScale", e.UvScale);
             shader.SetVec2("uUvOffset", e.UvOffset);
             shader.SetFloat("uUvRotation", e.UvRotation);
-            shader.SetBonesSSBO(e.Animator.FinalBoneMatrices);
+            UploadBones(e.Animator.FinalBoneMatrices);
 
             foreach (var sub in e.SkinnedModel.Submeshes)
             {
