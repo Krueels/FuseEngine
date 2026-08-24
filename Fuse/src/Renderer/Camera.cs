@@ -1,4 +1,6 @@
+using System.Net.NetworkInformation;
 using System.Numerics;
+using System.Security.Policy;
 using JoltPhysicsSharp;
 
 namespace Fuse.Renderer;
@@ -20,9 +22,15 @@ public class Camera
     // Recoil
     private float _recoilYaw;
     private float _recoilPitch;
-    private float _recoilRoll;
-    private float _recoilRecoverySpeed = 15.0f;     // yaw/roll recovery
-    // Pitch NÃO recupera automaticamente - player deve compensar manualmente
+    private float _recoilPitchMax = 22.0f;
+    private float _recoilYawMax = 3.0f;
+    private float _recoilRecoverySpeed = 6.0f;     // yaw/roll recovery
+
+    // Shake Tilt
+    private float _shakeTilt;
+    private float _shakeVelocity;
+    private float _shakeStiffness = 1000f; // rigidez da mola (mais alto = mais rápido)
+    private float _shakeDamping = 14.0f; // amortecimento (mais alto = menos bounce)
 
     public Camera(Vector3 position)
     {
@@ -48,14 +56,15 @@ public class Camera
     // Negate yaw to match standard math convention (CCW = positive).
     public Quaternion Rotation => Quaternion.CreateFromYawPitchRoll(
         float.DegreesToRadians(-(_yaw + _recoilYaw)),
-        float.DegreesToRadians(_roll + _recoilRoll),
+        float.DegreesToRadians(_roll),
         float.DegreesToRadians(-(_pitch + _recoilPitch)));
 
     public float FOV { get => _fov; set => _fov = value; }
 
     public Matrix4x4 GetViewMatrix()
     {
-        var rolledUp = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, _roll));
+        float totalRoll = _roll + float.DegreesToRadians(_shakeTilt);
+        var rolledUp = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, totalRoll));
         return Matrix4x4.CreateLookAt(_position, _position + _front, rolledUp);
     }
 
@@ -151,15 +160,12 @@ public class Camera
         _front.Z = MathF.Sin(yawRad) * MathF.Cos(pitchRad);
         _front = Vector3.Normalize(_front);
 
-        // Roll (base + recoil)
-        float totalRoll = _roll + _recoilRoll;
-        float rollRad = float.DegreesToRadians(totalRoll);
+        float rollRad = float.DegreesToRadians(_roll);
 
         _right = Vector3.Normalize(Vector3.Cross(_front, WorldUp));
         _up = Vector3.Normalize(Vector3.Cross(_right, _front));
 
-        // Aplicar roll no up vector
-        if (MathF.Abs(totalRoll) > 0.001f)
+        if (MathF.Abs(_roll) > 0.001f)
         {
             _up = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, rollRad));
             _right = Vector3.Normalize(Vector3.Cross(_front, _up));
@@ -169,30 +175,56 @@ public class Camera
     // === RECOIL SYSTEM ===
     public void AddRecoil(float yawKick, float pitchKick, float rollKick = 0f)
     {
+        _recoilPitch = MathF.Min(_recoilPitch + pitchKick, _recoilPitchMax);
         _recoilYaw += yawKick;
-        _recoilPitch += pitchKick;
-        _recoilRoll += rollKick;
+        _recoilYaw = float.Clamp(_recoilYaw, -_recoilYawMax, _recoilYawMax);
         UpdateVectors(); // Aplica imediatamente para o frame atual
     }
 
     public void UpdateRecoil(float dt)
     {
-        // APENAS yaw e roll recuperam automaticamente
-        // Pitch NÃO recupera - player deve compensar manualmente
-        if (_recoilYaw != 0 || _recoilRoll != 0)
+        bool changed = false;
+
+        // Decaimento exponencial — ease-out natural (rápido no início, devagar perto do zero)
+        if (_recoilPitch != 0)
         {
-            float yawRollRecovery = _recoilRecoverySpeed * dt;
-            _recoilYaw = MathF.Abs(_recoilYaw) <= yawRollRecovery ? 0 : _recoilYaw - MathF.Sign(_recoilYaw) * yawRollRecovery;
-            _recoilRoll = MathF.Abs(_recoilRoll) <= yawRollRecovery ? 0 : _recoilRoll - MathF.Sign(_recoilRoll) * yawRollRecovery;
+            _recoilPitch *= MathF.Exp(-_recoilRecoverySpeed * dt);
+            if (MathF.Abs(_recoilPitch) < 0.01f) _recoilPitch = 0;
+            changed = true;
+        }
+
+        if (_recoilYaw != 0)
+        {
+            _recoilYaw *= MathF.Exp(-_recoilRecoverySpeed * 1.2f * dt);
+            if (MathF.Abs(_recoilYaw) < 0.01f) _recoilYaw = 0;
+            changed = true;
+        }
+
+        if (changed) UpdateVectors();
+
+        if (_shakeTilt != 0 || _shakeVelocity != 0)
+        {
+            float acceleration = -_shakeStiffness * _shakeTilt - _shakeDamping * _shakeVelocity;
+            _shakeVelocity += acceleration * dt;
+            _shakeTilt += _shakeVelocity * dt;
+            if (MathF.Abs(_shakeTilt) < 0.001f && MathF.Abs(_shakeVelocity) < 0.001f)
+            {
+                _shakeTilt = 0;
+                _shakeVelocity = 0;
+            }
             UpdateVectors();
         }
+    }
+
+    public void AddShakeTilt(float degress)
+    {
+        _shakeTilt += degress;
+        UpdateVectors();
     }
 
     // Getters para ler o recoil atual (para viewmodel sync)
     public float RecoilYaw => _recoilYaw;
     public float RecoilPitch => _recoilPitch;
-    public float RecoilRoll => _recoilRoll;
 
-    // Aplicar recoil na Rotation property (já incluso no UpdateVectors acima)
     // O recoil já afeta _front/_right/_up via UpdateVectors
 }

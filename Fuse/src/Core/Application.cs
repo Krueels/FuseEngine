@@ -86,6 +86,15 @@ public unsafe class Application : IDisposable
         _hud = new GameplayHUD();
         _hud.Init(_assets);
         _hud.GetEnemyDebugHUD().SetDebugDrawer(_debugDrawer);
+
+        // Font TTF
+        string fontPath = Bible.Font(Bible.DefaultFont);
+        Logger.Info($"FontAtlas: loading font from '{fontPath}' exists={File.Exists(fontPath)}");
+        if (File.Exists(fontPath))
+        {
+            var fontAtlas = new FontAtlas(gl, fontPath, 10);
+            _ui.SetFontAtlas(fontAtlas);
+        }
         _imgui = new ImGuiBackEnd(gl);
         _imgui.Init();
 
@@ -297,21 +306,20 @@ public unsafe class Application : IDisposable
                     ScreenshotService.Capture(gl, _scrWidth, _scrHeight);
                 }
 
-                // HUD Draw
-                _hud.Update(_weaponSystem, _enemySystem, _player?.Camera, _scrWidth, _scrHeight);
-                _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
-
                 // ImGui & Console Frame
                 _imgui.NewFrame(dt, _scrWidth, _scrHeight);
                 if (_showImgui)
                     _imgui.DrawWindows(_player, _renderer);
 
-                _console.Draw();
-
                 // Debug Drawer (OrientationGizmo uses ImGui foreground draw list, must run before _imgui.Render)
                 if (_debugDrawer.Enabled)
                     RenderDebug(aspect);
 
+                // HUD Draw
+                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, _player?.Camera, _scrWidth, _scrHeight);
+                _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
+
+                _console.Draw();
                 _imgui.Render();
 
                 _window.SwapBuffers();
@@ -459,8 +467,6 @@ public unsafe class Application : IDisposable
             ref _screenshotRequested,
             RequestMapReload);
     }
-
-
     private void RenderDebug(float aspect)
     {
         _debugDrawer.Clear();

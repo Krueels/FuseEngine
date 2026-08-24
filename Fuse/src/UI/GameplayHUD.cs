@@ -16,6 +16,7 @@ public class GameplayHUD
     private HUDText _weaponDebugText = null!;
     private HUDText _ammoText = null!;
     private HUDText _reserveAmmoText = null!;
+    private HUDText _enemyDebugSelectionMode = null!;
     private EnemyDebugHUD _enemyDebugHUD = null!;
 
     public HUDImage CrosshairNode => _crosshairNode;
@@ -33,9 +34,10 @@ public class GameplayHUD
         _reserveAmmoText = _hud.AddText("0", HUDAnchor.BottomRight, new Vector2(-320, -100), 1.5f, new Vector4(0.7f, 0.7f, 0.7f, 1));
 
         _enemyDebugHUD = new EnemyDebugHUD();
+        _enemyDebugSelectionMode = _hud.AddText("DEBUG: ENEMY SELECTION MODE ON", HUDAnchor.TopLeft, new Vector2(20, 80), 2.0f, new Vector4(0, 1, 0, 1));
     }
 
-    public void Update(WeaponSystem? weaponSystem, EnemySystem? enemySystem, Camera? camera, int width, int height)
+    public void Update(WeaponSystem? weaponSystem, EnemySystem? enemySystem, bool enemySelectionMode, Camera? camera, int width, int height)
     {
         if (_fpsText != null)
             _fpsText.Text = $"FPS: {Engine.FPS}";
@@ -65,7 +67,17 @@ public class GameplayHUD
 
         // Enemy debug HUD
         if (_enemyDebugHUD != null && camera != null)
+        {
             _enemyDebugHUD.Update(camera, width, height);
+            if (enemySelectionMode)
+            {
+                _enemyDebugSelectionMode.Text = "DEBUG: ENEMY SELECTION MODE ON";
+            }
+            else
+            {
+                _enemyDebugSelectionMode.Text = "";
+            }
+        }
 
         _hud.Update(width, height);
     }

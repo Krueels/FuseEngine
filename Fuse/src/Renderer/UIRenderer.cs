@@ -11,7 +11,7 @@ public unsafe class UIRenderer : IDisposable
     private Matrix4x4 _proj;
 
     private readonly uint _textShader;
-    private readonly int _textUProj;
+    private readonly int _textUProj, _textUTex;
     private readonly uint _textVAO, _textVBO, _textIBO;
     private const int KMaxQuads = 2048;
 
@@ -20,6 +20,10 @@ public unsafe class UIRenderer : IDisposable
     private readonly uint _imgVAO, _imgVBO, _imgEBO;
 
     private static readonly byte[] s_font = GenerateFontBitmap();
+    private FontAtlas? _fontAtlas;
+    private readonly uint _whiteTexture;
+
+    public void SetFontAtlas(FontAtlas atlas) => _fontAtlas = atlas;
 
     public UIRenderer(GL gl, int screenW, int screenH)
     {
@@ -32,21 +36,34 @@ public unsafe class UIRenderer : IDisposable
             #version 330 core
             layout(location = 0) in vec3 aPos;
             layout(location = 1) in vec4 aColor;
+            layout(location = 2) in vec2 aTexCoord;
             out vec4 vColor;
+            out vec2 vTexCoord;
             uniform mat4 uProj;
             void main() {
                 vColor = aColor;
+                vTexCoord = aTexCoord;
                 gl_Position = uProj * vec4(aPos, 1.0);
             }
             """;
         string textFS = """
             #version 330 core
             in vec4 vColor;
+            in vec2 vTexCoord;
             out vec4 fragColor;
-            void main() { fragColor = vColor; }
+            uniform sampler2D uTexture;
+            void main() { float a = texture(uTexture, vTexCoord).r; fragColor = vec4(vColor.rgb, vColor.a * a); }
             """;
         _textShader = LinkShader(gl, CompileShader(gl, ShaderType.VertexShader, textVS), CompileShader(gl, ShaderType.FragmentShader, textFS));
         _textUProj = gl.GetUniformLocation(_textShader, "uProj");
+        _textUTex = gl.GetUniformLocation(_textShader, "uTexture");
+
+        // 1x1 white texture for fallback (bitmap font / rects)
+        _whiteTexture = gl.GenTexture();
+        gl.BindTexture(TextureTarget.Texture2D, _whiteTexture);
+        byte[] white = [255];
+        fixed (byte* p = white)
+            gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R8, 1, 1, 0, PixelFormat.Red, PixelType.UnsignedByte, p);
 
         _textVAO = gl.GenVertexArray();
         _textVBO = gl.GenBuffer();
@@ -113,6 +130,7 @@ public unsafe class UIRenderer : IDisposable
         vao = _imgVAO; _gl.DeleteVertexArrays(1, ref vao);
         vbo = _imgVBO; _gl.DeleteBuffers(1, ref vbo);
         ibo = _imgEBO; _gl.DeleteBuffers(1, ref ibo);
+        _gl.DeleteTexture(_whiteTexture);
     }
 
     public void SetScreenSize(int w, int h)
@@ -138,37 +156,66 @@ public unsafe class UIRenderer : IDisposable
 
         int quadCount = 0;
         int maxQuads = KMaxQuads;
-        byte[] vertBuf = new byte[maxQuads * 4 * 16];
+        int stride = _fontAtlas != null ? 24 : 16;
+        byte[] vertBuf = new byte[maxQuads * 4 * stride];
 
         fixed (byte* basePtr = vertBuf)
         {
-            float charW = 6 * scale;
-            float charH = 8 * scale;
-
-            for (int ci = 0; ci < text.Length && quadCount < maxQuads; ci++)
+            if (_fontAtlas != null)
             {
-                int ch = text[ci] - 32;
-                if (ch < 0 || ch >= 96) { x += charW; continue; }
-
-                for (int row = 0; row < 7 && quadCount < maxQuads; row++)
+                for (int ci = 0; ci < text.Length && quadCount < maxQuads; ci++)
                 {
-                    byte rowBits = s_font[ch * 7 + row];
-                    for (int col = 0; col < 5 && quadCount < maxQuads; col++)
+                    char c = text[ci];
+                    if (!_fontAtlas.TryGetGlyph(c, out var glyph))
                     {
-                        if ((rowBits & (1 << (4 - col))) == 0) continue;
-
-                        float px = x + col * scale;
-                        float py = y + row * scale;
-
-                        byte* v = basePtr + quadCount * 4 * 16;
-                        PutVert(v, px, py, color);
-                        PutVert(v + 16, px + scale, py, color);
-                        PutVert(v + 32, px + scale, py + scale, color);
-                        PutVert(v + 48, px, py + scale, color);
-                        quadCount++;
+                        x += _fontAtlas.FontSize * scale * 0.4f;
+                        continue;
                     }
+
+                    float px = x + glyph.XOff * scale;
+                    float py = y + (glyph.YOff + _fontAtlas.FontSize) * scale;
+                    float w = glyph.Width * scale;
+                    float h = glyph.Height * scale;
+                    float u0 = glyph.X0, v0 = glyph.Y0, u1 = glyph.X1, v1 = glyph.Y1;
+
+                    byte* v = basePtr + quadCount * 4 * 24;
+                    PutVert(v, px, py + h, color, u0, v1);
+                    PutVert(v + 24, px + w, py + h, color, u1, v1);
+                    PutVert(v + 48, px + w, py, color, u1, v0);
+                    PutVert(v + 72, px, py, color, u0, v0);
+                    quadCount++;
+
+                    x += glyph.Advance * scale;
                 }
-                x += charW;
+            }
+            else
+            {
+                float charW = 6 * scale;
+                for (int ci = 0; ci < text.Length && quadCount < maxQuads; ci++)
+                {
+                    int ch = text[ci] - 32;
+                    if (ch < 0 || ch >= 96) { x += charW; continue; }
+
+                    for (int row = 0; row < 7 && quadCount < maxQuads; row++)
+                    {
+                        byte rowBits = s_font[ch * 7 + row];
+                        for (int col = 0; col < 5 && quadCount < maxQuads; col++)
+                        {
+                            if ((rowBits & (1 << (4 - col))) == 0) continue;
+
+                            float px = x + col * scale;
+                            float py = y + row * scale;
+
+                            byte* v = basePtr + quadCount * 4 * 16;
+                            PutVert(v, px, py, color);
+                            PutVert(v + 16, px + scale, py, color);
+                            PutVert(v + 32, px + scale, py + scale, color);
+                            PutVert(v + 48, px, py + scale, color);
+                            quadCount++;
+                        }
+                    }
+                    x += charW;
+                }
             }
         }
 
@@ -177,18 +224,31 @@ public unsafe class UIRenderer : IDisposable
         _gl.BindVertexArray(_textVAO);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _textVBO);
         fixed (byte* p = vertBuf)
-            _gl.BufferData(BufferTargetARB.ArrayBuffer, (uint)(quadCount * 4 * 16), p, BufferUsageARB.DynamicDraw);
+            _gl.BufferData(BufferTargetARB.ArrayBuffer, (uint)(quadCount * 4 * stride), p, BufferUsageARB.DynamicDraw);
 
         _gl.EnableVertexAttribArray(0);
-        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, 16, (void*)0);
+        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)stride, (void*)0);
         _gl.EnableVertexAttribArray(1);
-        _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.UnsignedByte, true, 16, (void*)12);
+        _gl.VertexAttribPointer(1, 4, VertexAttribPointerType.UnsignedByte, true, (uint)stride, (void*)12);
+
+        if (_fontAtlas != null)
+        {
+            _gl.EnableVertexAttribArray(2);
+            _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, (uint)stride, (void*)16);
+        }
 
         _gl.UseProgram(_textShader);
-            _gl.UniformMatrix4(_textUProj, 1, false, GetMatrixValues(_proj));
+        _gl.UniformMatrix4(_textUProj, 1, false, GetMatrixValues(_proj));
+        _gl.Uniform1(_textUTex, 0);
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, _fontAtlas != null ? _fontAtlas.TextureId : _whiteTexture);
 
         _gl.DrawElements(PrimitiveType.Triangles, (uint)(quadCount * 6), DrawElementsType.UnsignedInt, null);
         _gl.BindVertexArray(0);
+
+        if (_fontAtlas != null)
+            _gl.DisableVertexAttribArray(2);
     }
 
     public void DrawImage(Texture tex, float x, float y, float w, float h)
@@ -244,6 +304,10 @@ public unsafe class UIRenderer : IDisposable
 
         _gl.UseProgram(_textShader);
         _gl.UniformMatrix4(_textUProj, 1, false, GetMatrixValues(_proj));
+        _gl.Uniform1(_textUTex, 0);
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, _whiteTexture);
 
         _gl.DrawElements(PrimitiveType.Triangles, 6, DrawElementsType.UnsignedInt, null);
         _gl.BindVertexArray(0);
@@ -258,6 +322,19 @@ public unsafe class UIRenderer : IDisposable
         dest[13] = (byte)(color.Y * 255);
         dest[14] = (byte)(color.Z * 255);
         dest[15] = (byte)(color.W * 255);
+    }
+
+    private static void PutVert(byte* dest, float x, float y, Vector4 color, float u, float v)
+    {
+        *(float*)dest = x;
+        *(float*)(dest + 4) = y;
+        *(float*)(dest + 8) = 0.0f;
+        dest[12] = (byte)(color.X * 255);
+        dest[13] = (byte)(color.Y * 255);
+        dest[14] = (byte)(color.Z * 255);
+        dest[15] = (byte)(color.W * 255);
+        *(float*)(dest + 16) = u;
+        *(float*)(dest + 20) = v;
     }
 
     private static uint CompileShader(GL gl, ShaderType type, string source)

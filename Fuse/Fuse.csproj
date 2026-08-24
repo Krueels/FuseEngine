@@ -18,6 +18,7 @@
     <PackageReference Include="Silk.NET.Assimp" Version="2.22.0" />
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
 	<FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+	<PackageReference Include="StbTrueTypeSharp" Version="1.26.13" />
   </ItemGroup>
 
   <ItemGroup>

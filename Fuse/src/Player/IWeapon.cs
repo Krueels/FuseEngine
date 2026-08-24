@@ -17,10 +17,8 @@ public interface IWeapon : IDisposable
     string ViewmodelDrawAnim { get; }
 
     // Recoil
-    float RecoilYawKick { get; }      // quanto kick horizontal (graus)
-    float RecoilPitchKick { get; }    // quanto kick vertical (graus) - geralmente negativo (sobe)
-    float RecoilRollKick { get; }     // quanto roll (graus)
-    float RecoilRecoverySpeed { get; } // override da câmera (opcional)
+    float RecoilPitchKick { get; }    // kick vertical (graus)
+    float RecoilYawKick { get; }      // variação horizontal (graus)
 
     Dictionary<string, string> ViewmodelTextures { get; }
 

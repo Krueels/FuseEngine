@@ -53,7 +53,7 @@ namespace Fuse.Enemy
             var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
             if (model != null)
             {
-                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model("Animations/UnisexGuy_AKS74U_Idle.fbx"));
+                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model("Animations/UnisexGuy_AKS74U_Walk.fbx"));
 
                 model.HiddenSubmeshes.Add("Glock");
                 model.HiddenSubmeshes.Add("Shotgun_Mesh");

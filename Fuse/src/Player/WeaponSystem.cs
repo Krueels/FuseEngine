@@ -360,7 +360,7 @@ public class WeaponSystem : IDisposable
         _muzzleFlashTimer = duration;
         _muzzleFlashVisible = true;
 
-        if (_muzzleFlashTexture == null && _currentWeapon != null)
+        if (_currentWeapon != null)
         {
             _muzzleFlashTexture = _assets.GetTexture(_currentWeapon.MuzzleFlashTexturePath);
         }
@@ -389,7 +389,6 @@ public class WeaponSystem : IDisposable
     public void SpawnImpactDecal(Vector3 position, Vector3 normal, string decalType = "bullet_hole", Physics.RigidBody? parentBody = null)
     {
         if (_sceneManager?.Renderer == null) return;
-
         uint textureId = _assets.GetTexture(Bible.Tex(Bible.DecalBulletHoleAlbedo)).ID;
         _sceneManager.Renderer.SpawnDecal(position, normal, textureId, size: 0.10f, lifeTime: 30f, fadeStart: 0.7f, parentBody: parentBody, physics: _physics);
     }

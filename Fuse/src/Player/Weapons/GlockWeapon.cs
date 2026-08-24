@@ -23,7 +23,7 @@ public sealed class GlockWeapon : IWeapon
     public Vector3 MuzzleFlashOffset => new(0.1f, -0.08f, 0.58f);
     public Vector2 MuzzleFlashSize => new(0.5f, 0.5f);
     public float MuzzleFlashDuration => 0.02f;
-    public string MuzzleFlashTexturePath => Bible.Tex(Bible.MuzzleFlash);
+    public string MuzzleFlashTexturePath => Bible.Tex(string.Format(Bible.MuzzleFlash, Random.Shared.Next(3)));
 
     public string ViewmodelIdleAnim => "Idle";
     public string ViewmodelFireAnim => "Fire1";
@@ -45,11 +45,9 @@ public sealed class GlockWeapon : IWeapon
     public bool IsAutomatic => false;    // Semi-auto
     public float ReloadTime => 1.67f;
 
-    // Recoil - ajustável no ImGui depois
-    public float RecoilYawKick => 0.5f;      // kick horizontal aleatório ±
-    public float RecoilPitchKick => 1.2f;   // sobe (negativo = pitch up)
-    public float RecoilRollKick => 1.3f;     // leve roll lateral
-    public float RecoilRecoverySpeed => 18.0f; // recuperação rápida
+    // Recoil
+    public float RecoilPitchKick => 5.8f;
+    public float RecoilYawKick => 1.8f;
 
     private WeaponSystem? _system;
     private float _nextFireTime;
@@ -66,7 +64,7 @@ public sealed class GlockWeapon : IWeapon
     private bool _wasMoving;
     private Vector3 _lastMoveDir;
 
-    private readonly string[] _fireSounds = Enumerable.Range(0, 4).Select(i => $"Audio/weapons/glock/Glock_Fire{i}.wav").ToArray();
+    private readonly string[] _fireSounds = Enumerable.Range(0, 4).Select(i => $"{Bible.GlockFire}{i}.wav").ToArray();
 
     // Walk anim speed por estado de movimento
     private const float WalkAnimSpeedCrouch = 0.5f;
@@ -185,10 +183,10 @@ public sealed class GlockWeapon : IWeapon
         if (_system != null)
         {
             var cam = _system.Player.Camera;
-            float yawKick = (float)(_fireRng.NextDouble() - 0.5) * 2 * RecoilYawKick;
             float pitchKick = RecoilPitchKick;
-            float rollKick = (float)(_fireRng.NextDouble() - 0.5) * 2 * RecoilRollKick;
-            cam.AddRecoil(yawKick, pitchKick, rollKick);
+            float yawKick = (float)(_fireRng.NextDouble() - 0.5) * 2 * RecoilYawKick;
+            cam.AddRecoil(yawKick, pitchKick);
+            cam.AddShakeTilt(1.8f);
         }
 
         // Play fire sound
@@ -337,7 +335,7 @@ public sealed class GlockWeapon : IWeapon
     {
         // TODO: Decal, particle, som de impacto
         var idx = Random.Shared.Next(3);
-        _system?.Audio.Play3D($"Audio/weapons/Bullet_Impact_Flesh_{idx:D2}.mp3", position, volume: 0.5f);
+        _system?.Audio.Play3D($"{Bible.BulletImpact}{idx:D2}.mp3", position, volume: 0.5f);
         _system?.SpawnImpactDecal(position, normal, parentBody: parentBody);
     }
 
