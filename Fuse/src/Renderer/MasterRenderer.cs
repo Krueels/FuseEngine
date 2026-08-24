@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Silk.NET.OpenGL;
 using Fuse.Core;
@@ -79,6 +78,9 @@ public unsafe class MasterRenderer
     private PostProcessPipeline _postPipeline = null!;
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
+
+    // Pre-allocated light buffers (zero LINQ allocations per frame)
+    private readonly Light[] _allLightsBuf = new Light[16];
 
     // Billboard queue (rendered in HDR FBO before post-process)
     private readonly List<BillboardDraw> _billboardQueue = new();
@@ -391,7 +393,12 @@ public unsafe class MasterRenderer
         // ===== RENDER CENA NO HDR FBO (shadow pass usa framebuffer próprio) =====
 
         // --- 1. Shadow Pass ---
-        var dirLight = scene.Lights.FirstOrDefault(l => l.Enabled && l.Type == LightType.Directional);
+        Light? dirLight = null;
+        for (int i = 0; i < scene.Lights.Count; i++)
+        {
+            var l = scene.Lights[i];
+            if (l.Enabled && l.Type == LightType.Directional) { dirLight = l; break; }
+        }
         Vector3 lightDir = dirLight != null ? -Vector3.Normalize(dirLight.Direction) : Vector3.Normalize(new Vector3(1, 2, 1));
         bool renderDirShadows = dirLight != null && dirLight.CastShadows && ShadowsEnabled;
         
@@ -422,9 +429,8 @@ public unsafe class MasterRenderer
         }
 
         // --- 1.5. Spot Light Shadow Pass ---
-        var spotLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Spot)
-            .OrderBy(l => Vector3.DistanceSquared(l.Position, camera.Position))
-            .Take(4).ToList();
+        Light[] spotLights = new Light[4];
+        int spotCount = FilterLights(scene.Lights, LightType.Spot, false, spotLights, 4, camera.Position);
         Matrix4x4[] spotSpaceMatrices = new Matrix4x4[4];
 
         if (_shadowShader != null && _shadowShader.ID != 0 && ShadowsEnabled)
@@ -433,7 +439,7 @@ public unsafe class MasterRenderer
             _gl.Enable(EnableCap.CullFace);
             _gl.CullFace(GLEnum.Back);
 
-            for (int i = 0; i < spotLights.Count; i++)
+            for (int i = 0; i < spotCount; i++)
             {
                 var sl = spotLights[i];
                 if (!sl.CastShadows) continue;
@@ -458,16 +464,15 @@ public unsafe class MasterRenderer
         }
 
         // --- 1.7. Point Light Shadow Pass ---
-        var shadowPointLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Point && l.CastShadows)
-            .OrderBy(l => Vector3.DistanceSquared(l.Position, camera.Position))
-            .Take(4).ToList();
+        Light[] shadowPointLights = new Light[4];
+        int shadowPointCount = FilterLights(scene.Lights, LightType.Point, true, shadowPointLights, 4, camera.Position);
         if (_pointShadowShader != null && _pointShadowShader.ID != 0 && ShadowsEnabled)
         {
             _gl.Enable(EnableCap.DepthTest);
             _gl.Enable(EnableCap.CullFace);
             _gl.CullFace(GLEnum.Back);
 
-            for (int i = 0; i < shadowPointLights.Count; i++)
+            for (int i = 0; i < shadowPointCount; i++)
             {
                 var pl = shadowPointLights[i];
                 var shadowMap = i == 0 ? _pointShadowMap0 : i == 1 ? _pointShadowMap1 : i == 2 ? _pointShadowMap2 : _pointShadowMap3;
@@ -554,9 +559,8 @@ public unsafe class MasterRenderer
             _gl.DepthMask(true);
         }
 
-        var pointLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Point)
-            .OrderBy(l => Vector3.DistanceSquared(l.Position, camera.Position))
-            .Take(8).ToList();
+        Light[] pointLights = new Light[8];
+        int pointCount = FilterLights(scene.Lights, LightType.Point, false, pointLights, 8, camera.Position);
 
         // World geometry
         if (_shader.ID != 0)
@@ -568,21 +572,21 @@ public unsafe class MasterRenderer
 
             _shader.Use();
             SetupWorldUniforms(_shader, camera, view, proj, lightDir, dirLight,
-                cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
+                cascadeLevels, lightSpaceMatrices, spotLights, spotCount, spotSpaceMatrices, pointLights, pointCount, shadowPointLights, shadowPointCount);
 
             scene.Render(_shader, _crateTexture, null);
 
             // Skinned entities (main pass)
             _skinnedShader.Use();
             SetupWorldUniforms(_skinnedShader, camera, view, proj, lightDir, dirLight,
-                cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
+                cascadeLevels, lightSpaceMatrices, spotLights, spotCount, spotSpaceMatrices, pointLights, pointCount, shadowPointLights, shadowPointCount);
             RenderSkinned(scene, _skinnedShader);
         }
 
         // ===== DECALS (Forward Lit in HDR FBO, after geometry) =====
         if (_decalQueue.Count > 0)
         {
-            RenderDecals(scene, camera, view, proj, targetFbo, lightDir, dirLight, spotLights, pointLights);
+            RenderDecals(scene, camera, view, proj, targetFbo, lightDir, dirLight, spotLights, spotCount, pointLights, pointCount);
         }
 
 
@@ -645,9 +649,40 @@ public unsafe class MasterRenderer
         }
     }
 
+    private int FilterLights(IReadOnlyList<Light> lights, LightType type, bool requireShadows, Light[] dest, int max, Vector3 cameraPos)
+    {
+        int count = 0;
+        for (int i = 0; i < lights.Count && count < _allLightsBuf.Length; i++)
+        {
+            var l = lights[i];
+            if (!l.Enabled || l.Type != type) continue;
+            if (requireShadows && !l.CastShadows) continue;
+            _allLightsBuf[count++] = l;
+        }
+
+        // Insertion sort by distance (max ~16 elements, trivial)
+        for (int i = 1; i < count; i++)
+        {
+            var key = _allLightsBuf[i];
+            float keyDist = Vector3.DistanceSquared(key.Position, cameraPos);
+            int j = i - 1;
+            while (j >= 0 && Vector3.DistanceSquared(_allLightsBuf[j].Position, cameraPos) > keyDist)
+            {
+                _allLightsBuf[j + 1] = _allLightsBuf[j];
+                j--;
+            }
+            _allLightsBuf[j + 1] = key;
+        }
+
+        int result = count < max ? count : max;
+        Array.Copy(_allLightsBuf, dest, result);
+        return result;
+    }
+
     private void SetupWorldUniforms(Shader shader, Camera camera, Matrix4x4 view, Matrix4x4 proj,
         Vector3 lightDir, Light? dirLight, float[] cascadeLevels, Matrix4x4[] lightSpaceMatrices,
-        List<Light> spotLights, Matrix4x4[] spotSpaceMatrices, List<Light> pointLights, List<Light> shadowPointLights)
+        Light[] spotLights, int spotCount, Matrix4x4[] spotSpaceMatrices,
+        Light[] pointLights, int pointCount, Light[] shadowPointLights, int shadowPointCount)
     {
         shader.SetVec3("uLightDir", lightDir);
 
@@ -695,21 +730,28 @@ public unsafe class MasterRenderer
 
         shader.SetVec3("uCameraPos", camera.Position);
 
-        shader.SetInt("uPointLightCount", pointLights.Count);
-        for (int i = 0; i < pointLights.Count; i++)
+        shader.SetInt("uPointLightCount", pointCount);
+        for (int i = 0; i < pointCount; i++)
         {
             var l = pointLights[i];
             shader.SetVec3($"uPointLights[{i}].position", l.Position);
             shader.SetVec3($"uPointLights[{i}].color", l.Color * l.Intensity);
             shader.SetFloat($"uPointLights[{i}].radius", l.Radius);
 
-            int shadowMapIndex = ShadowsEnabled ? shadowPointLights.IndexOf(l) : -1;
+            int shadowMapIndex = -1;
+            if (ShadowsEnabled)
+            {
+                for (int s = 0; s < shadowPointCount; s++)
+                {
+                    if (shadowPointLights[s] == l) { shadowMapIndex = s; break; }
+                }
+            }
             shader.SetInt($"uPointLights[{i}].shadowMapIndex", shadowMapIndex);
             shader.SetFloat($"uPointLights[{i}].shadowBias", l.ShadowBias);
         }
 
-        shader.SetInt("uSpotLightCount", spotLights.Count);
-        for (int i = 0; i < spotLights.Count; i++)
+        shader.SetInt("uSpotLightCount", spotCount);
+        for (int i = 0; i < spotCount; i++)
         {
             var l = spotLights[i];
             shader.SetVec3($"uSpotLights[{i}].position", l.Position);
@@ -831,8 +873,10 @@ public unsafe class MasterRenderer
         uint targetFbo,
         Vector3 lightDir,
         Light? dirLight,
-        List<Light> spotLights,
-        List<Light> pointLights)
+        Light[] spotLights,
+        int spotCount,
+        Light[] pointLights,
+        int pointCount)
     {
         if (_decalQueue.Count == 0) return;
 
@@ -870,8 +914,8 @@ public unsafe class MasterRenderer
         else
             _decalShader.SetVec3("uLightColor", Vector3.Zero);
 
-        _decalShader.SetInt("uPointLightCount", pointLights.Count);
-        for (int i = 0; i < pointLights.Count; i++)
+        _decalShader.SetInt("uPointLightCount", pointCount);
+        for (int i = 0; i < pointCount; i++)
         {
             var l = pointLights[i];
             _decalShader.SetVec3($"uPointLights[{i}].position", l.Position);
@@ -879,8 +923,8 @@ public unsafe class MasterRenderer
             _decalShader.SetFloat($"uPointLights[{i}].radius", l.Radius);
         }
 
-        _decalShader.SetInt("uSpotLightCount", spotLights.Count);
-        for (int i = 0; i < spotLights.Count; i++)
+        _decalShader.SetInt("uSpotLightCount", spotCount);
+        for (int i = 0; i < spotCount; i++)
         {
             var l = spotLights[i];
             _decalShader.SetVec3($"uSpotLights[{i}].position", l.Position);
