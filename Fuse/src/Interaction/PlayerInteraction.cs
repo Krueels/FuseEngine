@@ -1,12 +1,13 @@
 using System.Numerics;
 using Fuse.Input;
 using Fuse.Physics;
+using Fuse.Scene;
 
 namespace Fuse.Interaction;
 
 public class PlayerInteraction
 {
-    private readonly PhysicsWorld _physics;
+    private readonly SceneManager _scene;
     private readonly Player.Player _player;
     private readonly UI.HUDImage _crosshairNode;
     private readonly Renderer.Texture _crosshairTexture;
@@ -14,9 +15,9 @@ public class PlayerInteraction
 
     private IInteractable? _lookingAt;
 
-    public PlayerInteraction(PhysicsWorld physics, Player.Player player, UI.HUDImage crosshairNode, Renderer.Texture crosshairNormal, Renderer.Texture crosshairInteract)
+    public PlayerInteraction(SceneManager scene, Player.Player player, UI.HUDImage crosshairNode, Renderer.Texture crosshairNormal, Renderer.Texture crosshairInteract)
     {
-        _physics = physics;
+        _scene = scene;
         _player = player;
         _crosshairNode = crosshairNode;
         _crosshairTexture = crosshairNormal;
@@ -29,7 +30,7 @@ public class PlayerInteraction
         Vector3 dir = _player.Camera.Front;
         float range = 5.0f;
 
-        var hit = InteractionSystem.RaycastInteractable(_physics, origin, dir, range);
+        var hit = InteractionSystem.RaycastInteractable(_scene, origin, dir, range);
 
         if (hit != _lookingAt)
         {

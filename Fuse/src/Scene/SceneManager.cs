@@ -19,6 +19,7 @@ public class SceneManager
     public string CurrentMapPath { get; private set; } = null!;
     public Renderer.Scene ActiveScene => _scene;
     public MasterRenderer Renderer => _renderer;
+    public PhysicsWorld Physics => _physics;
 
     private readonly List<RigidBody> _bodies = [];
     private readonly List<IInteractable> _interactables = [];
@@ -261,9 +262,187 @@ private void ClearCurrentMap()
         return null;
     }
 
+    /// <summary>
+    /// Performs an exact raycast against the physics world and calculates the accurate surface normal
+    /// for boxes, planes, spheres, and complex .OBJ trimesh/convex hull geometry.
+    /// </summary>
+    public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out SceneRaycastHit hitResult)
+    {
+        hitResult = default;
+        Vector3 dirNormalized = Vector3.Normalize(direction);
+        Vector3 dirScaled = dirNormalized * maxDistance;
+        var ray = new Ray(ref origin, ref dirScaled);
+
+        using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
+        using var olFilter = new Physics.DefaultObjectLayerFilter();
+        using var bodyFilter = new Physics.DefaultBodyFilter();
+
+        if (!_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+            return false;
+
+        Vector3 hitPos = origin + dirNormalized * maxDistance * hit.Fraction;
+        Vector3 hitNormal = -dirNormalized;
+        var rigidBody = GetRigidBody(hit.BodyID);
+
+        if (rigidBody != null)
+        {
+            Vector3 bodyPos = rigidBody.Position(_physics);
+            Quaternion bodyRot = rigidBody.Rotation(_physics);
+
+            switch (rigidBody.Type)
+            {
+                case RigidBody.ShapeType.Box:
+                {
+                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
+                    Vector3 ext = rigidBody.BoxHalfExtents;
+                    if (ext.X <= 0.0001f) ext.X = 0.0001f;
+                    if (ext.Y <= 0.0001f) ext.Y = 0.0001f;
+                    if (ext.Z <= 0.0001f) ext.Z = 0.0001f;
+
+                    float rx = MathF.Abs(localHit.X) / ext.X;
+                    float ry = MathF.Abs(localHit.Y) / ext.Y;
+                    float rz = MathF.Abs(localHit.Z) / ext.Z;
+
+                    Vector3 localNormal;
+                    if (ry >= rx && ry >= rz)
+                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
+                    else if (rx >= ry && rx >= rz)
+                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
+                    else
+                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
+
+                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                    break;
+                }
+                case RigidBody.ShapeType.Plane:
+                {
+                    hitNormal = rigidBody.PlaneNormal;
+                    break;
+                }
+                case RigidBody.ShapeType.Sphere:
+                {
+                    hitNormal = Vector3.Normalize(hitPos - bodyPos);
+                    break;
+                }
+                case RigidBody.ShapeType.Trimesh:
+                case RigidBody.ShapeType.ConvexHull:
+                {
+                    if (rigidBody.TrimeshVertices != null && rigidBody.TrimeshVertices.Length >= 3)
+                    {
+                        var invRot = Quaternion.Inverse(bodyRot);
+                        Vector3 localOrigin = Vector3.Transform(origin - bodyPos, invRot);
+                        Vector3 localDir = Vector3.Transform(dirNormalized, invRot);
+                        Vector3 localHit = Vector3.Transform(hitPos - bodyPos, invRot);
+
+                        Vector3 localNormal = FindClosestTriangleNormal(
+                            rigidBody.TrimeshVertices,
+                            rigidBody.TrimeshIndices,
+                            rigidBody.TrimeshScale,
+                            localOrigin,
+                            localDir,
+                            localHit);
+
+                        hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                    }
+                    else
+                    {
+                        hitNormal = -dirNormalized;
+                    }
+                    break;
+                }
+                default:
+                {
+                    hitNormal = -dirNormalized;
+                    break;
+                }
+            }
+
+            if (Vector3.Dot(hitNormal, dirNormalized) > 0)
+                hitNormal = -hitNormal;
+        }
+
+        hitResult = new SceneRaycastHit
+        {
+            HasHit    = true,
+            Position  = hitPos,
+            Normal    = hitNormal,
+            Distance  = maxDistance * hit.Fraction,
+            BodyID    = hit.BodyID,
+            RigidBody = rigidBody
+        };
+
+        return true;
+    }
+
+    private static Vector3 FindClosestTriangleNormal(Vector3[] verts, uint[]? indices, Vector3 scale, Vector3 localRayOrigin, Vector3 localRayDir, Vector3 localHitPos)
+    {
+        Vector3 bestNormal = -localRayDir;
+        float bestDistSq = float.MaxValue;
+
+        int triCount = indices != null ? indices.Length / 3 : verts.Length / 3;
+
+        for (int i = 0; i < triCount; i++)
+        {
+            Vector3 v0 = (indices != null ? verts[indices[i * 3]] : verts[i * 3]) * scale;
+            Vector3 v1 = (indices != null ? verts[indices[i * 3 + 1]] : verts[i * 3 + 1]) * scale;
+            Vector3 v2 = (indices != null ? verts[indices[i * 3 + 2]] : verts[i * 3 + 2]) * scale;
+
+            Vector3 edge1 = v1 - v0;
+            Vector3 edge2 = v2 - v0;
+            Vector3 triNormal = Vector3.Cross(edge1, edge2);
+            float lenSq = triNormal.LengthSquared();
+            if (lenSq < 1e-8f) continue;
+            triNormal = Vector3.Normalize(triNormal);
+
+            // Ray-Triangle intersection test (Möller–Trumbore)
+            Vector3 h = Vector3.Cross(localRayDir, edge2);
+            float a = Vector3.Dot(edge1, h);
+            if (MathF.Abs(a) > 1e-7f)
+            {
+                float f = 1.0f / a;
+                Vector3 s = localRayOrigin - v0;
+                float u = f * Vector3.Dot(s, h);
+                if (u >= -0.05f && u <= 1.05f)
+                {
+                    Vector3 q = Vector3.Cross(s, edge1);
+                    float v = f * Vector3.Dot(localRayDir, q);
+                    if (v >= -0.05f && (u + v) <= 1.05f)
+                    {
+                        float t = f * Vector3.Dot(edge2, q);
+                        if (t > 0.001f)
+                        {
+                            return triNormal;
+                        }
+                    }
+                }
+            }
+
+            Vector3 triCenter = (v0 + v1 + v2) / 3.0f;
+            float dSq = Vector3.DistanceSquared(localHitPos, triCenter);
+            if (dSq < bestDistSq)
+            {
+                bestDistSq = dSq;
+                bestNormal = triNormal;
+            }
+        }
+
+        return bestNormal;
+    }
+
     public void Dispose()
     {
         ClearCurrentMap();
     }
 }
+
+public struct SceneRaycastHit
+{
+    public bool HasHit;
+    public Vector3 Position;
+    public Vector3 Normal;
+    public float Distance;
+    public BodyID BodyID;
+    public RigidBody? RigidBody;
+}
+
 

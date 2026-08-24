@@ -112,9 +112,11 @@ public unsafe class MasterRenderer
     /// <param name="fadeStart">Percentage of life [0..1] when fade out begins (default: 0.7 = 70%).</param>
     public void SpawnDecal(Vector3 position, Vector3 normal, uint textureId, float size = 0.30f, float lifeTime = 30f, float fadeStart = 0.7f)
     {
-        float depth = size;
+        float depth = size * 0.5f;
 
         // Build stable orientation basis
+
+
         Vector3 forward = Vector3.Normalize(normal);
         Vector3 upHint = MathF.Abs(forward.Y) > 0.99f ? Vector3.UnitZ : Vector3.UnitY;
         Vector3 right = Vector3.Normalize(Vector3.Cross(upHint, forward));

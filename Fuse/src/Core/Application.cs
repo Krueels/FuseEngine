@@ -150,7 +150,7 @@ public unsafe class Application : IDisposable
 
         // Initialization
         _renderer.Init(_assets, _scrWidth, _scrHeight);
-        _interaction = new Interaction.PlayerInteraction(_physics, _player, _crosshairNode, crosshairTexture, crosshairInteractTexture);
+        _interaction = new Interaction.PlayerInteraction(_sceneManager, _player, _crosshairNode, crosshairTexture, crosshairInteractTexture);
 
         // Weapon System
         _weaponSystem = new Player.WeaponSystem(_player, _player.Camera, _physics, _assets, _audio, _sceneManager);
@@ -676,47 +676,36 @@ public unsafe class Application : IDisposable
         // G: spawnar explosão no raycast
         if (Input.Input.KeyPressed(KeyCodes.G))
         {
-            var cam = _player.Camera;
-            var origin = cam.Position;
-            var front = cam.Front;
-            float maxDist = 20f;
-            var dirScaled = front * maxDist;
-            var ray = new Ray(ref origin, ref dirScaled);
+            //var cam = _player.Camera;
+            //var origin = cam.Position;
+            //var front = cam.Front;
+            //float maxDist = 20f;
+            //var dirScaled = front * maxDist;
+            //var ray = new Ray(ref origin, ref dirScaled);
 
-            using var bpFilter = new DefaultBroadPhaseLayerFilter();
-            using var olFilter = new DefaultObjectLayerFilter();
-            using var bodyFilter = new DefaultBodyFilter();
+            //using var bpFilter = new DefaultBroadPhaseLayerFilter();
+            //using var olFilter = new DefaultObjectLayerFilter();
+            //using var bodyFilter = new DefaultBodyFilter();
 
-            Vector3 target;
-            if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
-                target = origin + front * maxDist * hit.Fraction;
-            else
-                target = origin + front * maxDist;
+            //Vector3 target;
+            //if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+            //    target = origin + front * maxDist * hit.Fraction;
+            //else
+            //    target = origin + front * maxDist;
 
-            Physics.Explosion.Apply(_physics, target, 105f, 10000.0f, _audio);
+            //Physics.Explosion.Apply(_physics, target, 105f, 10000.0f, _audio);
+
+            if (_sceneManager.Raycast(_player.Camera.Position, _player.Camera.Front, 20f, out var hit))
+            {
+                Physics.Explosion.Apply(_physics, hit.Position, 105f, 10000.0f, _audio);
+            }
         }
 
         // J: spawnar inimigo no raycast
         if (Input.Input.KeyPressed(KeyCodes.J))
         {
-            var cam = _player.Camera;
-            var origin = cam.Position;
-            var front = cam.Front;
-            float maxDist = 30f;
-            var dirScaled = front * maxDist;
-            var ray = new Ray(ref origin, ref dirScaled);
-
-            using var bpFilter = new DefaultBroadPhaseLayerFilter();
-            using var olFilter = new DefaultObjectLayerFilter();
-            using var bodyFilter = new DefaultBodyFilter();
-
-            Vector3 spawnPos;
-            if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
-                spawnPos = origin + front * maxDist * hit.Fraction - front * 1f;
-            else
-                spawnPos = origin + front * maxDist;
-
-            _enemySystem?.SpawnEnemy(spawnPos, 50f);
+            if (_sceneManager.Raycast(_player.Camera.Position, _player.Camera.Front, 20f, out var hit))
+                _enemySystem?.SpawnEnemy(hit.Position, 50f);
         }
 
         // Switch weapon (1, 2, 3...)
@@ -746,49 +735,16 @@ public unsafe class Application : IDisposable
         if (Input.Input.KeyPressed(KeyCodes.T))
         {
             var cam = _player.Camera;
-            var origin = cam.Position;
-            var front = cam.Front;
-            float maxDist = 20f;
-            var dirScaled = front * maxDist;
-            var ray = new Ray(ref origin, ref dirScaled);
-
-            using var bpFilter = new DefaultBroadPhaseLayerFilter();
-            using var olFilter = new DefaultObjectLayerFilter();
-            using var bodyFilter = new DefaultBodyFilter();
-
-            Vector3 hitPos;
-            if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
-                hitPos = origin + front * maxDist * hit.Fraction;
-            else
-                hitPos = origin + front * maxDist;
-
-            Vector3 hitNormal = -dirScaled;
-            var rigidBody = _sceneManager.GetRigidBody(hit.BodyID);
-            if (rigidBody != null)
+            if (_sceneManager.Raycast(cam.Position, cam.Front, 20f, out var hit))
             {
-                Vector3 bodyPos = rigidBody.Position(_physics);
-                Quaternion bodyRot = rigidBody.Rotation(_physics);
-                Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
-
-                Vector3 ext = rigidBody.BoxHalfExtents;
-                float rx = MathF.Abs(localHit.X) / MathF.Max(ext.X, 0.001f);
-                float ry = MathF.Abs(localHit.Y) / MathF.Max(ext.Y, 0.001f);
-                float rz = MathF.Abs(localHit.Z) / MathF.Max(ext.Z, 0.001f);
-
-                Vector3 localNormal = (ry >= rx && ry >= rz) ? (localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY) :
-                                      (rx >= ry && rx >= rz) ? (localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX) :
-                                                               (localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ);
-
-                hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                uint sprayTexId = _assets.GetTexture(Bible.Tex("decals/afx.png")).ID;
+                _sceneManager.Renderer.SpawnDecal(hit.Position, hit.Normal, sprayTexId, 1.0f);
+                _audio?.Play3D(Bible.Audio("Audio/Spray.wav"), hit.Position);
             }
-
-            uint sprayTexId = _assets.GetTexture(Bible.Tex("decals/afx.png")).ID;
-
-            _sceneManager.Renderer.SpawnDecal(hitPos, hitNormal, sprayTexId, 1.0f);
-            _audio?.Play3D(Bible.Audio("Audio/Spray.wav"), hitPos);
-
         }
+
     }
+
 
     private unsafe void TakeScreenshot(GL gl)
     {

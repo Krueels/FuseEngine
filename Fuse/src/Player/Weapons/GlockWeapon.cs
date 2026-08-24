@@ -310,126 +310,20 @@ public sealed class GlockWeapon : IWeapon
 
     private void PerformHitscan(Vector3 origin, Vector3 direction)
     {
-        if (_system == null) return;
+        if (_system?.SceneManager == null) return;
 
-        using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
-        using var olFilter = new Physics.DefaultObjectLayerFilter();
-        using var bodyFilter = new Physics.DefaultBodyFilter();
-
-        Vector3 dirScaled = direction * Range;
-        var ray = new Ray(ref origin, ref dirScaled);
-
-        if (!_system.Physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+        if (!_system.SceneManager.Raycast(origin, direction, Range, out var hit))
             return;
 
-        Vector3 hitPos = origin + direction * Range * hit.Fraction;
-        Vector3 hitNormal = -direction;
-
-        // Detect exact surface normal based on the collided shape and hit position
-        var rigidBody = _system.SceneManager?.GetRigidBody(hit.BodyID);
-        if (rigidBody != null)
-        {
-            Vector3 bodyPos = rigidBody.Position(_system.Physics);
-            Quaternion bodyRot = rigidBody.Rotation(_system.Physics);
-
-            switch (rigidBody.Type)
-            {
-                case Physics.RigidBody.ShapeType.Box:
-                {
-                    // Transform hit point to body local space
-                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
-                    Vector3 ext = rigidBody.BoxHalfExtents;
-                    if (ext.X <= 0.0001f) ext.X = 0.0001f;
-                    if (ext.Y <= 0.0001f) ext.Y = 0.0001f;
-                    if (ext.Z <= 0.0001f) ext.Z = 0.0001f;
-
-                    // Relative proximity to each face: max(|local| / halfExtent)
-                    float rx = MathF.Abs(localHit.X) / ext.X;
-                    float ry = MathF.Abs(localHit.Y) / ext.Y;
-                    float rz = MathF.Abs(localHit.Z) / ext.Z;
-
-                    Vector3 localNormal;
-                    if (ry >= rx && ry >= rz)
-                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
-                    else if (rx >= ry && rx >= rz)
-                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
-                    else
-                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
-
-                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                    break;
-                }
-                case Physics.RigidBody.ShapeType.Plane:
-                {
-                    hitNormal = rigidBody.PlaneNormal;
-                    break;
-                }
-                case Physics.RigidBody.ShapeType.Sphere:
-                {
-                    hitNormal = Vector3.Normalize(hitPos - bodyPos);
-                    break;
-                }
-                default:
-                {
-                    // Fallback for general bodies
-                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
-                    float absX = MathF.Abs(localHit.X);
-                    float absY = MathF.Abs(localHit.Y);
-                    float absZ = MathF.Abs(localHit.Z);
-                    Vector3 localNormal;
-                    if (absY >= absX && absY >= absZ)
-                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
-                    else if (absX >= absY && absX >= absZ)
-                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
-                    else
-                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
-                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                    break;
-                }
-            }
-
-            // Ensure normal points against bullet travel direction
-            if (Vector3.Dot(hitNormal, direction) > 0)
-                hitNormal = -hitNormal;
-        }
-        else
-        {
-            // Fallback for bodies without RigidBody metadata
-            BodyLockRead hitLock = default;
-            _system.Physics.BodyLockInterface.LockRead(hit.BodyID, out hitLock);
-            if (hitLock.Succeeded)
-            {
-                var body = hitLock.Body;
-                Vector3 bodyPos = body.Position;
-                Quaternion bodyRot = body.Rotation;
-                Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
-                float absX = MathF.Abs(localHit.X);
-                float absY = MathF.Abs(localHit.Y);
-                float absZ = MathF.Abs(localHit.Z);
-                Vector3 localNormal;
-                if (absY >= absX && absY >= absZ)
-                    localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
-                else if (absX >= absY && absX >= absZ)
-                    localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
-                else
-                    localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
-                hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                if (Vector3.Dot(hitNormal, direction) > 0)
-                    hitNormal = -hitNormal;
-
-                _system.Physics.BodyLockInterface.UnlockRead(hitLock);
-            }
-        }
-
-
-
+        // Apply damage to interactable/physics body
+        ApplyDamage(hit.BodyID, hit.Position, direction);
 
         // Hit effect
-        SpawnHitEffect(hitPos, hitNormal);
-
-
-        // Apply damage to interactable/physics body
-        ApplyDamage(hit.BodyID, hitPos, direction);
+        bool isEnemy = _system?.EnemySystem?.TryGetEnemy(hit.BodyID, out _) == true;
+        if (!isEnemy)
+        {
+            SpawnHitEffect(hit.Position, hit.Normal);
+        }
     }
 
     private void SpawnMuzzleFlash(Vector3 position, Vector3 direction)

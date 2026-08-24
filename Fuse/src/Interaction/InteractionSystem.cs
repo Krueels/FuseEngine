@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using JoltPhysicsSharp;
 using Fuse.Physics;
+using Fuse.Scene;
 
 namespace Fuse.Interaction;
 
@@ -53,21 +54,14 @@ public static class InteractionSystem
     }
 
     public static IInteractable? RaycastInteractable(
-        PhysicsWorld world, Vector3 origin, Vector3 direction, float maxDistance)
+        SceneManager scene, Vector3 origin, Vector3 direction, float maxDistance)
     {
-        using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
-        using var olFilter = new Physics.DefaultObjectLayerFilter();
-        using var bodyFilter = new Physics.DefaultBodyFilter();
-
-        Vector3 dirScaled = direction * maxDistance;
-        var ray = new Ray(ref origin, ref dirScaled);
-
-        if (!world.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+        if (!scene.Raycast(origin, direction, maxDistance, out var hit))
             return null;
 
         if (!hit.BodyID.IsValid) return null;
 
-        ulong userData = world.BodyInterface.GetUserData(hit.BodyID);
-        return GetInteractable(world.BodyInterface, hit.BodyID, userData);
+        ulong userData = scene.Physics.BodyInterface.GetUserData(hit.BodyID);
+        return GetInteractable(scene.Physics.BodyInterface, hit.BodyID, userData);
     }
 }

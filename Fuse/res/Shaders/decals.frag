@@ -4,7 +4,6 @@ uniform sampler2D uDecalAlbedo;
 uniform mat4 uInvViewProj;
 uniform mat4 uInvDecalModel;
 uniform vec2 uScreenSize;
-uniform vec3 uCamPos;
 uniform float uOpacity;
 
 out vec4 outColor;
@@ -27,30 +26,16 @@ void main() {
     // Clip fragments outside the oriented bounding box
     if (abs(p.x) > 0.5 || abs(p.y) > 0.5 || abs(p.z) > 0.5) discard;
 
-    // Calculate actual geometric surface normal using screen-space derivatives
+    // Geometric surface normal from screen-space derivatives
     vec3 dX = dFdx(worldPos);
     vec3 dY = dFdy(worldPos);
-    vec3 nCross = cross(dX, dY);
-    float nLen = length(nCross);
-
-    vec3 surfNormalWorld;
-    if (nLen > 1e-7) {
-        surfNormalWorld = nCross / nLen;
-        // Ensure normal always consistently faces toward the camera
-        vec3 camDir = worldPos - uCamPos;
-        if (dot(surfNormalWorld, camDir) > 0.0)
-            surfNormalWorld = -surfNormalWorld;
-    } else {
-        surfNormalWorld = vec3(0.0, 0.0, 1.0);
-    }
-
-    // Transform surface normal to decal box local space
+    vec3 surfNormalWorld = normalize(cross(dX, dY));
     vec3 localNormal = normalize((uInvDecalModel * vec4(surfNormalWorld, 0.0)).xyz);
 
     vec3 absN = abs(localNormal);
     vec2 uv;
 
-    // Continuous geodesic unfolding around corners
+    // Corner unfolding: smoothly wrap 90-degree corners without stretching
     if (absN.z >= absN.x && absN.z >= absN.y) {
         // Front impact face: standard XY mapping
         uv = p.xy + 0.5;
@@ -72,6 +57,9 @@ void main() {
 
     outColor = vec4(albedo.rgb, albedo.a * uOpacity);
 }
+
+
+
 
 
 
