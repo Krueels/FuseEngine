@@ -234,87 +234,6 @@ public unsafe class Application : IDisposable
         }
     }
 
-    //private void SpawnGlockViewModel()
-    //{
-    //    string path = $"{Fuse.ResPath.Path}/skinned_models/Glock.fbx";
-    //    var model = _assets.GetSkinnedModel(path);
-    //    if (model == null)
-    //    {
-    //        Logger.Error($"Skinned test model failed to load: {path}");
-    //        return;
-    //    }
-
-    //    var animator = new Animation.Animator(model.Skeleton);
-    //    model.Link(animator);
-
-    //    var entity = _sceneManager.ActiveScene.Add(null, "glock_viewmodel");
-    //    entity.SkinnedModel = model;
-    //    entity.Animator = animator;
-
-    //    if (!string.IsNullOrEmpty(model.DefaultClipName))
-    //        animator.Play(model.DefaultClipName);
-
-    //    animator.Play("Idle");
-
-    //    // Position in front of player initially (will be updated each frame)
-    //    Vector3 front = _player.Camera.Front;
-    //    front.Y = 0;
-    //    if (front.LengthSquared() > 0.001f) front = Vector3.Normalize(front);
-    //    else front = -Vector3.UnitZ;
-
-    //    entity.Transform.Position = _player.NativeCharacter.Position + front * 2.5f;
-    //    // GlobalScale já normaliza vértices (cm→m). Entity scale = 1.0 (como Hell2025).
-    //    entity.Transform.Scale = new Vector3(1.0f);
-
-    //    _glockViewModelEntity = entity;
-    //    _skinnedTestEntity = entity;
-    //    Logger.InfoGold($"[Skinned] Glock spawned. Clips: {string.Join(", ", model.Clips.Keys)} (F8 to cycle)");
-    //}
-
-    //private void UpdateViewmodelTransform()
-    //{
-    //    if (_glockViewModelEntity == null || !_updateViewmodelTransform) return;
-
-    //    var cam = _player.Camera;
-    //    var camPos = cam.Position;
-
-    //    // Camera's rotation quaternion has inverted yaw (camera turns right = positive yaw, but math is CCW)
-    //    // Fix: negate yaw component or use inverse rotation
-    //    var camRot = cam.Rotation;
-
-    //    // Fix inverted yaw: negate Y and W components of quaternion (negates rotation around Y)
-    //    var camRotFixed = new Quaternion(camRot.X, -camRot.Y, camRot.Z, -camRot.W);
-
-    //    // Viewmodel position: camera position + rotated offset
-    //    var offset = Vector3.Transform(_glockLocalOffset, camRot);
-    //    var viewmodelPos = camPos + offset;
-
-    //    // Local rotation in camera space (Euler degrees -> quaternion)
-    //    var rad = Vector3.DegreesToRadians(_glockLocalEulerDeg);
-    //    _glockLocalRotation = Quaternion.CreateFromYawPitchRoll(rad.Y, rad.X, rad.Z);
-
-    //    // Viewmodel rotation = FIXED camera rotation * local rotation
-    //    var viewmodelRot = camRotFixed * _glockLocalRotation;
-
-    //    _glockViewModelEntity.Transform.Position = camPos + Vector3.Transform(_glockLocalOffset, camRotFixed);
-    //    _glockViewModelEntity.Transform.Rotation = viewmodelRot;
-    //}
-
-    //private void CycleSkinnedClip()
-    //{
-    //    if (_skinnedTestEntity?.SkinnedModel == null || _skinnedTestEntity.Animator == null)
-    //        return;
-
-    //    var clips = _skinnedTestEntity.SkinnedModel.Clips.Keys.OrderBy(k => k).ToList();
-    //    if (clips.Count == 0) return;
-
-    //    string current = _skinnedTestEntity.Animator.CurrentClip?.Name ?? "";
-    //    int idx = clips.IndexOf(current);
-    //    string next = clips[(idx + 1) % clips.Count];
-    //    _skinnedTestEntity.Animator.Play(next);
-    //    Logger.InfoGold($"[Skinned] Clip: {next}");
-    //}
-
     private void RegisterWindowCallbacks()
     {
         _window.OnMouseMove += (dx, dy) => { _player.Camera.ProcessMouseMovement((float)dx, (float)dy); };
@@ -736,6 +655,11 @@ public unsafe class Application : IDisposable
 
         // Debug keys sempre funcionam (contexto Debug prioridade 100)
         if (Input.Input.KeyPressed(KeyCodes.F9)) _debugDrawer.Toggle();
+
+        if (Input.Input.KeyPressed(KeyCodes.F10))
+        {
+            _renderer.PostPipeline.Settings.Enabled = !_renderer.PostPipeline.Settings.Enabled;
+        }
 
         // G: spawnar explosão no raycast
         if (Input.Input.KeyPressed(KeyCodes.G))

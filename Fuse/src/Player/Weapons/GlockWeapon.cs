@@ -349,7 +349,9 @@ public sealed class GlockWeapon : IWeapon
                 );
 
             if (interactable != null)
+            {
                 Logger.Info($"[Glock] Hit interactable: {interactable.GetType().Name}");
+            }
         }
 
         // Apply impulse - BodyInterface acorda o corpo automaticamente
