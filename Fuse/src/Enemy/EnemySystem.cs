@@ -62,9 +62,27 @@ public sealed class EnemySystem : IDisposable
 
     public IReadOnlyList<Enemy> GetEnemies() => _enemies;
 
+    public void Clear()
+    {
+        for (int i = _enemies.Count - 1; i >= 0; i--)
+        {
+            var e = _enemies[i];
+
+            if (e.Body.IsBuilt)
+            {
+                _physics.DestroyBody(e.Body.Native);
+                e.Body.Destroy();
+            }
+
+            _sceneManager.ActiveScene.Remove(e.Entity);
+            e.Dispose();
+        }
+
+        _enemies.Clear();
+    }
+
     public void Dispose()
     {
-        foreach (var e in _enemies) e.Dispose();
-        _enemies.Clear();
+        Clear();
     }
 }

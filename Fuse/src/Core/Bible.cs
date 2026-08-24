@@ -39,6 +39,10 @@ public static class Bible
     public const string ShaderBillboardVert = "Shaders/billboard.vert";
     public const string ShaderBillboardFrag = "Shaders/billboard.frag";
 
+    // Shaders - Post Process
+    public const string PostProcessVert = "Shaders/PostProcess/composite.vert";
+    public const string PostProcessFrag = "Shaders/PostProcess/composite.frag";
+
     // Audio
     public const string GlockReload = "Audio/weapons/glock/Glock_Reload.wav";
     public const string GlockReloadEmpty = "Audio/weapons/glock/Glock_ReloadEmpty.wav";

@@ -72,6 +72,7 @@ namespace Fuse.Enemy
                 var meshData = MeshGenerator.GenerateCapsule(_capsuleRadius, _capsuleHeight, 12);
                 var capsuleMesh = new Mesh(_assets.Gl, meshData.Vertices, meshData.Indices);
                 Entity = sceneManager.ActiveScene.Add(capsuleMesh, Id, Body);
+                Entity.MeshOwnedByEntity = true;
                 Entity.Visible = true;
                 Entity.Texture = null;
             }
@@ -118,7 +119,11 @@ namespace Fuse.Enemy
 
         public void Dispose()
         {
-            Entity?.Mesh?.Dispose();
+            if (Entity != null && Entity.MeshOwnedByEntity && Entity.Mesh != null)
+            {
+                Entity.Mesh.Dispose();
+                Entity.Mesh = null;
+            }
         }
     }
 }

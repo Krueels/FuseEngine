@@ -60,6 +60,8 @@ public class Player : IDisposable
     private const float MaxTilt = MathF.PI / 55f;
     private const float TiltSpeed = 6f;
 
+    private bool _imguiWantedKeyboardPrev = false;
+
 
     public Player(Physics.PhysicsWorld world, Vector3 position)
     {
@@ -104,22 +106,31 @@ public class Player : IDisposable
         _character.Dispose();
     }
 
-    public void Update(float dt)
+    private void ProcessInput(float dt)
     {
         HandleNoclipToggle();
         HandleSprint();
-
-        if (_noclip)
-        {
-            UpdateNoclip(dt);
-            SyncCamera();
-            return;
-        }
-
+        if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
         HandleCrouch();
         HandleFlashlightToggle();
         ApplyMovement(dt);
+    }
+    public void Update(float dt)
+    {
+        bool imguiWantsKeyboard = ImGuiNET.ImGui.GetIO().WantCaptureKeyboard;
 
+        if (!_imguiWantedKeyboardPrev && imguiWantsKeyboard)
+        {
+            var vel = _character.LinearVelocity;
+            vel.X = 0f;
+            vel.Z = 0f;
+            _character.LinearVelocity = vel;
+        }
+        _imguiWantedKeyboardPrev = imguiWantsKeyboard;
+
+        if (!imguiWantsKeyboard)
+            ProcessInput(dt);
+        
         bool isGrounded = _character.GroundState == GroundState.OnGround;
 
         var updSettings = new ExtendedUpdateSettings

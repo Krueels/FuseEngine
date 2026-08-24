@@ -28,6 +28,8 @@ public class Entity
     public Vector2 UvOffset { get; set; } = Vector2.Zero;
     public float UvRotation { get; set; } = 0f;
     public Mesh? Mesh { get; set; }
+    /// <summary>True se esta entidade é dona única da Mesh (pode dar Dispose). False = mesh compartilhada/cacheada pelo AssetManager.</summary>
+    public bool MeshOwnedByEntity { get; set; }
     public Texture? Texture { get; set; }
     public RigidBody? Body { get; set; }
     public Transform Transform { get; set; } = new();
@@ -75,6 +77,21 @@ public class Scene
 
     public void Clear()
     {
+        // Dispose APENAS meshes que a entidade possui (brushes/cápsulas).
+        // NUNCA dispose de meshes compartilhadas (cache do AssetManager: "cube", modelos OBJ, etc)
+        // — o skybox usa GetMesh("cube") todo frame e o próximo mapa reutiliza o cache.
+        foreach (var entity in _entities)
+        {
+            if (entity.MeshOwnedByEntity)
+                entity.Mesh?.Dispose();
+            entity.Mesh = null;
+            entity.MeshOwnedByEntity = false;
+            entity.Body = null;
+            entity.SkinnedModel = null;
+            entity.Animator = null;
+            entity.AttachedLight = null;
+        }
+        
         _bodyEntityMap.Clear();
         _entities.Clear();
         _lights.Clear();

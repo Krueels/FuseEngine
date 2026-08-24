@@ -52,6 +52,8 @@ public unsafe class Application : IDisposable
     private bool _consoleJustToggled = false;
     private float _loadProgress;
     private string _loadStatus = "";
+    private string? _pendingMapLoad;
+    private bool _pendingMapReload;
 
     // ViewModel
     //private Entity? _glockViewModelEntity;
@@ -83,7 +85,7 @@ public unsafe class Application : IDisposable
         // Managers & Core
         _assets = new AssetManagement.AssetManager(gl);
         _renderer = new Renderer.MasterRenderer(gl);
-        _sceneManager = new Scene.SceneManager(_physics, _assets);
+        _sceneManager = new Scene.SceneManager(_physics, _assets, _renderer);
         _enemySystem = new Enemy.EnemySystem(_physics, _sceneManager, _assets);
         _debugDrawer = new Debug.DebugDrawer(gl);
 
@@ -122,7 +124,9 @@ public unsafe class Application : IDisposable
         _console = new Imgui.Console();
         _console.SetPlayer(_player);
         _console.StartCapture();
-        _console.OnLoadMap = (map) => LoadMap(map, OnLoadProgress);
+        // A consola é desenhada durante o frame ImGui. Adiamos a troca de mapa
+        // para o inicio do proximo frame, quando nenhum draw list/FBO esta em uso.
+        _console.OnLoadMap = RequestMapLoad;
         _console.OnLoadSky = (fileName) =>
         {
             var tex = _assets.GetTexture($"{Fuse.ResPath.Path}/Textures/{fileName}");
@@ -171,6 +175,7 @@ public unsafe class Application : IDisposable
     private void LoadMap(string mapName, Action<float, string>? onProgress = null)
     {
         _impactSound?.Clear();
+        //_enemySystem?.Clear();
         var spawn = _sceneManager.LoadMap(mapName, onProgress);
         if (spawn.HasValue)
         {
@@ -186,6 +191,7 @@ public unsafe class Application : IDisposable
     private void ReloadMap(Action<float, string>? onProgress = null)
     {
         _impactSound?.Clear();
+        //_enemySystem?.Clear();
         var spawn = _sceneManager.ReloadMap(onProgress);
         if (spawn.HasValue)
         {
@@ -197,7 +203,35 @@ public unsafe class Application : IDisposable
         //SpawnGlockViewModel();
         _sceneManager.InitTriggerSystem(_player);
         _sceneManager.ActiveScene.AddLight(_flashlight);
-        _weaponSystem?.Equip("glock"); // Re-equipa a arma após reload (mapa foi limpo)
+        _weaponSystem?.Equip("glock");
+    }
+
+    private void RequestMapLoad(string mapName)
+    {
+        _pendingMapLoad = mapName;
+        _pendingMapReload = false;
+    }
+
+    private void RequestMapReload()
+    {
+        if (_pendingMapLoad == null)
+            _pendingMapReload = true;
+    }
+
+    private void ProcessPendingMapChange()
+    {
+        if (_pendingMapLoad is { } mapName)
+        {
+            _pendingMapLoad = null;
+            LoadMap(mapName, OnLoadProgress);
+            return;
+        }
+
+        if (_pendingMapReload)
+        {
+            _pendingMapReload = false;
+            ReloadMap(OnLoadProgress);
+        }
     }
 
     //private void SpawnGlockViewModel()
@@ -333,6 +367,10 @@ public unsafe class Application : IDisposable
                 Input.Input.Update();
                 var gl = _window.GL;
 
+                // Processa loads fora da fase de render/ImGui. Isto evita trocar
+                // recursos da cena enquanto o frame HDR anterior ainda esta ativo.
+                ProcessPendingMapChange();
+
                 // Update
                 if (!_paused)
                 {
@@ -358,9 +396,7 @@ public unsafe class Application : IDisposable
                     }
                     _consoleJustToggled = false;
 
-                    // Player input só se ImGui NÃO quer keyboard
-                    if (!imguiWantsKeyboard)
-                        _player.Update(dt);
+                    _player.Update(dt);
 
                     _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
                     _impactSound.Update(dt);
@@ -373,23 +409,18 @@ public unsafe class Application : IDisposable
 
                     if (_sceneManager.CheckPendingResets())
                     {
-                        ReloadMap(OnLoadProgress);
+                        RequestMapReload();
                     }
                 }
 
                 HandleInput();
 
-                //UpdateViewmodelTransform();
-
-                // Render
-                _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
-
-                // Muzzle flash billboard
+                // Queue billboards for HDR FBO (muzzle flash)
                 if (_weaponSystem?.MuzzleFlashVisible == true && _weaponSystem.MuzzleFlashTexture != null)
                 {
                     var view = _player.Camera.GetViewMatrix();
                     var proj = _player.Camera.GetProjectionMatrix((float)_scrWidth / _scrHeight);
-                    _renderer.RenderBillboard(view, proj,
+                    _renderer.QueueBillboard(view, proj,
                         _weaponSystem.MuzzleFlashTexture.ID,
                         _weaponSystem.MuzzleFlashPosition,
                         _weaponSystem.MuzzleFlashSize,
@@ -399,6 +430,9 @@ public unsafe class Application : IDisposable
                 {
                     Logger.Warn("[MuzzleFlash] Visível mas textura é null!");
                 }
+
+                // Render
+                _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
 
                 if (_screenshotRequested)
                 {
@@ -412,7 +446,9 @@ public unsafe class Application : IDisposable
                 // ImGui
                 _imgui.NewFrame(dt, _scrWidth, _scrHeight);
                 if (_showImgui)
-                    _imgui.DrawWindows(_player);
+                { 
+                    _imgui.DrawWindows(_player, _renderer);
+                }
 
                 // Debug
                 if (_debugDrawer.Enabled)
@@ -423,13 +459,15 @@ public unsafe class Application : IDisposable
                     if (_enemySystem != null)
                     {
                         var enemyTex = _assets.GetTexture(Bible.Tex(Bible.EnemyIcon));
+                        var view = _player.Camera.GetViewMatrix();
+                        var proj = _player.Camera.GetProjectionMatrix((float)_scrWidth / _scrHeight);
                         foreach (var enemy in _enemySystem.GetEnemies())
                         {
                             if (!enemy.IsDead)
                             {
                                 var pos = enemy.Entity.Transform.Position;
                                 pos.Y += 2.0f; // acima da cápsula
-                                _debugDrawer.DrawBillboard(enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
+                                _renderer.QueueBillboard(view, proj, enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
                             }
                         }
                     }
@@ -649,7 +687,7 @@ public unsafe class Application : IDisposable
         if (Input.Input.KeyPressed(KeyCodes.F2)) _screenshotRequested = true;
 
 
-        if (Input.Input.KeyPressed(KeyCodes.F5)) ReloadMap(OnLoadProgress);
+        if (Input.Input.KeyPressed(KeyCodes.F5)) RequestMapReload();
 
         //use para edição de mapas futuros
         //if (Input.Input.KeyPressed(KeyCodes.F6))
@@ -860,6 +898,7 @@ public unsafe class Application : IDisposable
     private void RenderLoadingScreen()
     {
         var gl = _window.GL;
+        gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
         gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);

@@ -1,9 +1,21 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Silk.NET.OpenGL;
 using Fuse.Core;
+using Fuse.Renderer.PostProcess;
 
 namespace Fuse.Renderer;
+
+public struct BillboardDraw
+{
+    public Matrix4x4 View;
+    public Matrix4x4 Proj;
+    public uint Texture;
+    public Vector3 WorldPos;
+    public Vector2 Size;
+    public Vector4 Color;
+}
 
 public class MasterRenderer
 {
@@ -27,6 +39,32 @@ public class MasterRenderer
     private uint _bbShader;
     private int _bbUView, _bbUProj, _bbUWorldPos, _bbUSize, _bbUColor, _bbUTexture;
     private uint _bbVao, _bbVbo;
+
+    // Post-Process
+    private PostProcessPipeline _postPipeline = null!;
+    private PostProcessSettings _postSettings = new();
+    public PostProcessPipeline PostPipeline => _postPipeline;
+
+    // Billboard queue (rendered in HDR FBO before post-process)
+    private readonly List<BillboardDraw> _billboardQueue = new();
+
+    public void QueueBillboard(Matrix4x4 view, Matrix4x4 proj, uint texture, Vector3 worldPos, Vector2 size, Vector4 color)
+    {
+        _billboardQueue.Add(new BillboardDraw
+        {
+            View = view,
+            Proj = proj,
+            Texture = texture,
+            WorldPos = worldPos,
+            Size = size,
+            Color = color
+        });
+    }
+
+    public void ClearBillboardQueue()
+    {
+        _billboardQueue.Clear();
+    }
 
     // Textures
     private Texture _crateTexture = null!;
@@ -105,6 +143,10 @@ public class MasterRenderer
         _bbUColor = _gl.GetUniformLocation(_bbShader, "uColor");
         _bbUTexture = _gl.GetUniformLocation(_bbShader, "uTexture");
 
+        // Post-Process Pipeline
+        _postPipeline = new PostProcessPipeline(_gl, assets, _scrWidth, _scrHeight);
+        _postSettings = _postPipeline.Settings;
+
         float[] quadVerts = [
             -0.5f, -0.5f,  0, 0,
              0.5f, -0.5f,  1, 0,
@@ -133,6 +175,7 @@ public class MasterRenderer
     {
         _scrWidth = width;
         _scrHeight = height;
+        _postPipeline?.Resize(width, height);
     }
 
     public void RenderFrame(Scene scene, Camera camera, Physics.PhysicsWorld physics)
@@ -141,8 +184,16 @@ public class MasterRenderer
         var view = camera.GetViewMatrix();
         var proj = camera.GetProjectionMatrix(aspect);
 
+        // --- 0. Estado limpo no início do frame ---
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
+        _gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
         // --- 0. Update Physics and Hierarchy ---
         scene.UpdateTransforms(physics);
+
+        // ===== RENDER CENA NO HDR FBO (shadow pass usa framebuffer próprio) =====
 
         // --- 1. Shadow Pass ---
         var dirLight = scene.Lights.FirstOrDefault(l => l.Enabled && l.Type == LightType.Directional);
@@ -266,8 +317,24 @@ public class MasterRenderer
             }
         }
 
-        // --- 2. Regular Render Pass ---
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        // --- 2. Regular Render Pass (no HDR FBO para post-process) ---
+        uint targetFbo = _postPipeline.Settings.Enabled ? _postPipeline.HdrFbo : 0;
+        
+        // Validate HDR FBO before binding
+        if (_postPipeline.Settings.Enabled)
+        {
+            if (!_postPipeline.ValidateHdrFbo(_gl))
+            {
+                _postPipeline.Reset();
+            }
+            targetFbo = _postPipeline.HdrFbo;
+        }
+        else
+        {
+            targetFbo = 0;
+        }
+        
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
         _gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
         _gl.ClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
@@ -314,6 +381,63 @@ public class MasterRenderer
             SetupWorldUniforms(_skinnedShader, camera, view, proj, lightDir, dirLight,
                 cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
             RenderSkinned(scene, _skinnedShader);
+        }
+
+        // ===== BILLBOARDS (no HDR FBO) =====
+        if (_billboardQueue.Count > 0)
+        {
+            _gl.Enable(EnableCap.Blend);
+            _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            _gl.Disable(EnableCap.CullFace);
+            _gl.DepthMask(false);
+
+            _gl.UseProgram(_bbShader);
+
+            foreach (var bb in _billboardQueue)
+            {
+                float[] viewArr = [
+                    bb.View.M11, bb.View.M12, bb.View.M13, bb.View.M14,
+                    bb.View.M21, bb.View.M22, bb.View.M23, bb.View.M24,
+                    bb.View.M31, bb.View.M32, bb.View.M33, bb.View.M34,
+                    bb.View.M41, bb.View.M42, bb.View.M43, bb.View.M44,
+                ];
+                float[] projArr = [
+                    bb.Proj.M11, bb.Proj.M12, bb.Proj.M13, bb.Proj.M14,
+                    bb.Proj.M21, bb.Proj.M22, bb.Proj.M23, bb.Proj.M24,
+                    bb.Proj.M31, bb.Proj.M32, bb.Proj.M33, bb.Proj.M34,
+                    bb.Proj.M41, bb.Proj.M42, bb.Proj.M43, bb.Proj.M44,
+                ];
+                unsafe
+                {
+                    fixed (float* vp = viewArr, pp = projArr)
+                    {
+                        _gl.UniformMatrix4(_bbUView, 1, false, vp);
+                        _gl.UniformMatrix4(_bbUProj, 1, false, pp);
+                    }
+                }
+                _gl.Uniform3(_bbUWorldPos, bb.WorldPos.X, bb.WorldPos.Y, bb.WorldPos.Z);
+                _gl.Uniform2(_bbUSize, bb.Size.X, bb.Size.Y);
+                _gl.Uniform4(_bbUColor, bb.Color.X, bb.Color.Y, bb.Color.Z, bb.Color.W);
+                _gl.Uniform1(_bbUTexture, 0);
+                _gl.ActiveTexture(TextureUnit.Texture0);
+                _gl.BindTexture(TextureTarget.Texture2D, bb.Texture);
+
+                _gl.BindVertexArray(_bbVao);
+                _gl.DrawArrays(GLEnum.Triangles, 0, 6);
+            }
+
+            _gl.BindVertexArray(0);
+            _gl.DepthMask(true);
+            _gl.Enable(EnableCap.CullFace);
+            _gl.Disable(EnableCap.Blend);
+
+            _billboardQueue.Clear();
+        }
+
+        // ===== POST-PROCESS =====
+        if (_postPipeline.Settings.Enabled)
+        {
+            _postPipeline.Execute(_postPipeline.HdrColorId, 0); // 0 = tela final
         }
     }
 
@@ -546,5 +670,10 @@ public class MasterRenderer
         var lightProjection = Matrix4x4.CreateOrthographicOffCenter(minX, maxX, minY, maxY, minZ, maxZ);
         
         return lightView * lightProjection;
+    }
+
+    public void Dispose()
+    {
+        _postPipeline?.Dispose();
     }
 }

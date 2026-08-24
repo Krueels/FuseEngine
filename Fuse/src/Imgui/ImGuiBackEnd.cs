@@ -1,8 +1,9 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Silk.NET.OpenGL;
-using ImGuiNET;
 using Fuse.Core;
+using Fuse.Renderer;
+using ImGuiNET;
+using Silk.NET.OpenGL;
 
 namespace Fuse.Imgui;
 
@@ -43,7 +44,7 @@ public unsafe class ImGuiBackEnd : IDisposable
         ImGui.NewFrame();
     }
 
-    public void DrawWindows(Player.Player? player)
+    public void DrawWindows(Player.Player? player, Renderer.MasterRenderer renderer)
     {
         if (!_showDebug || player == null) return;
 
@@ -59,6 +60,37 @@ public unsafe class ImGuiBackEnd : IDisposable
         bool surfMode = player.SurfMode;
         if (ImGui.Checkbox("Surf Mode", ref surfMode))
             player.SurfMode = surfMode;
+        if (ImGuiNET.ImGui.CollapsingHeader("Post-Process"))
+        {
+            var pp = renderer.PostPipeline.Settings; // precisamos expor property pública no MasterRenderer
+
+            ImGuiNET.ImGui.Checkbox("Enabled", ref pp.Enabled);
+            ImGuiNET.ImGui.Checkbox("Bloom Enabled", ref pp.BloomEnabled);
+
+            if (pp.Enabled)
+            {
+                ImGuiNET.ImGui.SeparatorText("Tonemap");
+                ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
+                ImGuiNET.ImGui.Checkbox("Tonemap", ref pp.TonemapEnabled);
+
+                ImGuiNET.ImGui.SeparatorText("Bloom");
+                ImGuiNET.ImGui.DragFloat("Strength", ref pp.BloomStrength, 0.01f, 0f, 2f);
+                ImGuiNET.ImGui.DragFloat("Threshold", ref pp.BloomThreshold, 0.01f, 0f, 5f);
+                ImGuiNET.ImGui.DragFloat("Knee", ref pp.BloomKnee, 0.01f, 0f, 1f);
+
+                ImGuiNET.ImGui.SeparatorText("Kawase Blur");
+                ImGuiNET.ImGui.DragInt("Radius", ref pp.KawaseRadius, 1, 1, 8);
+                ImGuiNET.ImGui.DragInt("Iterations", ref pp.KawaseIterations, 1, 1, 4);
+
+                ImGuiNET.ImGui.SeparatorText("Bloom Expansion");
+                ImGuiNET.ImGui.DragFloat("Scale", ref pp.BloomScale, 0.05f, 0f, 5f);
+                ImGuiNET.ImGui.DragFloat3("Tint", ref pp.BloomTint, 0.05f, 0f, 2f);
+                ImGuiNET.ImGui.DragFloat("Anamorphic Ratio", ref pp.BloomAnamorphicRatio, 0.05f, 0f, 4f);
+
+                ImGuiNET.ImGui.SeparatorText("Debug View");
+                ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract"], 4);
+            }
+        }
         ImGui.End();
     }
 

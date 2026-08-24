@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="res\Shaders\PostProcess\" />
     <Folder Include="res\Textures\Icons\" />
   </ItemGroup>
 

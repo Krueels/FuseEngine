@@ -23,12 +23,14 @@ public class SceneManager
     private readonly Dictionary<JoltPhysicsSharp.BodyID, GCHandle> _interactableHandles = [];
     private readonly List<IBehaviour> _behaviours = [];
     private TriggerSystem _triggerSystem = null!;
+    private readonly MasterRenderer _renderer;
 
-    public SceneManager(PhysicsWorld physics, AssetManagement.AssetManager assets)
+    public SceneManager(PhysicsWorld physics, AssetManagement.AssetManager assets, MasterRenderer renderer = null!)
     {
         _scene = new Renderer.Scene();
         _physics = physics;
         _assets = assets;
+        _renderer = renderer;
     }
 
     public void InitTriggerSystem(Player.Player player)
@@ -68,7 +70,9 @@ public class SceneManager
 
         onProgress?.Invoke(1.0f, "Done!");
         Logger.Info($"Map loaded: {fileName}");
-        
+
+        _renderer?.ClearBillboardQueue();
+
         return spawn;
     }
 
@@ -92,27 +96,41 @@ public class SceneManager
         RegisterInteractablesAndBehaviours();
 
         onProgress?.Invoke(1.0f, "Done!");
+
+        _renderer?.ClearBillboardQueue();
         return spawn;
     }
 
-    private void ClearCurrentMap()
+private void ClearCurrentMap()
+{
+    _interactables.Clear();
+    _behaviours.Clear();
+
+    // 1. Zerar UserData ANTES de tudo: callbacks nativos (contato/raycast) nunca
+    //    devem ler ponteiros de GChandles que serão liberados
+    foreach (var kv in _interactableHandles)
+        _physics.BodyInterface.SetUserData(kv.Key, 0);
+
+    // 2. Liberar GCHandles
+    foreach (var handle in _interactableHandles.Values)
+        handle.Free();
+    _interactableHandles.Clear();
+
+    // 3. Destruir corpos E resetar os wrappers RigidBody.
+    //    Sem b.Destroy() o flag IsBuilt fica true apontando pra BodyID morto —
+    //    e a Jolt recicla IDs, então referências stale agem em corpos alheios → crash nativo.
+    foreach (var b in _bodies)
     {
-        _interactables.Clear();
-        _behaviours.Clear();
-
-        foreach (var b in _bodies)
+        if (b.IsBuilt)
         {
-            if (b.IsBuilt)
-                _physics.DestroyBody(b.Native);
+            _physics.DestroyBody(b.Native);
+            b.Destroy();
         }
-        _bodies.Clear();
-
-        foreach (var handle in _interactableHandles.Values)
-            handle.Free();
-        _interactableHandles.Clear();
-        
-        _scene.Clear();
     }
+    _bodies.Clear();
+        
+    _scene.Clear();
+}
 
     private void RegisterInteractablesAndBehaviours()
     {

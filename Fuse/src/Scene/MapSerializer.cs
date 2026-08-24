@@ -429,6 +429,7 @@ public static class MapSerializer
             }
 
             var entity = scene.Add(mesh, id);
+            entity.MeshOwnedByEntity = isBrush;
             entity.MapData = obj;
             entity.MeshKey = meshKey;
             entity.TexturePath = texturePath;
