@@ -6,6 +6,7 @@ using Fuse.Core;
 using Fuse.Interaction;
 using Fuse.Physics;
 using Fuse.Renderer;
+using JoltPhysicsSharp;
 
 namespace Fuse.Scene;
 
@@ -17,6 +18,7 @@ public class SceneManager
 
     public string CurrentMapPath { get; private set; } = null!;
     public Renderer.Scene ActiveScene => _scene;
+    public MasterRenderer Renderer => _renderer;
 
     private readonly List<RigidBody> _bodies = [];
     private readonly List<IInteractable> _interactables = [];
@@ -249,8 +251,19 @@ private void ClearCurrentMap()
         }
     }
 
+    public RigidBody? GetRigidBody(BodyID id)
+    {
+        for (int i = 0; i < _bodies.Count; i++)
+        {
+            if (_bodies[i].Native == id)
+                return _bodies[i];
+        }
+        return null;
+    }
+
     public void Dispose()
     {
         ClearCurrentMap();
     }
 }
+

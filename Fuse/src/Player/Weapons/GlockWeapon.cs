@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Fuse.Renderer;
 using Fuse.Animation;
 using Fuse.Physics;
@@ -323,12 +323,110 @@ public sealed class GlockWeapon : IWeapon
             return;
 
         Vector3 hitPos = origin + direction * Range * hit.Fraction;
-        // Note: ContactNormal não está disponível no RayCastResult do JoltPhysicsSharp
-        // Para normal, precisaríamos de um shape cast ou query adicional
-        Vector3 hitNormal = -direction; // Aproximação: oposto à direção do tiro
+        Vector3 hitNormal = -direction;
+
+        // Detect exact surface normal based on the collided shape and hit position
+        var rigidBody = _system.SceneManager?.GetRigidBody(hit.BodyID);
+        if (rigidBody != null)
+        {
+            Vector3 bodyPos = rigidBody.Position(_system.Physics);
+            Quaternion bodyRot = rigidBody.Rotation(_system.Physics);
+
+            switch (rigidBody.Type)
+            {
+                case Physics.RigidBody.ShapeType.Box:
+                {
+                    // Transform hit point to body local space
+                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
+                    Vector3 ext = rigidBody.BoxHalfExtents;
+                    if (ext.X <= 0.0001f) ext.X = 0.0001f;
+                    if (ext.Y <= 0.0001f) ext.Y = 0.0001f;
+                    if (ext.Z <= 0.0001f) ext.Z = 0.0001f;
+
+                    // Relative proximity to each face: max(|local| / halfExtent)
+                    float rx = MathF.Abs(localHit.X) / ext.X;
+                    float ry = MathF.Abs(localHit.Y) / ext.Y;
+                    float rz = MathF.Abs(localHit.Z) / ext.Z;
+
+                    Vector3 localNormal;
+                    if (ry >= rx && ry >= rz)
+                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
+                    else if (rx >= ry && rx >= rz)
+                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
+                    else
+                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
+
+                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                    break;
+                }
+                case Physics.RigidBody.ShapeType.Plane:
+                {
+                    hitNormal = rigidBody.PlaneNormal;
+                    break;
+                }
+                case Physics.RigidBody.ShapeType.Sphere:
+                {
+                    hitNormal = Vector3.Normalize(hitPos - bodyPos);
+                    break;
+                }
+                default:
+                {
+                    // Fallback for general bodies
+                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
+                    float absX = MathF.Abs(localHit.X);
+                    float absY = MathF.Abs(localHit.Y);
+                    float absZ = MathF.Abs(localHit.Z);
+                    Vector3 localNormal;
+                    if (absY >= absX && absY >= absZ)
+                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
+                    else if (absX >= absY && absX >= absZ)
+                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
+                    else
+                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
+                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                    break;
+                }
+            }
+
+            // Ensure normal points against bullet travel direction
+            if (Vector3.Dot(hitNormal, direction) > 0)
+                hitNormal = -hitNormal;
+        }
+        else
+        {
+            // Fallback for bodies without RigidBody metadata
+            BodyLockRead hitLock = default;
+            _system.Physics.BodyLockInterface.LockRead(hit.BodyID, out hitLock);
+            if (hitLock.Succeeded)
+            {
+                var body = hitLock.Body;
+                Vector3 bodyPos = body.Position;
+                Quaternion bodyRot = body.Rotation;
+                Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
+                float absX = MathF.Abs(localHit.X);
+                float absY = MathF.Abs(localHit.Y);
+                float absZ = MathF.Abs(localHit.Z);
+                Vector3 localNormal;
+                if (absY >= absX && absY >= absZ)
+                    localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
+                else if (absX >= absY && absX >= absZ)
+                    localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
+                else
+                    localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
+                hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                if (Vector3.Dot(hitNormal, direction) > 0)
+                    hitNormal = -hitNormal;
+
+                _system.Physics.BodyLockInterface.UnlockRead(hitLock);
+            }
+        }
+
+
+
 
         // Hit effect
         SpawnHitEffect(hitPos, hitNormal);
+
 
         // Apply damage to interactable/physics body
         ApplyDamage(hit.BodyID, hitPos, direction);
@@ -345,6 +443,7 @@ public sealed class GlockWeapon : IWeapon
         // TODO: Decal, particle, som de impacto
         var idx = Random.Shared.Next(3);
         _system?.Audio.Play3D($"Audio/weapons/Bullet_Impact_Flesh_{idx:D2}.mp3", position, volume: 0.5f);
+        _system?.SpawnImpactDecal(position, normal);
     }
 
     private void ApplyDamage(JoltPhysicsSharp.BodyID bodyId, Vector3 hitPos, Vector3 direction)
@@ -381,5 +480,8 @@ public sealed class GlockWeapon : IWeapon
 
         Vector3 impulse = direction * Damage * 0.5f * mass;
         _system.Physics.BodyInterface.AddImpulse(bodyId, impulse);
+
+        // spawn impact decal
+        //_system?.SpawnImpactDecal(hitPos, direction);
     }
 }

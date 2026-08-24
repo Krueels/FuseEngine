@@ -23,6 +23,7 @@ public sealed class PostProcessPipeline : IDisposable
 
     public uint HdrFbo => _fbPool.HdrFbo;
     public uint HdrColorId => _fbPool.HdrColorId;
+    public uint HdrDepthId => _fbPool.HdrDepthTexture;
     public int Width => _fbPool.Width;
     public int Height => _fbPool.Height;
 

@@ -322,7 +322,76 @@ public unsafe class DebugDrawer : IDisposable
         _billboardQuads.Add(new BillboardQuad { Texture = texture, WorldPos = worldPos, Size = size, Color = color });
     }
 
+    /// <summary>
+    /// Draws a debug gizmo for a decal: an oriented wireframe box matching the projection
+    /// volume (yellow) and a normal arrow pointing away from the surface (red).
+    /// </summary>
+    /// <param name="position">Impact point on the surface.</param>
+    /// <param name="forward">Surface normal (direction the decal projects FROM).</param>
+    /// <param name="right">Right axis of the decal orientation basis.</param>
+    /// <param name="up">Up axis of the decal orientation basis.</param>
+    /// <param name="size">Half-size of the decal (the orthographic box is size*2 wide/tall).</param>
+    /// <param name="depth">Depth of the projection box.</param>
+    public void DrawDecalGizmo(Vector3 position, Vector3 forward, Vector3 right, Vector3 up,
+                                float size, float depth)
+    {
+        // The projection box is centred at (position + forward * depth/2), oriented by the basis.
+        // half-extents: size along right, size along up, depth/2 along forward.
+        Vector3 center = position + forward * (depth * 0.5f);
+
+        Vector3 r = right  * size;
+        Vector3 u = up     * size;
+        Vector3 f = forward * (depth * 0.5f);
+
+        Vector3[] c =
+        [
+            center - r - u - f,
+            center + r - u - f,
+            center + r + u - f,
+            center - r + u - f,
+            center - r - u + f,
+            center + r - u + f,
+            center + r + u + f,
+            center - r + u + f,
+        ];
+
+        var yellow = new Vector3(1f, 0.9f, 0f);
+        PushBoxWire(c, yellow);
+
+        // Cross on the impact face (the face closest to the surface) for easy alignment check
+        var faceColor = new Vector3(1f, 0.5f, 0f);
+        Vector3 faceCenter = center - f; // = position
+        PushLine(faceCenter - r, faceCenter + r, faceColor);
+        PushLine(faceCenter - u, faceCenter + u, faceColor);
+
+        // Normal arrow (red) pointing away from the surface
+        var arrowColor = new Vector3(1f, 0.1f, 0.1f);
+        Vector3 arrowTip = position + forward * (depth + 0.05f);
+        PushLine(position, arrowTip, arrowColor);
+
+        // Arrowhead
+        float arrowHead = 0.03f;
+        PushLine(arrowTip, arrowTip - forward * arrowHead + right  * arrowHead, arrowColor);
+        PushLine(arrowTip, arrowTip - forward * arrowHead - right  * arrowHead, arrowColor);
+        PushLine(arrowTip, arrowTip - forward * arrowHead + up     * arrowHead, arrowColor);
+        PushLine(arrowTip, arrowTip - forward * arrowHead - up     * arrowHead, arrowColor);
+    }
+
+    /// <summary>
+    /// Draws debug gizmos for all currently active decals in the queue.
+    /// </summary>
+    public void DrawDecalsDebug(IReadOnlyList<DecalDraw> decals)
+
+    {
+        for (int i = 0; i < decals.Count; i++)
+        {
+            var d = decals[i];
+            DrawDecalGizmo(d.Position, d.Normal, d.Right, d.Up, d.Size * 0.5f, d.Depth);
+        }
+    }
+
     private void FlushBillboards(Matrix4x4 view, Matrix4x4 proj)
+
     {
         if (_billboardQuads.Count == 0) return;
 

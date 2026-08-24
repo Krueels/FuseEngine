@@ -17,7 +17,24 @@ public struct BillboardDraw
     public Vector4 Color;
 }
 
-public class MasterRenderer
+public struct DecalDraw
+{
+    public Vector3 Position;
+    public Vector3 Normal;
+    public Vector3 Right;
+    public Vector3 Up;
+    public Matrix4x4 ModelMatrix;
+    public Matrix4x4 InvModelMatrix;
+    public uint AlbedoTexture;
+    public uint NormalTexture;
+    public float Size;
+    public float Depth;
+    public float LifeTime;
+    public float FadeStart;
+    public float Age;
+}
+
+public unsafe class MasterRenderer
 {
     private readonly GL _gl;
     private int _scrWidth, _scrHeight;
@@ -36,9 +53,18 @@ public class MasterRenderer
     private PointShadowMap _pointShadowMap1 = null!;
     private PointShadowMap _pointShadowMap2 = null!;
     private PointShadowMap _pointShadowMap3 = null!;
+
+    // billboard
     private uint _bbShader;
     private int _bbUView, _bbUProj, _bbUWorldPos, _bbUSize, _bbUColor, _bbUTexture;
     private uint _bbVao, _bbVbo;
+
+    // Decal Shader (Box Projected Decals)
+    private uint _decalShader;
+    private int _decalUModel, _decalUView, _decalUProj, _decalUInvViewProj, _decalUInvDecalModel;
+    private int _decalUScreenSize, _decalUCamPos, _decalUOpacity, _decalUAlbedo, _decalUDepthTex;
+    private uint _decalDepthTexture, _decalDepthFbo;
+
 
     // Post-Process
     private PostProcessPipeline _postPipeline = null!;
@@ -47,6 +73,10 @@ public class MasterRenderer
 
     // Billboard queue (rendered in HDR FBO before post-process)
     private readonly List<BillboardDraw> _billboardQueue = new();
+
+    // Decal queue
+    private readonly List<DecalDraw> _decalQueue = new();
+    public IReadOnlyList<DecalDraw> DecalQueue => _decalQueue;
 
     public void QueueBillboard(Matrix4x4 view, Matrix4x4 proj, uint texture, Vector3 worldPos, Vector2 size, Vector4 color)
     {
@@ -65,6 +95,80 @@ public class MasterRenderer
     {
         _billboardQueue.Clear();
     }
+
+    public void QueueDecal(DecalDraw decal)
+    {
+        _decalQueue.Add(decal);
+    }
+
+    /// <summary>
+    /// Spawns a 3D Box Projected Decal that automatically wraps around corners and geometry.
+    /// </summary>
+    /// <param name="position">Impact/surface point in world space.</param>
+    /// <param name="normal">Surface normal at the impact point.</param>
+    /// <param name="textureId">OpenGL texture ID for the decal.</param>
+    /// <param name="size">Width and height of the decal in meters (default: 0.30m).</param>
+    /// <param name="lifeTime">Duration in seconds before fading out and destruction (default: 30s).</param>
+    /// <param name="fadeStart">Percentage of life [0..1] when fade out begins (default: 0.7 = 70%).</param>
+    public void SpawnDecal(Vector3 position, Vector3 normal, uint textureId, float size = 0.30f, float lifeTime = 30f, float fadeStart = 0.7f)
+    {
+        float depth = size;
+
+        // Build stable orientation basis
+        Vector3 forward = Vector3.Normalize(normal);
+        Vector3 upHint = MathF.Abs(forward.Y) > 0.99f ? Vector3.UnitZ : Vector3.UnitY;
+        Vector3 right = Vector3.Normalize(Vector3.Cross(upHint, forward));
+        Vector3 up = Vector3.Normalize(Vector3.Cross(forward, right));
+
+        var rotMat = new Matrix4x4(
+            right.X,   right.Y,   right.Z,   0,
+            up.X,      up.Y,      up.Z,      0,
+            forward.X, forward.Y, forward.Z, 0,
+            0,         0,         0,         1
+        );
+        var rot = Quaternion.CreateFromRotationMatrix(rotMat);
+
+        Matrix4x4 model = Matrix4x4.CreateScale(size, size, depth) *
+                          Matrix4x4.CreateFromQuaternion(rot) *
+                          Matrix4x4.CreateTranslation(position);
+
+        Matrix4x4.Invert(model, out Matrix4x4 invModel);
+
+        _decalQueue.Add(new DecalDraw
+        {
+            Position       = position,
+            Normal         = forward,
+            Right          = right,
+            Up             = up,
+            ModelMatrix    = model,
+            InvModelMatrix = invModel,
+            AlbedoTexture  = textureId,
+            Size           = size,
+            Depth          = depth,
+            LifeTime       = lifeTime,
+            FadeStart      = fadeStart,
+            Age            = 0f
+        });
+    }
+
+    public void ClearDecalQueue()
+    {
+        _decalQueue.Clear();
+    }
+
+    public void UpdateDecals(float dt)
+    {
+        for (int i = _decalQueue.Count - 1; i >= 0; i--)
+        {
+            var decal = _decalQueue[i];
+            decal.Age += dt;
+            _decalQueue[i] = decal;
+
+            if (decal.Age >= decal.LifeTime)
+                _decalQueue.RemoveAt(i);
+        }
+    }
+
 
     // Textures
     private Texture _crateTexture = null!;
@@ -143,6 +247,22 @@ public class MasterRenderer
         _bbUColor = _gl.GetUniformLocation(_bbShader, "uColor");
         _bbUTexture = _gl.GetUniformLocation(_bbShader, "uTexture");
 
+        // Decal Shader (Box Projected Decals)
+        _decalShader = assets.GetShader(Bible.Shader(Bible.ShaderDecalVert), Bible.Shader(Bible.ShaderDecalFrag))!.ID;
+        _decalUModel = _gl.GetUniformLocation(_decalShader, "uModel");
+        _decalUView = _gl.GetUniformLocation(_decalShader, "uView");
+        _decalUProj = _gl.GetUniformLocation(_decalShader, "uProj");
+        _decalUInvViewProj = _gl.GetUniformLocation(_decalShader, "uInvViewProj");
+        _decalUInvDecalModel = _gl.GetUniformLocation(_decalShader, "uInvDecalModel");
+        _decalUScreenSize = _gl.GetUniformLocation(_decalShader, "uScreenSize");
+        _decalUCamPos = _gl.GetUniformLocation(_decalShader, "uCamPos");
+        _decalUOpacity = _gl.GetUniformLocation(_decalShader, "uOpacity");
+        _decalUAlbedo = _gl.GetUniformLocation(_decalShader, "uDecalAlbedo");
+        _decalUDepthTex = _gl.GetUniformLocation(_decalShader, "uDepthTex");
+
+        CreateDecalDepthResources();
+
+
         // Post-Process Pipeline
         _postPipeline = new PostProcessPipeline(_gl, assets, _scrWidth, _scrHeight);
         _postSettings = _postPipeline.Settings;
@@ -171,12 +291,34 @@ public class MasterRenderer
         _gl.BindVertexArray(0);
     }
 
+    private void CreateDecalDepthResources()
+    {
+        if (_decalDepthFbo != 0) { _gl.DeleteFramebuffer(_decalDepthFbo); _decalDepthFbo = 0; }
+        if (_decalDepthTexture != 0) { _gl.DeleteTexture(_decalDepthTexture); _decalDepthTexture = 0; }
+
+        _decalDepthTexture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexture);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.DepthComponent24, (uint)_scrWidth, (uint)_scrHeight, 0,
+            PixelFormat.DepthComponent, PixelType.UnsignedInt, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _decalDepthFbo = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _decalDepthFbo);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _decalDepthTexture, 0);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
     public void Resize(int width, int height)
     {
         _scrWidth = width;
         _scrHeight = height;
         _postPipeline?.Resize(width, height);
+        CreateDecalDepthResources();
     }
+
 
     public void RenderFrame(Scene scene, Camera camera, Physics.PhysicsWorld physics)
     {
@@ -192,6 +334,10 @@ public class MasterRenderer
 
         // --- 0. Update Physics and Hierarchy ---
         scene.UpdateTransforms(physics);
+
+        // Update Decals (age, cull expired)
+        _decalQueue.ForEach(d => { /* age handled in UpdateDecals */});
+        // We'll call UpdateDecals from Application.cs instead
 
         // ===== RENDER CENA NO HDR FBO (shadow pass usa framebuffer próprio) =====
 
@@ -382,6 +528,13 @@ public class MasterRenderer
                 cascadeLevels, lightSpaceMatrices, spotLights, spotSpaceMatrices, pointLights, shadowPointLights);
             RenderSkinned(scene, _skinnedShader);
         }
+
+        // ===== DECALS (no HDR FBO, after geometry) =====
+        if (_decalQueue.Count > 0)
+        {
+            RenderDecals(camera, view, proj, targetFbo);
+        }
+
 
         // ===== BILLBOARDS (no HDR FBO) =====
         if (_billboardQueue.Count > 0)
@@ -595,6 +748,112 @@ public class MasterRenderer
 
         _gl.Disable(GLEnum.Blend);
     }
+
+    private void RenderDecals(Camera camera, Matrix4x4 view, Matrix4x4 proj, uint targetFbo)
+    {
+        if (_decalQueue.Count == 0) return;
+
+        // 1. Copia o Depth Buffer do FBO ativo para _decalDepthFbo para leitura sem Feedback Loop
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _decalDepthFbo);
+        _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
+
+        // 2. Setup GL State para Box Decal Projection
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _gl.Enable(EnableCap.CullFace);
+        _gl.CullFace(GLEnum.Front); // Render back faces do cubo para que a projeção funcione mesmo com a câmera dentro do cubo
+
+        _gl.UseProgram(_decalShader);
+
+        unsafe
+        {
+            Matrix4x4 viewProj = view * proj;
+            Matrix4x4.Invert(viewProj, out Matrix4x4 invViewProj);
+
+            float[] viewArr = [
+                view.M11, view.M12, view.M13, view.M14,
+                view.M21, view.M22, view.M23, view.M24,
+                view.M31, view.M32, view.M33, view.M34,
+                view.M41, view.M42, view.M43, view.M44
+            ];
+            float[] projArr = [
+                proj.M11, proj.M12, proj.M13, proj.M14,
+                proj.M21, proj.M22, proj.M23, proj.M24,
+                proj.M31, proj.M32, proj.M33, proj.M34,
+                proj.M41, proj.M42, proj.M43, proj.M44
+            ];
+            float[] invVPArr = [
+                invViewProj.M11, invViewProj.M12, invViewProj.M13, invViewProj.M14,
+                invViewProj.M21, invViewProj.M22, invViewProj.M23, invViewProj.M24,
+                invViewProj.M31, invViewProj.M32, invViewProj.M33, invViewProj.M34,
+                invViewProj.M41, invViewProj.M42, invViewProj.M43, invViewProj.M44
+            ];
+
+            fixed (float* vp = viewArr, pp = projArr, ivp = invVPArr)
+            {
+                _gl.UniformMatrix4(_decalUView, 1, false, vp);
+                _gl.UniformMatrix4(_decalUProj, 1, false, pp);
+                _gl.UniformMatrix4(_decalUInvViewProj, 1, false, ivp);
+            }
+
+            _gl.Uniform2(_decalUScreenSize, (float)_scrWidth, (float)_scrHeight);
+            _gl.Uniform3(_decalUCamPos, camera.Position.X, camera.Position.Y, camera.Position.Z);
+
+            // Bind depth copy texture
+
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexture);
+            _gl.Uniform1(_decalUDepthTex, 0);
+
+            for (int i = 0; i < _decalQueue.Count; i++)
+            {
+                var decal = _decalQueue[i];
+                float ageRatio = decal.Age / decal.LifeTime;
+                float opacity = 1.0f;
+                if (ageRatio > decal.FadeStart)
+                    opacity = 1.0f - (ageRatio - decal.FadeStart) / (1.0f - decal.FadeStart);
+
+                _gl.Uniform1(_decalUOpacity, opacity);
+
+                float[] mArr = [
+                    decal.ModelMatrix.M11, decal.ModelMatrix.M12, decal.ModelMatrix.M13, decal.ModelMatrix.M14,
+                    decal.ModelMatrix.M21, decal.ModelMatrix.M22, decal.ModelMatrix.M23, decal.ModelMatrix.M24,
+                    decal.ModelMatrix.M31, decal.ModelMatrix.M32, decal.ModelMatrix.M33, decal.ModelMatrix.M34,
+                    decal.ModelMatrix.M41, decal.ModelMatrix.M42, decal.ModelMatrix.M43, decal.ModelMatrix.M44
+                ];
+                float[] invMArr = [
+                    decal.InvModelMatrix.M11, decal.InvModelMatrix.M12, decal.InvModelMatrix.M13, decal.InvModelMatrix.M14,
+                    decal.InvModelMatrix.M21, decal.InvModelMatrix.M22, decal.InvModelMatrix.M23, decal.InvModelMatrix.M24,
+                    decal.InvModelMatrix.M31, decal.InvModelMatrix.M32, decal.InvModelMatrix.M33, decal.InvModelMatrix.M34,
+                    decal.InvModelMatrix.M41, decal.InvModelMatrix.M42, decal.InvModelMatrix.M43, decal.InvModelMatrix.M44
+                ];
+
+                fixed (float* mp = mArr, imp = invMArr)
+                {
+                    _gl.UniformMatrix4(_decalUModel, 1, false, mp);
+                    _gl.UniformMatrix4(_decalUInvDecalModel, 1, false, imp);
+                }
+
+                _gl.ActiveTexture(TextureUnit.Texture1);
+                _gl.BindTexture(TextureTarget.Texture2D, decal.AlbedoTexture);
+                _gl.Uniform1(_decalUAlbedo, 1);
+
+                _skyBoxCubeMesh.Draw();
+            }
+        }
+
+        _gl.CullFace(GLEnum.Back);
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.DepthMask(true);
+        _gl.DepthFunc(DepthFunction.Less);
+        _gl.Disable(EnableCap.Blend);
+    }
+
+
 
     private Vector4[] GetFrustumCornersWorldSpace(Matrix4x4 proj, Matrix4x4 view)
     {

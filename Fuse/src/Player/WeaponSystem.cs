@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Numerics;
 using Fuse.Animation;
 using Fuse.AssetManagement;
@@ -69,6 +69,10 @@ public class WeaponSystem : IDisposable
 
     private Vector3 _frozenPosition;
     private Quaternion _frozenRotation;
+
+    // Debug
+    public Debug.DebugDrawer? DebugDrawer { get; set; }
+    public bool DecalDebugEnabled { get; set; } = false;
 
     public WeaponSystem(global::Fuse.Player.Player player, Camera camera, PhysicsWorld physics,
                         AssetManager assets, AudioSystem audio, Scene.SceneManager sceneManager)
@@ -366,6 +370,30 @@ public class WeaponSystem : IDisposable
         // Atualizar posição imediatamente para evitar frame com posição desatualizada
         UpdateMuzzleFlashPosition();
     }
+
+    public void SpawnImpactDecal(Vector3 position, Vector3 normal, string decalType = "bullet_hole")
+    {
+        if (_sceneManager?.Renderer == null) return;
+
+        uint textureId = _assets.GetTexture(Bible.Tex(Bible.DecalBulletHoleAlbedo)).ID;
+        _sceneManager.Renderer.SpawnDecal(position, normal, textureId, size: 0.30f, lifeTime: 30f, fadeStart: 0.7f);
+    }
+
+
+
+    // kept for reference – no longer used internally
+    private Matrix4x4 CreateDecalProjection(Vector3 pos, Vector3 normal, float size)
+    {
+        Vector3 forward = normal;
+        Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+        if (right.LengthSquared() < 0.001f) right = Vector3.Normalize(Vector3.Cross(Vector3.UnitZ, forward));
+        Vector3 up = Vector3.Cross(forward, right);
+
+        Matrix4x4 view = Matrix4x4.CreateLookAt(pos, pos + forward, up);
+        Matrix4x4 proj = Matrix4x4.CreateOrthographic(size * 2, size * 2, 0.01f, size);
+        return proj * view;
+    }
+
 
     public void TeleportViewmodelToCamera()
     {

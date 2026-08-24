@@ -23,6 +23,11 @@ public unsafe class Mesh : IDisposable
     private uint _indexCount;
     private uint _lineIndexCount;
 
+    public uint Vao => _vao;
+    public uint Vbo => _vbo;
+    public uint Ebo => _vbo;
+    public uint IndexCount => _indexCount;
+
     public bool HasLineBuffer => _lineEbo != 0;
 
     public Mesh(GL gl, Vertex[] vertices, uint[] indices, uint[] lineIndices = null)

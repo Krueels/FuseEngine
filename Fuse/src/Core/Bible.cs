@@ -28,6 +28,10 @@ public static class Bible
     public const string UniSexBody = "UniSexGuyBody_ALB.png";
     public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
 
+    // Decals
+    public const string DecalBulletHoleAlbedo = "decals/decal_bullet_hole.png";
+    public const string DecalBulletHoleNormal = "decals/decal_bullet_hole_normal.png";
+
     // Shaders
     public const string ShaderDefaultVert = "Shaders/default.vert";
     public const string ShaderDefaultFrag = "Shaders/default.frag";
@@ -40,8 +44,14 @@ public static class Bible
     public const string ShaderSkinnedVert = "Shaders/skinned.vert";
     public const string ShaderSkinnedShadowVert = "Shaders/shadow_skinned.vert";
     public const string ShaderPointShadowSkinnedVert = "Shaders/point_shadow_skinned.vert";
+
+    // Shaders - billboard
     public const string ShaderBillboardVert = "Shaders/billboard.vert";
     public const string ShaderBillboardFrag = "Shaders/billboard.frag";
+
+    // Shaders - Decals
+    public const string ShaderDecalVert = "Shaders/decals.vert";
+    public const string ShaderDecalFrag = "Shaders/decals.frag";
 
     // Shaders - Post Process
     public const string PostProcessVert = "Shaders/PostProcess/composite.vert";
