@@ -413,7 +413,7 @@ public unsafe class MasterRenderer
 
                 _skinnedShadowShader.Use();
                 _skinnedShadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrices[i]);
-                RenderSkinned(scene, _skinnedShadowShader);
+                RenderSkinned(scene, _skinnedShadowShader, true);
             }
         }
 
@@ -449,7 +449,7 @@ public unsafe class MasterRenderer
 
                 _skinnedShadowShader.Use();
                 _skinnedShadowShader.SetMat4("uLightSpaceMatrix", spotSpaceMatrices[i]);
-                RenderSkinned(scene, _skinnedShadowShader);
+                RenderSkinned(scene, _skinnedShadowShader, true);
             }
         }
 
@@ -503,7 +503,7 @@ public unsafe class MasterRenderer
 
                     _skinnedPointShadowShader.Use();
                     _skinnedPointShadowShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrix);
-                    RenderSkinned(scene, _skinnedPointShadowShader);
+                    RenderSkinned(scene, _skinnedPointShadowShader, true);
                 }
             }
         }
@@ -720,11 +720,12 @@ public unsafe class MasterRenderer
         }
     }
 
-    private void RenderSkinned(Scene scene, Shader shader)
+    private void RenderSkinned(Scene scene, Shader shader, bool skipViewmodels = false)
     {
         foreach (var e in scene.Entities)
         {
             if (!e.Visible || e.SkinnedModel == null || e.Animator == null) continue;
+            if (skipViewmodels && e.IsViewmodel) continue;
 
             shader.Use();
 

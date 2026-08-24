@@ -39,9 +39,6 @@ public class WeaponSystem : IDisposable
     private Animator? _viewmodelAnimator;
     private SkinnedModel? _viewmodelModel;
 
-    private Vector3 _viewmodelRecoilOffset;
-    private Vector3 _viewmodelRecoilRot;
-
     // Muzzle flash
     private bool _muzzleFlashVisible;
     private float _muzzleFlashTimer;
@@ -285,6 +282,7 @@ public class WeaponSystem : IDisposable
         _viewmodelEntity.SkinnedModel = model;
         _viewmodelEntity.Animator = _viewmodelAnimator;
         _viewmodelEntity.Visible = true;  // FORÇAR VISÍVEL
+        _viewmodelEntity.IsViewmodel = true;
 
         if (!string.IsNullOrEmpty(model.DefaultClipName))
             _viewmodelAnimator.Play(model.DefaultClipName);

@@ -34,6 +34,7 @@ public class Entity
     public RigidBody? Body { get; set; }
     public Transform Transform { get; set; } = new();
     public bool Visible { get; set; } = true;
+    public bool IsViewmodel { get; set; }
     public Animation.SkinnedModel? SkinnedModel { get; set; }
     public Animation.Animator? Animator { get; set; }
     public Vector3 ModelOffset { get; set; } = Vector3.Zero;
