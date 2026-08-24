@@ -44,9 +44,14 @@ public unsafe class Shader : IDisposable
         _gl.UseProgram(_id);
     }
 
-    public void SetMat4(string name, Matrix4x4 mat)
+    public unsafe void SetMat4(string name, Matrix4x4 mat)
     {
-        _gl.UniformMatrix4(GetUniformLoc(name), 1, false, GetMatrixValues(mat));
+        float* values = stackalloc float[16];
+        values[0] = mat.M11; values[1] = mat.M12; values[2] = mat.M13; values[3] = mat.M14;
+        values[4] = mat.M21; values[5] = mat.M22; values[6] = mat.M23; values[7] = mat.M24;
+        values[8] = mat.M31; values[9] = mat.M32; values[10] = mat.M33; values[11] = mat.M34;
+        values[12] = mat.M41; values[13] = mat.M42; values[14] = mat.M43; values[15] = mat.M44;
+        _gl.UniformMatrix4(GetUniformLoc(name), 1, false, values);
     }
 
     public unsafe void SetMat4(string name, Matrix4x4[] matrices)
@@ -142,17 +147,6 @@ public unsafe class Shader : IDisposable
         loc = _gl.GetUniformLocation(_id, name);
         _uniformCache[name] = loc;
         return loc;
-    }
-
-    private static float[] GetMatrixValues(Matrix4x4 mat)
-    {
-        return new float[16]
-        {
-            mat.M11, mat.M12, mat.M13, mat.M14,
-            mat.M21, mat.M22, mat.M23, mat.M24,
-            mat.M31, mat.M32, mat.M33, mat.M34,
-            mat.M41, mat.M42, mat.M43, mat.M44,
-        };
     }
 
     private uint Compile(ShaderType type, string source)
