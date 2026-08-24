@@ -1,11 +1,12 @@
 using System.Numerics;
+using Fuse.Enemy;
 using Fuse.Imgui;
 using Fuse.Input;
 using Fuse.Physics;
-using Fuse.Renderer;
 using Fuse.Player;
 using Fuse.Player.Weapons;
-using Fuse.Enemy;
+using Fuse.Renderer;
+using Fuse.Scene;
 using Fuse.UI;
 using Silk.NET.OpenGL;
 
@@ -46,6 +47,8 @@ public unsafe class Application : IDisposable
 
     private bool _consoleJustToggled;
 
+    private bool _enemySelectionMode = false;
+
     // Map Transition
     private string? _pendingMapLoad;
     private bool _pendingMapReload;
@@ -82,6 +85,7 @@ public unsafe class Application : IDisposable
         _loadingScreen = new LoadingScreen();
         _hud = new GameplayHUD();
         _hud.Init(_assets);
+        _hud.GetEnemyDebugHUD().SetDebugDrawer(_debugDrawer);
         _imgui = new ImGuiBackEnd(gl);
         _imgui.Init();
 
@@ -294,7 +298,7 @@ public unsafe class Application : IDisposable
                 }
 
                 // HUD Draw
-                _hud.Update(_weaponSystem, _scrWidth, _scrHeight);
+                _hud.Update(_weaponSystem, _enemySystem, _player?.Camera, _scrWidth, _scrHeight);
                 _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
 
                 // ImGui & Console Frame
@@ -325,6 +329,16 @@ public unsafe class Application : IDisposable
 
     private void UpdateUIFocus()
     {
+        // Selection mode (F8) tem prioridade máxima - SEMPRE mantém UI context e cursor visível
+        if (_enemySelectionMode)
+        {
+            if (!InputManager.IsContextActive(InputContext.UI))
+                InputManager.RequestContext(InputContext.UI);
+            if (Fuse.Input.Input.IsCursorDisabled())
+                Fuse.Input.Input.ShowCursor();
+            return;
+        }
+
         bool imguiWantsKeyboard = ImGuiNET.ImGui.GetIO().WantCaptureKeyboard;
         bool imguiWantsMouse = ImGuiNET.ImGui.GetIO().WantCaptureMouse;
         bool uiFocused = imguiWantsKeyboard || imguiWantsMouse;
@@ -337,7 +351,7 @@ public unsafe class Application : IDisposable
         if (_console.IsOpen && !uiFocused && !_consoleJustToggled)
         {
             _console.Toggle();
-            Input.Input.DisableCursor();
+            Fuse.Input.Input.DisableCursor();
             InputManager.ReleaseContext(InputContext.UI);
         }
         _consoleJustToggled = false;
@@ -380,6 +394,58 @@ public unsafe class Application : IDisposable
             }
         }
 
+        if (_debugDrawer.Enabled)
+        {
+            // F8 - Toggle Enemy Selection Mode
+            if (Input.Input.KeyPressed(KeyCodes.F8))
+            {
+                _enemySelectionMode = !_enemySelectionMode;
+                if (_enemySelectionMode)
+                {
+                    Input.Input.ShowCursor();
+                    InputManager.RequestContext(InputContext.UI);
+                }
+                else
+                {
+                    Input.Input.DisableCursor();
+                    InputManager.ReleaseContext(InputContext.UI);
+                }
+            }
+        }
+        else
+        {
+            _enemySelectionMode = false;
+        }
+        // Garantir cursor visível durante selection mode (fallback)
+        if (_enemySelectionMode && Fuse.Input.Input.IsCursorDisabled())
+        {
+            Fuse.Input.Input.ShowCursor();
+        }
+
+        // Enemy Selection Raycat (when in selection mode)
+        if (_enemySelectionMode && _enemySystem != null && _player != null)
+        {
+            if (Input.Input.LeftMousePressed())
+            {
+                var mousePos = Input.Input.MousePosition;
+                var ray = _player.Camera.GetMouseRay(mousePos, _renderer.Width, _renderer.Height);
+
+                Fuse.Enemy.Enemy? hitEnemy = null;
+                if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit,
+                    new Physics.DefaultBroadPhaseLayerFilter(),
+                    new Physics.DefaultObjectLayerFilter(),
+                    new Physics.DefaultBodyFilter()))
+                {
+                    if (hit.BodyID.IsValid)
+                    {
+                        _enemySystem.TryGetEnemy(hit.BodyID, out hitEnemy);
+                    }
+                }
+
+                _hud.GetEnemyDebugHUD().SetTarget(hitEnemy);
+            }
+        }
+
         DevShortcuts.HandleInput(
             _sceneManager,
             _player,
@@ -393,6 +459,7 @@ public unsafe class Application : IDisposable
             ref _screenshotRequested,
             RequestMapReload);
     }
+
 
     private void RenderDebug(float aspect)
     {

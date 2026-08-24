@@ -1,3 +1,4 @@
+using System.Numerics;
 using Silk.NET.GLFW;
 
 namespace Fuse.Input;
@@ -144,6 +145,8 @@ public static unsafe class Input
 
     public static int CursorScreenX => MouseX;
     public static int CursorScreenY => MouseY;
+
+    public static Vector2 MousePosition => new Vector2(MouseX, MouseY);
 
     public static void SetCursorPosition(int x, int y)
     {

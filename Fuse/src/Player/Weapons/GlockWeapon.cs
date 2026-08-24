@@ -31,7 +31,7 @@ public sealed class GlockWeapon : IWeapon
     public readonly string[] _fireAnims = Enumerable.Range(1, 3).Select(i => $"Fire{i}").ToArray();
     public string ViewmodelReloadAnim => "Reload";
     public string ViewmodelReloadEmptyAnim => "ReloadEmpty";
-    public string ViewmodelDrawAnim => "Draw";
+    public string ViewmodelDrawAnim => "DrawFirst";
 
     public string ReloadAudioPath => Bible.Audio(Bible.GlockReload);
     public string ReloadEmptyAudioPath => Bible.Audio(Bible.GlockReloadEmpty);
@@ -95,6 +95,7 @@ public sealed class GlockWeapon : IWeapon
         {
             _animator.Speed = 1.0f;
             _animator.Play(ViewmodelDrawAnim);
+            _system?.Audio.Play(Bible.Audio(Bible.GlockDrawFirst));
             _animState = AnimState.Drawing;
             _animEndTime = (float)(_animator.CurrentClip?.DurationSeconds ?? 0.5f);
         }

@@ -1,4 +1,5 @@
 using System.Numerics;
+using JoltPhysicsSharp;
 
 namespace Fuse.Renderer;
 
@@ -68,6 +69,39 @@ public class Camera
     {
         return Matrix4x4.CreatePerspectiveFieldOfView(
             float.DegreesToRadians(_fov), aspect, _nearPlane, _farPlane);
+    }
+
+    /// <summary>Converte posição world para coordenadas de tela (pixels). Retorna (-9999,-9999) se atrás da câmera.</summary>
+    public Vector2 WorldToScreenPoint(Vector3 worldPos, int screenWidth, int screenHeight)
+    {
+        var view = GetViewMatrix();
+        var proj = GetProjectionMatrix((float)screenWidth / screenHeight);
+        var clip = Vector4.Transform(new Vector4(worldPos, 1.0f), view * proj);
+        if (clip.W <= 0.001f) return new Vector2(-9999, -9999);
+        float x = (clip.X / clip.W + 1) * 0.5f * screenWidth;
+        float y = (1 - clip.Y / clip.W) * 0.5f * screenHeight;
+        return new Vector2(x, y);
+    }
+
+    /// <summary>Cria um Ray do Jolt a partir da posição do mouse na tela.</summary>
+    public Ray GetMouseRay(Vector2 mousePos, int width, int height)
+    {
+        float x = (2.0f * mousePos.X) / width - 1.0f;
+        float y = 1.0f - (2.0f * mousePos.Y) / height;
+        float z = 1.0f;
+
+        Matrix4x4.Invert(GetProjectionMatrix((float)width / height), out Matrix4x4 invProj);
+        Matrix4x4.Invert(GetViewMatrix(), out Matrix4x4 invView);
+
+        var rayClip = new Vector4(x, y, z, 1.0f);
+        var rayEye = Vector4.Transform(rayClip, invProj);
+        rayEye = new Vector4(rayEye.X, rayEye.Y, -1.0f, 0.0f);
+        var rayWorld = Vector4.Transform(rayEye, invView);
+        var rayDir = Vector3.Normalize(new Vector3(rayWorld.X, rayWorld.Y, rayWorld.Z));
+
+        var origin = Position;
+        var dirScaled = rayDir * 100f; // 100m range
+        return new Ray(ref origin, ref dirScaled);
     }
 
     public Vector3 Front => _front;

@@ -44,6 +44,9 @@ public unsafe class MasterRenderer
     private readonly GL _gl;
     private int _scrWidth, _scrHeight;
 
+    public int Width => _scrWidth;
+    public int Height => _scrHeight;
+
     // Shaders
     private Shader _shader = null!;
     private Shader _skyboxShader = null!;

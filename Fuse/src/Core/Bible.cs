@@ -58,6 +58,7 @@ public static class Bible
     public const string PostProcessFrag = "Shaders/PostProcess/composite.frag";
 
     // Audio
+    public const string GlockDrawFirst = "Audio/weapons/glock/Glock_DrawFirst.wav";
     public const string GlockReload = "Audio/weapons/glock/Glock_Reload.wav";
     public const string GlockReloadEmpty = "Audio/weapons/glock/Glock_ReloadEmpty.wav";
     public const string GlockFire0 = "Audio/weapons/glock/Glock_Fire0.wav";

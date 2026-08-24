@@ -4,6 +4,7 @@ using Fuse.Core;
 using Fuse.Renderer;
 using Fuse.Player;
 using Fuse.AssetManagement;
+using Fuse.Enemy;
 
 namespace Fuse.UI;
 
@@ -15,6 +16,7 @@ public class GameplayHUD
     private HUDText _weaponDebugText = null!;
     private HUDText _ammoText = null!;
     private HUDText _reserveAmmoText = null!;
+    private EnemyDebugHUD _enemyDebugHUD = null!;
 
     public HUDImage CrosshairNode => _crosshairNode;
 
@@ -29,9 +31,11 @@ public class GameplayHUD
         
         _ammoText = _hud.AddText("0", HUDAnchor.BottomRight, new Vector2(-320, -120), 2.5f, new Vector4(1, 1, 1, 1));
         _reserveAmmoText = _hud.AddText("0", HUDAnchor.BottomRight, new Vector2(-320, -100), 1.5f, new Vector4(0.7f, 0.7f, 0.7f, 1));
+
+        _enemyDebugHUD = new EnemyDebugHUD();
     }
 
-    public void Update(WeaponSystem? weaponSystem, int width, int height)
+    public void Update(WeaponSystem? weaponSystem, EnemySystem? enemySystem, Camera? camera, int width, int height)
     {
         if (_fpsText != null)
             _fpsText.Text = $"FPS: {Engine.FPS}";
@@ -59,8 +63,14 @@ public class GameplayHUD
             _reserveAmmoText.Text = "";
         }
 
+        // Enemy debug HUD
+        if (_enemyDebugHUD != null && camera != null)
+            _enemyDebugHUD.Update(camera, width, height);
+
         _hud.Update(width, height);
     }
+
+    public EnemyDebugHUD GetEnemyDebugHUD() => _enemyDebugHUD!;
 
     public void Draw(GL gl, UIRenderer ui, int width, int height, bool isPaused, Interaction.PlayerInteraction? interaction)
     {
@@ -73,6 +83,8 @@ public class GameplayHUD
             interaction?.Update();
 
         _hud.Draw(ui, width, height);
+
+        _enemyDebugHUD?.Draw(ui, width, height);
 
         if (isPaused)
         {
