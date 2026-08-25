@@ -33,12 +33,12 @@ public class LoadingScreen
         gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
         // Title
-        string title = "LOADING";
-        float titleW = title.Length * 6 * 2.5f;
-        ui.DrawText((width - titleW) / 2, 50, title.AsSpan(), new Vector4(0, 1, 1, 1), 2.5f);
+        //string title = "LOADING";
+        //float titleW = title.Length * 6 * 2.5f;
+        //ui.DrawText((width - titleW) / 2, 50, title.AsSpan(), new Vector4(0, 1, 1, 1), 2.5f);
 
         // Progress bar background
-        int barX = 100, barY = height - 150, barW = width - 200, barH = 24;
+        int barX = 100, barY = height - 150, barW = width - 200, barH = 8;
         ui.DrawRect(barX, barY, barW, barH, new Vector4(0.2f, 0.2f, 0.2f, 1));
 
         // Progress bar fill

@@ -31,4 +31,9 @@ public sealed class PostProcessSettings
 
     // Debug
     public int DebugView = 0;
+
+    // Motion Blur
+    public bool MotionBlurEnabled = true;
+    public float MotionBlurIntensity = 1.0f;
+    public int MotionBlurSamples = 8;
 }

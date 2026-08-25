@@ -78,6 +78,7 @@ public unsafe class MasterRenderer
     private PostProcessPipeline _postPipeline = null!;
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
+    private Matrix4x4 _prevViewProj = Matrix4x4.Identity;
 
     // Pre-allocated light buffers (zero LINQ allocations per frame)
     private readonly Light[] _allLightsBuf = new Light[16];
@@ -643,10 +644,18 @@ public unsafe class MasterRenderer
         }
 
         // ===== POST-PROCESS =====
+        if (_prevViewProj == Matrix4x4.Identity)
+        {
+            _prevViewProj = view * proj;
+        }
+
         if (_postPipeline.Settings.Enabled)
         {
+            _postPipeline.SetViewProj(_prevViewProj, view, proj);
             _postPipeline.Execute(_postPipeline.HdrColorId, 0); // 0 = tela final
         }
+
+        _prevViewProj = view * proj;
     }
 
     private int FilterLights(IReadOnlyList<Light> lights, LightType type, bool requireShadows, Light[] dest, int max, Vector3 cameraPos)
@@ -804,6 +813,7 @@ public unsafe class MasterRenderer
             shader.SetVec2("uUvScale", e.UvScale);
             shader.SetVec2("uUvOffset", e.UvOffset);
             shader.SetFloat("uUvRotation", e.UvRotation);
+            shader.SetFloat("uIsViewmodel", e.IsViewmodel ? 1.0f : 0.0f);
             UploadBones(e.Animator.FinalBoneMatrices);
 
             foreach (var sub in e.SkinnedModel.Submeshes)

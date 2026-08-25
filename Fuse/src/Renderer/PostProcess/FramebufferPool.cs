@@ -49,12 +49,14 @@ public sealed unsafe class FramebufferPool : IDisposable
         // DEPTH TEXTURE (not renderbuffer - so we can sample in shader)
         HdrDepthTexture = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, HdrDepthTexture);
-        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.DepthComponent24, (uint)_width, (uint)_height, 0,
-            PixelFormat.DepthComponent, PixelType.UnsignedInt, null);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0,
+            (int)InternalFormat.DepthComponent32f, (uint)_width, (uint)_height, 0,
+            PixelFormat.DepthComponent, PixelType.Float, null);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode, (int)TextureCompareMode.None);
 
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, HdrDepthTexture, 0);
 

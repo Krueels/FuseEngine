@@ -66,6 +66,7 @@ public unsafe class ImGuiBackEnd : IDisposable
 
             ImGuiNET.ImGui.Checkbox("Enabled", ref pp.Enabled);
             ImGuiNET.ImGui.Checkbox("Bloom Enabled", ref pp.BloomEnabled);
+            ImGuiNET.ImGui.Checkbox("Motion Blur Enabled", ref pp.MotionBlurEnabled);
 
             if (pp.Enabled)
             {
@@ -86,6 +87,13 @@ public unsafe class ImGuiBackEnd : IDisposable
                 ImGuiNET.ImGui.DragFloat("Scale", ref pp.BloomScale, 0.05f, 0f, 5f);
                 ImGuiNET.ImGui.DragFloat3("Tint", ref pp.BloomTint, 0.05f, 0f, 2f);
                 ImGuiNET.ImGui.DragFloat("Anamorphic Ratio", ref pp.BloomAnamorphicRatio, 0.05f, 0f, 4f);
+
+                ImGuiNET.ImGui.SeparatorText("Motion Blur");
+                if (pp.MotionBlurEnabled)
+                {
+                    ImGuiNET.ImGui.DragFloat("MB Intensity", ref pp.MotionBlurIntensity, 0.05f, 0f, 5f);
+                    ImGuiNET.ImGui.DragInt("MB Samples", ref pp.MotionBlurSamples, 1, 1, 16);
+                }
 
                 ImGuiNET.ImGui.SeparatorText("Debug View");
                 ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract"], 4);
@@ -199,6 +207,11 @@ public unsafe class ImGuiBackEnd : IDisposable
         var clipScale = drawData->FramebufferScale;
 
         // Save GL state
+        var prevBlend = _gl.IsEnabled(EnableCap.Blend);
+        var prevDepthTest = _gl.IsEnabled(EnableCap.DepthTest);
+        var prevCullFace = _gl.IsEnabled(EnableCap.CullFace);
+
+        // Save GL state
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         _gl.Disable(EnableCap.DepthTest);
@@ -261,6 +274,11 @@ public unsafe class ImGuiBackEnd : IDisposable
 
         _gl.Disable(EnableCap.ScissorTest);
         _gl.BindVertexArray(0);
+
+        // Restore GL state
+        if (prevBlend) _gl.Enable(EnableCap.Blend); else _gl.Disable(EnableCap.Blend);
+        if (prevDepthTest) _gl.Enable(EnableCap.DepthTest); else _gl.Disable(EnableCap.DepthTest);
+        if (prevCullFace) _gl.Enable(EnableCap.CullFace); else _gl.Disable(EnableCap.CullFace);
     }
 
     private uint CreateShader(string vsSrc, string fsSrc)
