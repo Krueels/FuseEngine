@@ -204,9 +204,17 @@ public class Camera
 
         if (_shakeTilt != 0 || _shakeVelocity != 0)
         {
-            float acceleration = -_shakeStiffness * _shakeTilt - _shakeDamping * _shakeVelocity;
-            _shakeVelocity += acceleration * dt;
-            _shakeTilt += _shakeVelocity * dt;
+            // Substep the spring to keep it stable at any FPS
+            float maxStep = 1.0f / 60.0f;
+            float remaining = dt;
+            while (remaining > 0)
+            {
+                float step = MathF.Min(remaining, maxStep);
+                float acceleration = -_shakeStiffness * _shakeTilt - _shakeDamping * _shakeVelocity;
+                _shakeVelocity += acceleration * step;
+                _shakeTilt += _shakeVelocity * step;
+                remaining -= step;
+            }
             if (MathF.Abs(_shakeTilt) < 0.001f && MathF.Abs(_shakeVelocity) < 0.001f)
             {
                 _shakeTilt = 0;

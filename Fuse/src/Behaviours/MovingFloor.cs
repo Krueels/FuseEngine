@@ -14,9 +14,11 @@ public sealed class MovingFloor : IBehaviour
     [Export] public float Speed { get; set; } = 2f;
 
     private Vector3 _startPos;
-    private Vector3 _targetPos;
-    private bool _goingForward = true;
+    private Vector3 _endPos;
+    private float _t;
+    private bool _forward = true;
     private bool _initialized;
+    private float _totalDistance;
 
     public void Update(float dt)
     {
@@ -26,22 +28,26 @@ public sealed class MovingFloor : IBehaviour
         if (!_initialized)
         {
             _startPos = Entity.Body.Position(World);
-            _targetPos = _startPos + new Vector3(0f, 0f, DistanceZ);
+            _endPos = _startPos + new Vector3(0f, 0f, DistanceZ);
+            _totalDistance = Vector3.Distance(_startPos, _endPos);
+            if (_totalDistance < 0.001f) return;
             _initialized = true;
         }
 
-        Vector3 current = Entity.Body.Position(World);
-        Vector3 target = _goingForward ? _targetPos : _startPos;
-        float dist = Vector3.Distance(current, target);
+        // Advance t based on time — completely frame-rate independent
+        _t += (Speed / _totalDistance) * dt;
 
-        if (dist < 0.01f)
+        if (_t >= 1.0f)
         {
-            _goingForward = !_goingForward;
-            World.BodyInterface.SetLinearVelocity(Entity.Body.Native, Vector3.Zero);
-            return;
+            _t -= 1.0f;
+            _forward = !_forward;
         }
 
-        Vector3 dir = Vector3.Normalize(target - current);
-        World.BodyInterface.SetLinearVelocity(Entity.Body.Native, dir * Speed);
+        // Lerp between the two endpoints
+        Vector3 newPos = _forward
+            ? Vector3.Lerp(_startPos, _endPos, _t)
+            : Vector3.Lerp(_endPos, _startPos, _t);
+
+        World.BodyInterface.SetPosition(Entity.Body.Native, newPos, JoltPhysicsSharp.Activation.Activate);
     }
 }

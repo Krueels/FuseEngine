@@ -192,7 +192,7 @@ public sealed class Animator
 
     public void DumpDebug()
     {
-        Logger.InfoGold($"[SkinnedDump] clip={(CurrentClip?.Name ?? "null")} t={TimeSeconds:F3} bones={_skeleton.Bones.Length} nodes={_skeleton.Nodes.Length}");
+        //Logger.InfoGold($"[SkinnedDump] clip={(CurrentClip?.Name ?? "null")} t={TimeSeconds:F3} bones={_skeleton.Bones.Length} nodes={_skeleton.Nodes.Length}");
 
         var worst = new List<(string name, float dT, float dLin, int idx)>();
         for (int i = 0; i < _skeleton.Bones.Length; i++)
@@ -209,11 +209,11 @@ public sealed class Animator
         }
 
         int exploded = worst.Count(w => w.dT > 5f);
-        Logger.InfoGold($"[SkinnedDump] bones com |deltaT|>5: {exploded}/{worst.Count}");
+        //($"[SkinnedDump] bones com |deltaT|>5: {exploded}/{worst.Count}");
         foreach (var w in worst.OrderByDescending(w => w.dT).Take(6))
         {
             Matrix4x4 f = FinalBoneMatrices[w.idx];
-            Logger.InfoGold($"[SkinnedDump] WORST '{w.name}' deltaT={w.dT:F2} deltaLin={w.dLin:F3} finalT=({f.M41:F2}, {f.M42:F2}, {f.M43:F2})");
+            //Logger.InfoGold($"[SkinnedDump] WORST '{w.name}' deltaT={w.dT:F2} deltaLin={w.dLin:F3} finalT=({f.M41:F2}, {f.M42:F2}, {f.M43:F2})");
         }
 
         if (worst.Count > 0 && _skeleton.Nodes.Length > 0)
@@ -221,12 +221,12 @@ public sealed class Animator
             var w0 = worst[0];
             int ni = _skeleton.Bones[w0.idx].NodeIndex;
             double tps = CurrentClip?.TicksPerSecond ?? 30.0;
-            Logger.InfoGold($"[SkinnedChain] pior='{w0.name}' t={TimeSeconds:F3} ticks={TimeSeconds * tps:F1} dur={(CurrentClip != null ? CurrentClip.DurationTicks.ToString() : "?")}");
+            //Logger.InfoGold($"[SkinnedChain] pior='{w0.name}' t={TimeSeconds:F3} ticks={TimeSeconds * tps:F1} dur={(CurrentClip != null ? CurrentClip.DurationTicks.ToString() : "?")}");
             int guard = 0;
             while (ni >= 0 && guard++ < 16)
             {
                 var n = _skeleton.Nodes[ni];
-                Logger.InfoGold($"[SkinnedChain] '{n.Name}' localT=({n.Local.M14:F3},{n.Local.M24:F3},{n.Local.M34:F3}) restT=({n.RestLocal.M14:F3},{n.RestLocal.M24:F3},{n.RestLocal.M34:F3}) globalT=({n.Global.M14:F2},{n.Global.M24:F2},{n.Global.M34:F2})");
+                //Logger.InfoGold($"[SkinnedChain] '{n.Name}' localT=({n.Local.M14:F3},{n.Local.M24:F3},{n.Local.M34:F3}) restT=({n.RestLocal.M14:F3},{n.RestLocal.M24:F3},{n.RestLocal.M34:F3}) globalT=({n.Global.M14:F2},{n.Global.M24:F2},{n.Global.M34:F2})");
                 ni = n.Parent;
             }
         }
