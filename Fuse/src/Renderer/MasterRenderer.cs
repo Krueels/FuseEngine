@@ -68,7 +68,10 @@ public unsafe class MasterRenderer
 
     // Decal Shader (Box Projected Decals)
     private Shader _decalShader = null!;
-    private uint _decalDepthTexture, _decalDepthFbo;
+    private uint _decalDepthFboHdr;     // DepthComponent32f — para HdrFbo (post-process ON)
+    private uint _decalDepthTexHdr;
+    private uint _decalDepthFboDefault; // DepthComponent24  — para FBO 0 (post-process OFF)
+    private uint _decalDepthTexDefault;
 
     // Shared bone SSBO (all skinned shaders read from binding point 0)
     private uint _sharedBonesSSBO;
@@ -345,22 +348,49 @@ public unsafe class MasterRenderer
 
     private void CreateDecalDepthResources()
     {
-        if (_decalDepthFbo != 0) { _gl.DeleteFramebuffer(_decalDepthFbo); _decalDepthFbo = 0; }
-        if (_decalDepthTexture != 0) { _gl.DeleteTexture(_decalDepthTexture); _decalDepthTexture = 0; }
+        DestroyDecalDepthResources();
 
-        _decalDepthTexture = _gl.GenTexture();
-        _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexture);
-        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.DepthComponent24, (uint)_scrWidth, (uint)_scrHeight, 0,
+        // --- HDR (DepthComponent32f) — combina com HdrFbo ---
+        _decalDepthTexHdr = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexHdr);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.DepthComponent32f,
+            (uint)_scrWidth, (uint)_scrHeight, 0,
+            PixelFormat.DepthComponent, PixelType.Float, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _decalDepthFboHdr = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _decalDepthFboHdr);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D, _decalDepthTexHdr, 0);
+
+        // --- Default (DepthComponent24) — combina com FBO 0 ---
+        _decalDepthTexDefault = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexDefault);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.DepthComponent24,
+            (uint)_scrWidth, (uint)_scrHeight, 0,
             PixelFormat.DepthComponent, PixelType.UnsignedInt, null);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
 
-        _decalDepthFbo = _gl.GenFramebuffer();
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _decalDepthFbo);
-        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, _decalDepthTexture, 0);
+        _decalDepthFboDefault = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _decalDepthFboDefault);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D, _decalDepthTexDefault, 0);
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
+    private void DestroyDecalDepthResources()
+    {
+        if (_decalDepthFboHdr != 0) { _gl.DeleteFramebuffer(_decalDepthFboHdr); _decalDepthFboHdr = 0; }
+        if (_decalDepthTexHdr != 0) { _gl.DeleteTexture(_decalDepthTexHdr); _decalDepthTexHdr = 0; }
+        if (_decalDepthFboDefault != 0) { _gl.DeleteFramebuffer(_decalDepthFboDefault); _decalDepthFboDefault = 0; }
+        if (_decalDepthTexDefault != 0) { _gl.DeleteTexture(_decalDepthTexDefault); _decalDepthTexDefault = 0; }
     }
 
     public void Resize(int width, int height)
@@ -890,10 +920,16 @@ public unsafe class MasterRenderer
     {
         if (_decalQueue.Count == 0) return;
 
-        // 1. Copia o Depth Buffer do FBO ativo para _decalDepthFbo para leitura sem Feedback Loop
+        // Selecionar depth FBO compatível com o target atual
+        bool isHdr = _postPipeline.Settings.Enabled;
+        uint decalDepthFbo = isHdr ? _decalDepthFboHdr : _decalDepthFboDefault;
+        uint decalDepthTex = isHdr ? _decalDepthTexHdr : _decalDepthTexDefault;
+
+        // 1. Copia o Depth Buffer — formato agora é idêntico ao source
         _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);
-        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _decalDepthFbo);
-        _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight, ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, decalDepthFbo);
+        _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight,
+            ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
 
         // 2. Setup GL State para Box Decal Projection
@@ -947,7 +983,7 @@ public unsafe class MasterRenderer
 
         // Bind depth copy texture on unit 0
         _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexture);
+        _gl.BindTexture(TextureTarget.Texture2D, decalDepthTex);
         _decalShader.SetInt("uDepthTex", 0);
 
         for (int i = 0; i < _decalQueue.Count; i++)

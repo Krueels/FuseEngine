@@ -65,32 +65,38 @@ public unsafe class ImGuiBackEnd : IDisposable
             var pp = renderer.PostPipeline.Settings; // precisamos expor property pública no MasterRenderer
 
             ImGuiNET.ImGui.Checkbox("Enabled", ref pp.Enabled);
+            ImGuiNET.ImGui.Checkbox("Tonemap", ref pp.TonemapEnabled);
             ImGuiNET.ImGui.Checkbox("Bloom Enabled", ref pp.BloomEnabled);
             ImGuiNET.ImGui.Checkbox("Motion Blur Enabled", ref pp.MotionBlurEnabled);
 
             if (pp.Enabled)
             {
-                ImGuiNET.ImGui.SeparatorText("Tonemap");
-                ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
-                ImGuiNET.ImGui.Checkbox("Tonemap", ref pp.TonemapEnabled);
+                if (pp.TonemapEnabled)
+                {
+                    ImGuiNET.ImGui.SeparatorText("Tonemap");
+                    ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
+                }
 
-                ImGuiNET.ImGui.SeparatorText("Bloom");
-                ImGuiNET.ImGui.DragFloat("Strength", ref pp.BloomStrength, 0.01f, 0f, 2f);
-                ImGuiNET.ImGui.DragFloat("Threshold", ref pp.BloomThreshold, 0.01f, 0f, 5f);
-                ImGuiNET.ImGui.DragFloat("Knee", ref pp.BloomKnee, 0.01f, 0f, 1f);
+                if (pp.BloomEnabled)
+                {
+                    ImGuiNET.ImGui.SeparatorText("Bloom");
+                    ImGuiNET.ImGui.DragFloat("Strength", ref pp.BloomStrength, 0.01f, 0f, 2f);
+                    ImGuiNET.ImGui.DragFloat("Threshold", ref pp.BloomThreshold, 0.01f, 0f, 5f);
+                    ImGuiNET.ImGui.DragFloat("Knee", ref pp.BloomKnee, 0.01f, 0f, 1f);
 
-                ImGuiNET.ImGui.SeparatorText("Kawase Blur");
-                ImGuiNET.ImGui.DragInt("Radius", ref pp.KawaseRadius, 1, 1, 8);
-                ImGuiNET.ImGui.DragInt("Iterations", ref pp.KawaseIterations, 1, 1, 4);
+                    ImGuiNET.ImGui.SeparatorText("Kawase Blur");
+                    ImGuiNET.ImGui.DragInt("Radius", ref pp.KawaseRadius, 1, 1, 8);
+                    ImGuiNET.ImGui.DragInt("Iterations", ref pp.KawaseIterations, 1, 1, 4);
 
-                ImGuiNET.ImGui.SeparatorText("Bloom Expansion");
-                ImGuiNET.ImGui.DragFloat("Scale", ref pp.BloomScale, 0.05f, 0f, 5f);
-                ImGuiNET.ImGui.DragFloat3("Tint", ref pp.BloomTint, 0.05f, 0f, 2f);
-                ImGuiNET.ImGui.DragFloat("Anamorphic Ratio", ref pp.BloomAnamorphicRatio, 0.05f, 0f, 4f);
-
-                ImGuiNET.ImGui.SeparatorText("Motion Blur");
+                    ImGuiNET.ImGui.SeparatorText("Bloom Expansion");
+                    ImGuiNET.ImGui.DragFloat("Scale", ref pp.BloomScale, 0.05f, 0f, 5f);
+                    ImGuiNET.ImGui.DragFloat3("Tint", ref pp.BloomTint, 0.05f, 0f, 2f);
+                    ImGuiNET.ImGui.DragFloat("Anamorphic Ratio", ref pp.BloomAnamorphicRatio, 0.05f, 0f, 4f);
+                }
+                
                 if (pp.MotionBlurEnabled)
                 {
+                    ImGuiNET.ImGui.SeparatorText("Motion Blur");
                     ImGuiNET.ImGui.DragFloat("MB Intensity", ref pp.MotionBlurIntensity, 0.05f, 0f, 5f);
                     ImGuiNET.ImGui.DragInt("MB Samples", ref pp.MotionBlurSamples, 1, 1, 16);
                 }

@@ -34,7 +34,44 @@ public unsafe class Shader : IDisposable
 
     public static Shader FromFile(GL gl, string vertexPath, string fragmentPath)
     {
-        return new Shader(gl, File.ReadAllText(vertexPath), File.ReadAllText(fragmentPath));
+        string vertSrc = PreprocessIncludes(File.ReadAllText(vertexPath), Path.GetDirectoryName(vertexPath)!);
+        string fragSrc = PreprocessIncludes(File.ReadAllText(fragmentPath), Path.GetDirectoryName(fragmentPath)!);
+        return new Shader(gl, vertSrc, fragSrc);
+    }
+
+    private static string PreprocessIncludes(string source, string dir)
+    {
+        var included = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return ProcessIncludes(source, dir, included);
+    }
+
+    private static string ProcessIncludes(string source, string dir, HashSet<string> included)
+    {
+        var lines = source.Split('\n');
+        var result = new List<string>();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("#include"))
+            {
+                string path = trimmed.Substring(8).Trim().Trim('"').Trim('<', '>');
+                string fullPath = Path.Combine(dir, path);
+
+                if (included.Add(fullPath))
+                {
+                    string incSrc = File.ReadAllText(fullPath);
+                    string incDir = Path.GetDirectoryName(fullPath)!;
+                    result.Add(ProcessIncludes(incSrc, incDir, included));
+                }
+            }
+            else
+            {
+                result.Add(line);
+            }
+        }
+
+        return string.Join(Environment.NewLine, result);
     }
 
     public uint ID => _id;
