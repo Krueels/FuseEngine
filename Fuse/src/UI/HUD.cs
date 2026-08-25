@@ -30,6 +30,22 @@ public class HUD
         return AddText(text, HUDHelper.MakeLayout(anchor, offset), scale, color);
     }
 
+    public HUDText AddTextOutlined(string text, HUDLayout layout, float scale, Vector4 color, float outlineWidth, Vector4 outlineColor)
+    {
+        var el = new HUDText(text, layout, scale, color)
+        {
+            OutlineWidth = outlineWidth,
+            OutlineColor = outlineColor
+        };
+        _elements.Add(el);
+        return el;
+    }
+
+    public HUDText AddTextOutlined(string text, HUDAnchor anchor, Vector2 offset, float scale, Vector4 color, float outlineWidth, Vector4 outlineColor)
+    {
+        return AddTextOutlined(text, HUDHelper.MakeLayout(anchor, offset), scale, color, outlineWidth, outlineColor);
+    }
+
     public HUDPanel AddPanel(HUDLayout layout, Vector2 size, Vector4 color)
     {
         var el = new HUDPanel(layout, size, color);

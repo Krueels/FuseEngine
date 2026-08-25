@@ -27,6 +27,9 @@ namespace Fuse.Enemy
         private bool _initialized;
         private bool _hasDied;
         private Animation.Animator? _animator;
+        private EnemyPatrol? _patrol;
+
+        public EnemyPatrol? Patrol => _patrol;
 
         public Enemy(string id, float maxHealth = 100f, AssetManager? assets = null)
         {
@@ -53,7 +56,8 @@ namespace Fuse.Enemy
             var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
             if (model != null)
             {
-                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model("Animations/UnisexGuy_AKS74U_Walk.fbx"));
+                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model(Bible.UniSexGuyIdle), "Idle");
+                SkinnedModelLoader.MergeAnimationsFromFile(model, Bible.Model(Bible.UniSexGuyWalk), "Walk");
 
                 model.HiddenSubmeshes.Add("Glock");
                 model.HiddenSubmeshes.Add("Shotgun_Mesh");
@@ -82,10 +86,18 @@ namespace Fuse.Enemy
                 Entity.ModelScale = new System.Numerics.Vector3(145.4f, 145.4f, 145.4f);
 
                 // Play idle se existir
-                if (!string.IsNullOrEmpty(model.DefaultClipName))
+                if (_animator.GetClip("Idle") != null)
+                {
+                    var idleClip = _animator.GetClip("Idle");
+                    idleClip.Loop = true;
+                    var walkClip = _animator.GetClip("Walk");
+                    walkClip.Loop = true;
+                    _animator.Play("Idle");
+                }
+                else if (!string.IsNullOrEmpty(model.DefaultClipName))
                 {
                     var idleClip = _animator.GetClip(model.DefaultClipName);
-                    idleClip.Loop = true;
+                    if (idleClip != null) idleClip.Loop = true;
                     _animator.Play(model.DefaultClipName);
                 }
             }
@@ -100,6 +112,7 @@ namespace Fuse.Enemy
             }
 
             sceneManager.ActiveScene.RegisterBody(Entity);
+            _patrol = new EnemyPatrol(this, physics);
             _initialized = true;
         }
 
@@ -121,6 +134,7 @@ namespace Fuse.Enemy
         {
             if (IsDead || !_initialized) return;
 
+            _patrol?.Update(dt);
             _animator?.Update(dt);
         }
 

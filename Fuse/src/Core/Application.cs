@@ -470,6 +470,7 @@ public unsafe class Application : IDisposable
     private void RenderDebug(float aspect)
     {
         _debugDrawer.Clear();
+        _debugDrawer.InvokeOnDrawGizmos();
         _sceneManager.DrawDebug(_debugDrawer);
         _debugDrawer.DrawPlayerDebug(_player);
         _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect);

@@ -360,7 +360,7 @@ public static unsafe class SkinnedModelLoader
     /// Carrega animações de um FBX separado e mergea no modelo existente.
     /// Requer que o skeleton/node hierarchy seja IDÊNTICO (mesmos nomes de bones).
     /// </summary>
-    public static void MergeAnimationsFromFile(SkinnedModel model, string animFbxPath)
+    public static void MergeAnimationsFromFile(SkinnedModel model, string animFbxPath, string? clipName = null)
     {
         if (!File.Exists(animFbxPath))
         {
@@ -389,10 +389,12 @@ public static unsafe class SkinnedModelLoader
 
         foreach (var clip in newClips)
         {
-            if (model.Clips.ContainsKey(clip.Name))
+            string finalName = clipName ?? clip.Name;
+            if (model.Clips.ContainsKey(finalName))
             {
-                Logger.Warn($"[MergeAnimations] Clip '{clip.Name}' já existe, sobrescrevendo...");
+                Logger.Warn($"[MergeAnimations] Clip '{finalName}' já existe, sobrescrevendo...");
             }
+            clip.Name = finalName;
             model.Clips[clip.Name] = clip;
             Logger.Info($"[MergeAnimations] Adicionado clip: '{clip.Name}' ({clip.DurationSeconds:F2}s, Loop={clip.Loop})");
         }

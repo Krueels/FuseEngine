@@ -11,7 +11,7 @@ public unsafe class UIRenderer : IDisposable
     private Matrix4x4 _proj;
 
     private readonly uint _textShader;
-    private readonly int _textUProj, _textUTex;
+    private readonly int _textUProj, _textUTex, _textUTexelSize, _textUOutlineWidth, _textUOutlineColor;
     private readonly uint _textVAO, _textVBO, _textIBO;
     private const int KMaxQuads = 2048;
 
@@ -52,11 +52,31 @@ public unsafe class UIRenderer : IDisposable
             in vec2 vTexCoord;
             out vec4 fragColor;
             uniform sampler2D uTexture;
-            void main() { float a = texture(uTexture, vTexCoord).r; fragColor = vec4(vColor.rgb, vColor.a * a); }
+            uniform vec2 uTexelSize;
+            uniform float uOutlineWidth;
+            uniform vec4 uOutlineColor;
+            void main() {
+                float center = texture(uTexture, vTexCoord).r;
+                if (uOutlineWidth > 0.0) {
+                    float outline = 0.0;
+                    for (int x = -1; x <= 1; x++)
+                        for (int y = -1; y <= 1; y++)
+                            outline = max(outline, texture(uTexture, vTexCoord + vec2(float(x), float(y)) * uTexelSize * uOutlineWidth).r);
+                    if (center < 0.01)
+                        fragColor = vec4(uOutlineColor.rgb, uOutlineColor.a * outline);
+                    else
+                        fragColor = vec4(vColor.rgb, vColor.a * center);
+                } else {
+                    fragColor = vec4(vColor.rgb, vColor.a * center);
+                }
+            }
             """;
         _textShader = LinkShader(gl, CompileShader(gl, ShaderType.VertexShader, textVS), CompileShader(gl, ShaderType.FragmentShader, textFS));
         _textUProj = gl.GetUniformLocation(_textShader, "uProj");
         _textUTex = gl.GetUniformLocation(_textShader, "uTexture");
+        _textUTexelSize = gl.GetUniformLocation(_textShader, "uTexelSize");
+        _textUOutlineWidth = gl.GetUniformLocation(_textShader, "uOutlineWidth");
+        _textUOutlineColor = gl.GetUniformLocation(_textShader, "uOutlineColor");
 
         // 1x1 white texture for fallback (bitmap font / rects)
         _whiteTexture = gl.GenTexture();
@@ -151,6 +171,12 @@ public unsafe class UIRenderer : IDisposable
     }
 
     public void DrawText(float x, float y, ReadOnlySpan<char> text, Vector4 color, float scale = 1.0f)
+        => DrawTextInternal(x, y, text, color, 0f, default, scale);
+
+    public void DrawTextOutlined(float x, float y, ReadOnlySpan<char> text, Vector4 fillColor, float outlineWidth, Vector4 outlineColor, float scale = 1.0f)
+        => DrawTextInternal(x, y, text, fillColor, outlineWidth, outlineColor, scale);
+
+    private void DrawTextInternal(float x, float y, ReadOnlySpan<char> text, Vector4 color, float outlineWidth, Vector4 outlineColor, float scale)
     {
         if (text.Length == 0) return;
 
@@ -240,6 +266,17 @@ public unsafe class UIRenderer : IDisposable
         _gl.UseProgram(_textShader);
         _gl.UniformMatrix4(_textUProj, 1, false, GetMatrixValues(_proj));
         _gl.Uniform1(_textUTex, 0);
+
+        if (_fontAtlas != null && outlineWidth > 0f)
+        {
+            _gl.Uniform2(_textUTexelSize, 1f / _fontAtlas.AtlasWidth, 1f / _fontAtlas.AtlasHeight);
+            _gl.Uniform1(_textUOutlineWidth, outlineWidth);
+            _gl.Uniform4(_textUOutlineColor, outlineColor.X, outlineColor.Y, outlineColor.Z, outlineColor.W);
+        }
+        else
+        {
+            _gl.Uniform1(_textUOutlineWidth, 0f);
+        }
 
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, _fontAtlas != null ? _fontAtlas.TextureId : _whiteTexture);

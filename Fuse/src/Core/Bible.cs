@@ -25,9 +25,11 @@ public static class Bible
 
     // Models
     public const string GlockModel = "skinned_models/Glock.fbx";
-    public const string UniSexGuy = "skinned_models/UniSexGuyScaled.fbx";
 
     // UnisexGuy
+    public const string UniSexGuy = "skinned_models/UniSexGuyScaled.fbx";
+    public const string UniSexGuyIdle = "Animations/UnisexGuy_AKS74U_Idle.fbx";
+    public const string UniSexGuyWalk = "Animations/UnisexGuy_AKS74U_Walk.fbx";
     public const string UniSexBody = "UniSexGuyBody_ALB.png";
     public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
 

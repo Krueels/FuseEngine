@@ -17,9 +17,9 @@ public sealed class EnemyDebugHUD
     public EnemyDebugHUD()
     {
         // Criar linhas do HUD (vazias inicialmente)
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < 9; i++)
         {
-            var text = _hud.AddText("", HUDAnchor.TopLeft, new Vector2(0, 0), 2.0f, Vector4.One);
+            var text = _hud.AddTextOutlined("", HUDAnchor.TopLeft, new Vector2(0, 0), 2.0f, Vector4.One, outlineWidth: 10f, outlineColor: new Vector4(0,0,0,1));
             text.SetScreenPosition(null); // será atualizado no Update
             _lines.Add(text);
         }
@@ -72,13 +72,19 @@ public sealed class EnemyDebugHUD
         float animTime = (float)(anim?.TimeSeconds ?? 0.0);
         float animDur = (float)(clip?.DurationSeconds ?? 0.0);
         bool animLoop = clip?.Loop ?? false;
+        var pos = e.Entity.Transform.Position;
+        float animSpeed = e.Entity.Animator?.Speed ?? 0f;
+        float moveSpeed = e.Patrol?.CurrentSpeed ?? 0f;
 
         _lines[0].Text = $"ID: {e.Id}";
-        _lines[1].Text = $"Vida: {e.Health:F1} / {e.MaxHealth:F1}";
-        _lines[2].Text = $"Anim: {clip?.Name ?? "none"}";
-        _lines[3].Text = $"Tempo: {animTime:F2}s / {animDur:F2}s";
-        _lines[4].Text = $"Loop: {(animLoop ? "ON" : "OFF")}";
-        _lines[5].Text = $"BodyID: {e.Body.Native}";
+        _lines[1].Text = $"HP: {e.Health:F1} / {e.MaxHealth:F1}";
+        _lines[2].Text = $"Pos: ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})";
+        _lines[3].Text = $"Velocity: {moveSpeed:F1} m/s";
+        _lines[4].Text = $"Anim: {clip?.Name ?? "none"}";
+        _lines[5].Text = $"Anim Speed: {animSpeed:F2}";
+        _lines[6].Text = $"Tempo: {animTime:F2}s / {animDur:F2}s";
+        _lines[7].Text = $"Loop: {(animLoop ? "ON" : "OFF")}";
+        _lines[8].Text = $"BodyID: {e.Body.Native}";
 
         for (int i = 0; i < _lines.Count; i++)
         {

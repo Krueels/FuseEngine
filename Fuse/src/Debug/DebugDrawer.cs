@@ -24,6 +24,23 @@ public unsafe class DebugDrawer : IDisposable
 
     private readonly List<Line> _lines = [];
 
+    private static readonly List<WeakReference<IGizmoDrawable>> _gizmoDrawables = [];
+
+    public static void Register(IGizmoDrawable drawable)
+    {
+        _gizmoDrawables.Add(new WeakReference<IGizmoDrawable>(drawable));
+    }
+
+    public void InvokeOnDrawGizmos()
+    {
+        _gizmoDrawables.RemoveAll(wr => !wr.TryGetTarget(out _));
+        foreach (var wr in _gizmoDrawables)
+        {
+            if (wr.TryGetTarget(out var drawable))
+                drawable.OnDrawGizmos(this);
+        }
+    }
+
     private struct Line
     {
         public Vector3 From;
@@ -303,7 +320,7 @@ public unsafe class DebugDrawer : IDisposable
         if (light.Type == LightType.Point)
         {
             DrawSphere(pos, Quaternion.Identity, 0.2f, color);
-            DrawCircleXZ(pos, light.Radius, color * 0.3f);
+            DrawCircle(pos, light.Radius, color * 0.3f);
         }
         else
         {
@@ -472,7 +489,7 @@ public unsafe class DebugDrawer : IDisposable
         }
     }
 
-    private void DrawCircleXZ(Vector3 center, float radius, Vector3 color, int segments = 24)
+    public void DrawCircle(Vector3 center, float radius, Vector3 color, int segments = 24)
     {
         float step = MathF.PI * 2.0f / segments;
         int prev = segments - 1;

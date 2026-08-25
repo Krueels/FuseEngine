@@ -21,7 +21,7 @@ public sealed class AnimationClip
 {
     private const double Epsilon = 1e-7;
 
-    public required string Name { get; init; }
+    public required string Name { get; set; }
     public double DurationTicks { get; init; }
     public double TicksPerSecond { get; init; }
     public bool Loop { get; set; } = false;
