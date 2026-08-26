@@ -2,6 +2,8 @@
 #include "bloom.glsl"
 #include "motionBlur.glsl"
 #include "tonemap.glsl"
+#include "ssao.glsl"
+#include "ssaoBlur.glsl"
 
 void main() {
     if (uPass == 0) {
@@ -24,5 +26,11 @@ void main() {
     }
     else if (uPass == 6) {
         FragColor = TonemapOnly(vTexCoord);
+    }
+    else if (uPass == 7) {
+        FragColor = SSAO(vTexCoord);
+    }
+    else if (uPass == 8) {
+        FragColor = SSAOBlur(vTexCoord);
     }
 }

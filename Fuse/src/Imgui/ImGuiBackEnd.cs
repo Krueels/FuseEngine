@@ -68,14 +68,12 @@ public unsafe class ImGuiBackEnd : IDisposable
             ImGuiNET.ImGui.Checkbox("Tonemap", ref pp.TonemapEnabled);
             ImGuiNET.ImGui.Checkbox("Bloom Enabled", ref pp.BloomEnabled);
             ImGuiNET.ImGui.Checkbox("Motion Blur Enabled", ref pp.MotionBlurEnabled);
+            ImGuiNET.ImGui.Checkbox("SSAO Enabled", ref pp.SsaoEnabled);
 
             if (pp.Enabled)
             {
-                if (pp.TonemapEnabled)
-                {
-                    ImGuiNET.ImGui.SeparatorText("Tonemap");
-                    ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
-                }
+                ImGuiNET.ImGui.SeparatorText("Exposure");
+                ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
 
                 if (pp.BloomEnabled)
                 {
@@ -99,6 +97,18 @@ public unsafe class ImGuiBackEnd : IDisposable
                     ImGuiNET.ImGui.SeparatorText("Motion Blur");
                     ImGuiNET.ImGui.DragFloat("MB Intensity", ref pp.MotionBlurIntensity, 0.05f, 0f, 5f);
                     ImGuiNET.ImGui.DragInt("MB Samples", ref pp.MotionBlurSamples, 1, 1, 16);
+                }
+
+                if (pp.SsaoEnabled)
+                {
+                    ImGuiNET.ImGui.SeparatorText("SSAO");
+                    ImGuiNET.ImGui.DragFloat("SSAO Intensity", ref pp.SsaoIntensity, 0.05f, 0f, 5f);
+                    ImGuiNET.ImGui.DragFloat("SSAO Radius", ref pp.SsaoRadius, 0.05f, 0f, 5f);
+                    ImGuiNET.ImGui.DragFloat("SSAO Bias", ref pp.SsaoBias, 0.05f, 0f, 5f);
+                    ImGuiNET.ImGui.DragInt("SSAO Kernel", ref pp.SsaoKernelSize, 1, 1, 128);
+                    ImGuiNET.ImGui.DragFloat("SSAO Scale", ref pp.SsaoScale, 0.05f, 0f, 5f);
+
+
                 }
 
                 ImGuiNET.ImGui.SeparatorText("Debug View");

@@ -24,6 +24,10 @@ uniform float uMotionBlurIntensity;
 uniform int uMotionBlurSamples;
 uniform vec2 uScreenSize;
 
+// SSAO
+uniform sampler2D uSsao;
+uniform float uSsaoIntensity;
+
 in vec2 vTexCoord;
 
 vec3 ToneMapACES(vec3 x) {

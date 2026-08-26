@@ -14,6 +14,11 @@ public sealed class PostProcessPipeline : IDisposable
     private readonly PostProcessSettings _settings;
     private Matrix4x4 _prevViewProj = Matrix4x4.Identity;
     private Matrix4x4 _currentViewProj = Matrix4x4.Identity;
+    private Matrix4x4 _currentProj = Matrix4x4.Identity;
+    private Vector3[] _ssaoKernel = [];
+    private uint _ssaoNoiseTex;
+    public void SetSsaoKernel(Vector3[] kernel) => _ssaoKernel = kernel;
+    public void SetSsaoNoiseTex(uint texId) => _ssaoNoiseTex = texId;
 
     public PostProcessPipeline(GL gl, AssetManager assets, int width, int height)
     {
@@ -36,6 +41,7 @@ public sealed class PostProcessPipeline : IDisposable
     {
         _prevViewProj = prevViewProj;
         _currentViewProj = view * proj;
+        _currentProj = proj;
     }
 
     public void Resize(int width, int height)
@@ -48,7 +54,7 @@ public sealed class PostProcessPipeline : IDisposable
     /// </summary>
     /// <param name="sceneColorId">ID da textura da cena renderizada (HDR)</param>
     /// <param name="targetFbo">Framebuffer destino (0 = tela, ou FBO custom)</param>
-public void Execute(uint sceneColorId, uint targetFbo = 0)
+    public void Execute(uint sceneColorId, uint targetFbo = 0)
     {
         if (sceneColorId == 0)
         {
@@ -59,7 +65,8 @@ public void Execute(uint sceneColorId, uint targetFbo = 0)
         if (!_fbPool.Validate(_gl))
             _fbPool.Resize(_fbPool.Width, _fbPool.Height);
 
-        bool anyEffect = _settings.Enabled && (_settings.BloomEnabled || _settings.MotionBlurEnabled);
+        bool anyEffect = _settings.Enabled &&
+            (_settings.BloomEnabled || _settings.MotionBlurEnabled || _settings.SsaoEnabled);
         if (!anyEffect)
         {
             BlitWithTonemap(sceneColorId, targetFbo);
@@ -76,11 +83,65 @@ public void Execute(uint sceneColorId, uint targetFbo = 0)
         _shader.Use();
         _shader.SetParams(_settings, _fbPool.Width, _fbPool.Height);
         _shader.SetKawaseParams(_settings.KawaseRadius, _settings.KawaseIterations);
+        _shader.SetProjection(_currentProj);
+
+        uint currentLayer = sceneColorId;
 
         // ============================================================
-        // CAMADA 0 → Camada 1: Bloom (só se habilitado)
+        // CAMADA 0 → SSAO (se habilitado)
         // ============================================================
-        uint currentLayer = sceneColorId;
+        bool useSsao = _settings.SsaoEnabled && _settings.SsaoIntensity > 0f;
+
+        // Sempre setar SSAO params; quando desligado, força intensidade 0
+        _shader.SetSsaoParams(_settings);
+        if (!useSsao)
+            _shader.SetSsaoIntensity(0f);
+
+        if (useSsao)
+        {
+            // --- SSAO Pass → SsaoFbo ---
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbPool.SsaoFbo);
+            _gl.Viewport(0, 0, (uint)_fbPool.Width, (uint)_fbPool.Height);
+            _gl.Clear(ClearBufferMask.ColorBufferBit);
+
+            _shader.SetPass(7);
+            _shader.SetSceneTexture(0);
+            _shader.SetDepthTexture(1);
+            _shader.SetSsaoNoiseTexture(2);
+            _shader.SetInvViewProj(_currentViewProj);
+            _shader.SetInvProj(_currentProj);
+            _shader.SetScreenSize(_fbPool.Width, _fbPool.Height);
+
+            if (_ssaoKernel.Length > 0)
+                _shader.SetSsaoKernel(_ssaoKernel);
+
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, sceneColorId);
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.HdrDepthTexture);
+            _gl.ActiveTexture(TextureUnit.Texture2);
+            _gl.BindTexture(TextureTarget.Texture2D, _ssaoNoiseTex);
+            _quad.Draw();
+
+            // --- SSAO Blur → SsaoBlurFbo ---
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbPool.SsaoBlurFbo);
+            _gl.Viewport(0, 0, (uint)_fbPool.Width, (uint)_fbPool.Height);
+            _gl.Clear(ClearBufferMask.ColorBufferBit);
+
+            _shader.SetPass(8);
+            _shader.SetSceneTexture(0);
+            _shader.SetDepthTexture(1);
+
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.SsaoColorTex);
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.HdrDepthTexture);
+            _quad.Draw();
+        }
+
+        // ============================================================
+        // CAMADA 1 → Bloom (só se habilitado)
+        // ============================================================
         bool useBloom = _settings.BloomEnabled && _settings.BloomStrength > 0f;
 
         if (useBloom)
@@ -137,7 +198,7 @@ public void Execute(uint sceneColorId, uint targetFbo = 0)
         }
 
         // ============================================================
-        // CAMADA 1 → Camada 2: Motion Blur (só se habilitado)
+        // CAMADA 2 → Motion Blur (só se habilitado)
         // ============================================================
         bool useMotionBlur = _settings.MotionBlurEnabled && _settings.MotionBlurIntensity > 0f;
 
@@ -172,6 +233,15 @@ public void Execute(uint sceneColorId, uint targetFbo = 0)
 
         _shader.SetPass(6);
         _shader.SetSceneTexture(0);
+
+        // Bind SSAO blurred texture (se disponível)
+        if (useSsao)
+        {
+            _shader.SetSsaoTexture(1);
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.SsaoBlurColorTex);
+        }
+
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, currentLayer);
         _quad.Draw();
@@ -185,6 +255,7 @@ public void Execute(uint sceneColorId, uint targetFbo = 0)
 
         _shader.Use();
         _shader.SetParams(_settings, _fbPool.Width, _fbPool.Height);
+        _shader.SetSsaoIntensity(0f);
 
         uint sceneToComposite = sceneColorId;
 

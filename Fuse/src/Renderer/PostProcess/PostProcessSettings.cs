@@ -36,4 +36,12 @@ public sealed class PostProcessSettings
     public bool MotionBlurEnabled = true;
     public float MotionBlurIntensity = 1.0f;
     public int MotionBlurSamples = 8;
+
+    // SSAO
+    public bool SsaoEnabled = true;
+    public float SsaoIntensity = 1.0f;
+    public float SsaoRadius = 0.5f;
+    public float SsaoBias = 0.025f;
+    public int SsaoKernelSize = 64;
+    public float SsaoScale = 0.5f; // resolução reduzida (0.5 = metade)
 }

@@ -3,6 +3,7 @@ using System.Numerics;
 using Silk.NET.OpenGL;
 using Fuse.Core;
 using Fuse.Renderer.PostProcess;
+using Fuse.Math;
 
 namespace Fuse.Renderer;
 
@@ -82,6 +83,11 @@ public unsafe class MasterRenderer
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
     private Matrix4x4 _prevViewProj = Matrix4x4.Identity;
+
+    // SSAO
+    private Vector3[] _ssaoKernel = [];
+    private uint _ssaoNoiseTex;
+    public uint SsaoNoiseTex => _ssaoNoiseTex;
 
     // Pre-allocated light buffers (zero LINQ allocations per frame)
     private readonly Light[] _allLightsBuf = new Light[16];
@@ -321,6 +327,11 @@ public unsafe class MasterRenderer
         // Post-Process Pipeline
         _postPipeline = new PostProcessPipeline(_gl, assets, _scrWidth, _scrHeight);
         _postSettings = _postPipeline.Settings;
+
+        // SSAO Kernel + Noise
+        InitSsao();
+        _postPipeline.SetSsaoKernel(_ssaoKernel);
+        _postPipeline.SetSsaoNoiseTex(_ssaoNoiseTex);
 
         float[] quadVerts = [
             -0.5f, -0.5f,  0, 0,
@@ -1097,8 +1108,56 @@ public unsafe class MasterRenderer
         return lightView * lightProjection;
     }
 
+    private void InitSsao()
+    {
+        // --- Kernel de 64 amostras hemisféricas ---
+        var random = new Random(42); // seed fixa para consistência
+        _ssaoKernel = new Vector3[64];
+        for (int i = 0; i < 64; i++)
+        {
+            Vector3 sample = new(
+                random.NextSingle() * 2.0f - 1.0f,
+                random.NextSingle() * 2.0f - 1.0f,
+                random.NextSingle()); // Z >= 0 (hemisfério)
+            sample = Vector3.Normalize(sample);
+            sample *= random.NextSingle();
+
+            float lerpFactor = (float)i / 64.0f;
+            lerpFactor = MathUtils.Lerp(0.1f, 1.0f, lerpFactor * lerpFactor);
+            sample *= lerpFactor;
+            _ssaoKernel[i] = sample;
+        }
+
+        // --- Textura de ruído 4x4 ---
+        Vector3[] noiseData = new Vector3[16];
+        for (int i = 0; i < 16; i++)
+        {
+            noiseData[i] = new Vector3(
+                random.NextSingle() * 2.0f - 1.0f,
+                random.NextSingle() * 2.0f - 1.0f,
+                0.0f);
+        }
+
+        _ssaoNoiseTex = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _ssaoNoiseTex);
+        unsafe
+        {
+            fixed (Vector3* ptr = noiseData)
+            {
+                _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgb16f,
+                    4, 4, 0, PixelFormat.Rgb, PixelType.Float, ptr);
+            }
+        }
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.Repeat);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.Repeat);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+    }
+
     public void Dispose()
     {
+        if (_ssaoNoiseTex != 0) { _gl.DeleteTexture(_ssaoNoiseTex); _ssaoNoiseTex = 0; }
         _postPipeline?.Dispose();
     }
 }

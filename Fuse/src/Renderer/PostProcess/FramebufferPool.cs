@@ -19,6 +19,12 @@ public sealed unsafe class FramebufferPool : IDisposable
     public uint PingPongColorA { get; private set; }
     public uint PingPongColorB { get; private set; }
 
+    // SSAO
+    public uint SsaoFbo { get; private set; }
+    public uint SsaoColorTex { get; private set; }
+    public uint SsaoBlurFbo { get; private set; }
+    public uint SsaoBlurColorTex { get; private set; }
+
     private uint _depthRbo;
 
     public FramebufferPool(GL gl, int width, int height)
@@ -92,6 +98,48 @@ public sealed unsafe class FramebufferPool : IDisposable
         if (status != GLEnum.FramebufferComplete)
             throw new Exception($"Ping-pong FBO incomplete: {status}");
 
+        // ==================== SSAO FBO (R8) ====================
+        SsaoFbo = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, SsaoFbo);
+
+        SsaoColorTex = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, SsaoColorTex);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R8,
+            (uint)_width, (uint)_height, 0,
+            PixelFormat.Red, PixelType.UnsignedByte, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D, SsaoColorTex, 0);
+
+        status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != GLEnum.FramebufferComplete)
+            throw new Exception($"SSAO FBO incomplete: {status}");
+
+        // ==================== SSAO BLUR FBO (R8) ====================
+        SsaoBlurFbo = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, SsaoBlurFbo);
+
+        SsaoBlurColorTex = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, SsaoBlurColorTex);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R8,
+            (uint)_width, (uint)_height, 0,
+            PixelFormat.Red, PixelType.UnsignedByte, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D, SsaoBlurColorTex, 0);
+
+        status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != GLEnum.FramebufferComplete)
+            throw new Exception($"SSAO Blur FBO incomplete: {status}");
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
@@ -124,9 +172,13 @@ public sealed unsafe class FramebufferPool : IDisposable
         if (HdrDepthTexture != 0) { _gl.DeleteTexture(HdrDepthTexture); HdrDepthTexture = 0; }
         if (PingPongColorA != 0) { _gl.DeleteTexture(PingPongColorA); PingPongColorA = 0; }
         if (PingPongColorB != 0) { _gl.DeleteTexture(PingPongColorB); PingPongColorB = 0; }
+        if (SsaoColorTex != 0) { _gl.DeleteTexture(SsaoColorTex); SsaoColorTex = 0; }
+        if (SsaoBlurColorTex != 0) { _gl.DeleteTexture(SsaoBlurColorTex); SsaoBlurColorTex = 0; }
         if (_depthRbo != 0) { _gl.DeleteRenderbuffer(_depthRbo); _depthRbo = 0; }
         if (HdrFbo != 0) { _gl.DeleteFramebuffer(HdrFbo); HdrFbo = 0; }
         if (PingPongFbo != 0) { _gl.DeleteFramebuffer(PingPongFbo); PingPongFbo = 0; }
+        if (SsaoFbo != 0) { _gl.DeleteFramebuffer(SsaoFbo); SsaoFbo = 0; }
+        if (SsaoBlurFbo != 0) { _gl.DeleteFramebuffer(SsaoBlurFbo); SsaoBlurFbo = 0; }
     }
 
     public void Dispose()
