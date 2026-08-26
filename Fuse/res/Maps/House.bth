@@ -2,6 +2,358 @@
   "version": 1,
   "objects": [
     {
+      "id": "brush_22f1705a_copy_1",
+      "visible": true,
+      "parent": "brush_9fca3f02",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.25,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.25,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.25,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.25,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          26.75,
+          0.5,
+          6.75
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.25,
+          0.5,
+          0.25
+        ]
+      }
+    },
+    {
+      "id": "brush_9fca3f02_copy_copy",
+      "visible": true,
+      "parent": "brush_9fca3f02",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -4.9999995,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -4.9999995,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -15.000003,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -15.000003,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "texture": "Textures/grassfloor002a.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          25,
+          -0.5,
+          -15
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 2,
+        "restitution": 0.3,
+        "is_trigger": false,
+        "half_extents": [
+          14.999999,
+          0.5,
+          5
+        ]
+      }
+    },
+    {
       "id": "brush_9fca3f02",
       "visible": true,
       "type": "brush",
@@ -214,6 +566,7 @@
     {
       "id": "brush_c3dc1331",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -413,6 +766,7 @@
     {
       "id": "brush_9a4f8d94",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -636,6 +990,7 @@
     {
       "id": "brush_d5edf367",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -931,6 +1286,7 @@
     {
       "id": "brush_25666a47",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -1274,6 +1630,7 @@
     {
       "id": "brush_7fb9c3e7",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -1641,6 +1998,7 @@
     {
       "id": "brush_65d6388f",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2032,6 +2390,7 @@
     {
       "id": "brush_10931904",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2207,6 +2566,7 @@
     {
       "id": "brush_10931904_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2382,6 +2742,7 @@
     {
       "id": "brush_7bd110ae",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2557,6 +2918,7 @@
     {
       "id": "brush_457b9f05",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2732,6 +3094,7 @@
     {
       "id": "brush_aab8757a",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -2907,6 +3270,7 @@
     {
       "id": "brush_22f1705a",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -3082,6 +3446,7 @@
     {
       "id": "brush_22f1705a_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -3255,183 +3620,9 @@
       }
     },
     {
-      "id": "brush_22f1705a_copy_1",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          26.75,
-          0.5,
-          6.75
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          0.25,
-          0.5,
-          0.25
-        ]
-      }
-    },
-    {
       "id": "brush_22f1705a_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -3607,6 +3798,7 @@
     {
       "id": "brush_fcc952d1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -3782,6 +3974,7 @@
     {
       "id": "brush_10931904_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -3957,6 +4150,7 @@
     {
       "id": "brush_21661ac3",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -4132,6 +4326,7 @@
     {
       "id": "brush_10931904_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -4378,6 +4573,7 @@
     {
       "id": "brush_ea5c847f",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -4553,6 +4749,7 @@
     {
       "id": "brush_ea5c847f_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -4728,6 +4925,7 @@
     {
       "id": "brush_ea5c847f_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -4929,6 +5127,7 @@
     {
       "id": "brush_74b6fef6",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5104,6 +5303,7 @@
     {
       "id": "brush_74b6fef6_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5279,6 +5479,7 @@
     {
       "id": "brush_74b6fef6_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5454,6 +5655,7 @@
     {
       "id": "brush_10931904_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5629,6 +5831,7 @@
     {
       "id": "brush_10931904_copy_1_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5804,6 +6007,7 @@
     {
       "id": "brush_74b6fef6_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -5979,6 +6183,7 @@
     {
       "id": "brush_74b6fef6_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -6154,6 +6359,7 @@
     {
       "id": "brush_74b6fef6_copy_1_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -6355,6 +6561,7 @@
     {
       "id": "brush_7bd110ae_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -6530,6 +6737,7 @@
     {
       "id": "brush_10931904_copy_2",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -6705,6 +6913,7 @@
     {
       "id": "brush_e791c721",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -6880,6 +7089,7 @@
     {
       "id": "brush_10931904_copy_1_copy_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7055,6 +7265,7 @@
     {
       "id": "brush_10931904_copy_1_copy_copy_2",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7230,6 +7441,7 @@
     {
       "id": "brush_d174c4d2",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7405,6 +7617,7 @@
     {
       "id": "brush_d174c4d2_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7580,6 +7793,7 @@
     {
       "id": "brush_d174c4d2_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7755,6 +7969,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -7930,6 +8145,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8105,6 +8321,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8280,6 +8497,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8455,6 +8673,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8630,6 +8849,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8805,6 +9025,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -8980,6 +9201,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -9155,6 +9377,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -9330,6 +9553,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -9505,6 +9729,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -9680,6 +9905,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -9855,6 +10081,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10030,6 +10257,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10205,6 +10433,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10380,6 +10609,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10555,6 +10785,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2_copy_copy_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10730,6 +10961,7 @@
     {
       "id": "brush_d174c4d2_copy_copy_copy_copy_1_copy_copy_1_copy_copy_copy_copy_copy_2_copy_copy_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -10905,6 +11137,7 @@
     {
       "id": "brush_e791c721_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -11080,6 +11313,7 @@
     {
       "id": "brush_e791c721_copy_1",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -11255,6 +11489,7 @@
     {
       "id": "brush_e791c721_copy_1_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -11430,6 +11665,7 @@
     {
       "id": "brush_9fca3f02_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -11603,183 +11839,9 @@
       }
     },
     {
-      "id": "brush_9fca3f02_copy_copy",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -4.9999995,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -4.9999995,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -15.000003,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -15.000003,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "texture": "Textures/grassfloor002a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          25,
-          -0.5,
-          -15
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 2,
-        "restitution": 0.3,
-        "is_trigger": false,
-        "half_extents": [
-          14.999999,
-          0.5,
-          5
-        ]
-      }
-    },
-    {
       "id": "brush_9fca3f02_copy_copy_copy",
       "visible": true,
+      "parent": "brush_9fca3f02",
       "type": "brush",
       "faces": [
         {
@@ -12517,6 +12579,111 @@
           0.5,
           0.25
         ]
+      }
+    },
+    {
+      "id": "TV_TV.obj",
+      "visible": true,
+      "body": {
+        "shape": "none",
+        "position": [
+          15.875,
+          1.4375,
+          8.25
+        ],
+        "rotation": [
+          -1.4901161E-08,
+          0,
+          -1,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "TV_led_tv",
+      "visible": true,
+      "parent": "TV_TV.obj",
+      "body": {
+        "shape": "none",
+        "position": [
+          15.875,
+          1.4375,
+          8.25
+        ],
+        "rotation": [
+          -1.4901161E-08,
+          0,
+          -1,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "TV_led_tv_led_tv",
+      "visible": true,
+      "parent": "TV_led_tv",
+      "model": "Models/led tv/TV.obj#0",
+      "model_scale": [
+        1.5,
+        1.5,
+        1.5
+      ],
+      "texture": "Textures/TV/phong1_Base_Color.jpg",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          15.875,
+          1.4375,
+          8.25
+        ],
+        "rotation": [
+          -1.4901161E-08,
+          0,
+          -1,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "TV_led_tv_Screen",
+      "visible": true,
+      "parent": "TV_led_tv",
+      "model": "Models/led tv/TV.obj#1",
+      "model_scale": [
+        1.5,
+        1.5,
+        1.5
+      ],
+      "texture": "Textures/TV/screen.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          15.875,
+          1.4375,
+          8.25
+        ],
+        "rotation": [
+          -1.4901161E-08,
+          0,
+          -1,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
       }
     }
   ],

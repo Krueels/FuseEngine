@@ -1,4 +1,6 @@
 using Fuse.AssetManagement;
+using Fuse.Audio;
+using Fuse.Renderer;
 
 namespace Fuse.Core;
 
@@ -79,19 +81,54 @@ public static class Bible
     public static string Shader(string name) => $"{ResPath.Path}/{name}";
     public static string Font(string name) => $"{ResPath.Path}/{name}";
 
-    public static void PreloadAll(AssetManager assets)
+    public static void PreloadAll(AssetManager assets, AudioSystem? audio = null)
     {
+        // --- Texturas ---
         assets.GetTexture(Tex(Crosshair));
         assets.GetTexture(Tex(CrosshairInteract));
         assets.GetTexture(Tex(EnemyIcon));
         assets.GetTexture(Tex(GlockAlbedo));
-        for (int i = 0; i < 3; i++)
-            assets.GetTexture(Tex(string.Format(MuzzleFlash, i)));
         assets.GetTexture(Tex(ArmsMale));
         assets.GetTexture(Tex(Skybox));
         assets.GetTexture(Tex(Crate));
+        for (int i = 0; i < 3; i++)
+            assets.GetTexture(Tex(string.Format(MuzzleFlash, i)));
+
+        // --- Modelos skinned (Glock + AK + Inimigo) ---
         assets.GetSkinnedModel(Model(GlockModel));
+        assets.GetSkinnedModel(Model(AKModel));
         assets.GetSkinnedModel(Model(UniSexGuy));
+
+        // --- Animações do inimigo ---
+        SkinnedModelLoader.MergeAnimationsFromFile(
+            assets.GetSkinnedModel(Model(UniSexGuy))!,
+            Model(UniSexGuyIdle), "Idle");
+        SkinnedModelLoader.MergeAnimationsFromFile(
+            assets.GetSkinnedModel(Model(UniSexGuy))!,
+            Model(UniSexGuyWalk), "Walk");
+
+        // --- Áudio ---
+        if (audio != null)
+        {
+            // Glock
+            audio.PreloadSound(Audio(GlockDrawFirst));
+            audio.PreloadSound(Audio(GlockReload));
+            audio.PreloadSound(Audio(GlockReloadEmpty));
+            for (int i = 0; i < 4; i++)
+                audio.PreloadSound(Audio($"{GlockFire}{i}.wav"));
+
+            // AK
+            audio.PreloadSound(Audio(AKFire + "0.wav"));
+            audio.PreloadSound(Audio(AKFire + "1.wav"));
+            audio.PreloadSound(Audio(AKFire + "2.wav"));
+            audio.PreloadSound(Audio(AKFire + "3.wav"));
+            audio.PreloadSound(Audio(AKReload));
+            audio.PreloadSound(Audio(AKReloadEmpty));
+
+            // Impactos
+            for (int i = 0; i < 3; i++)
+                audio.PreloadSound(Audio($"{BulletImpact}{i:D2}.mp3"));
+        }
     }
 
     public static bool IsEmissiveTexture(string texturePath)

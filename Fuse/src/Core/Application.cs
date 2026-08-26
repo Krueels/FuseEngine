@@ -253,7 +253,7 @@ public unsafe class Application : IDisposable
 
     public void Run()
     {
-        Logger.Info("Entering game loop");
+        Logger.Important("Entering game loop");
 
         try
         {
@@ -333,7 +333,7 @@ public unsafe class Application : IDisposable
             Logger.Error($"Game loop exception: {ex.Message}\n{ex.StackTrace}");
         }
 
-        Logger.Info("Exited game loop");
+        Logger.Important("Exited game loop");
     }
 
     private void UpdateUIFocus()
@@ -503,6 +503,7 @@ public unsafe class Application : IDisposable
 
     private void OnLoadProgress(float progress, string status)
     {
+        Bible.PreloadAll(_assets, _audio);
         _loadingScreen.UpdateProgress(progress, status, _window, _window.GL, _ui, _scrWidth, _scrHeight);
     }
 

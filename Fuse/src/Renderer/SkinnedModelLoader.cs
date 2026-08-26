@@ -368,6 +368,9 @@ public static unsafe class SkinnedModelLoader
             return;
         }
 
+        if (!string.IsNullOrEmpty(clipName) && model.Clips.ContainsKey(clipName))
+            return;
+
         var scene = Api.ImportFile(animFbxPath,
             (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords) | 0x8000000u);
 

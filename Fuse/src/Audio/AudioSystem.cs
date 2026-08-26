@@ -23,6 +23,7 @@ public sealed class AudioSystem : IDisposable
             samplerate: 0,
             bufferSize: 0,
             channels: 2);
+        _soloud.SetMaxActiveVoiceCount(32);
         Instance = this;
         Logger.Important($"AudioSystem: Backend {_soloud.BackendString}");
     }
@@ -36,10 +37,11 @@ public sealed class AudioSystem : IDisposable
     public void SetPaused(bool paused) => _soloud.SetPauseAll(paused);
 
     public VoiceHandle Play(string path, float volume = 1.0f)
-    {
+    { 
         var wav = GetSound(path);
         if (wav == null) return VoiceHandle.None;
-        return _soloud.Play(wav, volume);
+        var voice = _soloud.Play(wav, volume);
+        return voice;
     }
 
     public VoiceHandle Play3D(string path, Vector3 position, float volume = 1.0f,
@@ -121,5 +123,10 @@ public sealed class AudioSystem : IDisposable
         if (Path.IsPathRooted(path) || path.StartsWith(Fuse.ResPath.Path, StringComparison.OrdinalIgnoreCase))
             return path;
         return $"{Fuse.ResPath.Path}/{path}";
+    }
+
+    public void PreloadSound(string path)
+    {
+        GetSound(path);
     }
 }

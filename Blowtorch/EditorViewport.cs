@@ -110,6 +110,7 @@ public unsafe class EditorViewport : IDisposable
         var proj = _camera.ProjectionMatrix((float)_width / _height);
 
         shader.Use();
+        shader.SetFloat("uIsViewmodel", 1.0f);
         var dirLight = scene.Lights.FirstOrDefault(l => l.Enabled && l.Type == LightType.Directional);
         if (dirLight != null)
         {
