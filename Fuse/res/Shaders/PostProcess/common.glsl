@@ -28,6 +28,9 @@ uniform vec2 uScreenSize;
 uniform sampler2D uSsao;
 uniform float uSsaoIntensity;
 
+// Tonemap
+uniform int uTonemapEnabled;
+
 in vec2 vTexCoord;
 
 vec3 ToneMapACES(vec3 x) {

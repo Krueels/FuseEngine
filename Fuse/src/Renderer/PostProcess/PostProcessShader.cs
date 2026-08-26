@@ -41,6 +41,9 @@ public sealed class PostProcessShader : IDisposable
     public int UProjection { get; private set; }
     public int UInvProj { get; private set; }
 
+    // Tonemap
+    public int UTonemapEnabled { get; private set; }
+
     public PostProcessShader(GL gl, AssetManager assets)
     {
         _gl = gl;
@@ -83,6 +86,9 @@ public sealed class PostProcessShader : IDisposable
         USsaoKernelSize = _gl.GetUniformLocation(_shader.ID, "uSsaoKernelSize");
         UProjection = _gl.GetUniformLocation(_shader.ID, "uProjection");
         UInvProj = _gl.GetUniformLocation(_shader.ID, "uInvProj");
+
+        // Tonemap
+        UTonemapEnabled = _gl.GetUniformLocation(_shader.ID, "uTonemapEnabled");
     }
 
     public void Use()
@@ -118,6 +124,7 @@ public sealed class PostProcessShader : IDisposable
         _gl.Uniform1(UBloomAnamorphicRatio, settings.BloomAnamorphicRatio);
         _gl.Uniform1(UMotionBlurIntensity, settings.MotionBlurIntensity);
         _gl.Uniform1(UMotionBlurSamples, settings.MotionBlurSamples);
+        _gl.Uniform1(UTonemapEnabled, settings.TonemapEnabled ? 1 : 0);
     }
 
     public void Dispose()

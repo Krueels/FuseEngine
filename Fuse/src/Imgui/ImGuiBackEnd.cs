@@ -72,8 +72,11 @@ public unsafe class ImGuiBackEnd : IDisposable
 
             if (pp.Enabled)
             {
-                ImGuiNET.ImGui.SeparatorText("Exposure");
-                ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
+                if (pp.TonemapEnabled)
+                {
+                    ImGuiNET.ImGui.SeparatorText("Tonemap");
+                    ImGuiNET.ImGui.DragFloat("Exposure", ref pp.Exposure, 0.01f, 0.1f, 10.0f);
+                }
 
                 if (pp.BloomEnabled)
                 {

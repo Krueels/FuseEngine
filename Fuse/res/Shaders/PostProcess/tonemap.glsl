@@ -4,5 +4,8 @@ vec4 TonemapOnly(vec2 uv) {
         float ao = texture(uSsao, uv).r;
         col *= ao;
     }
-    return vec4(ToneMapACES(col), 1.0);
+    if (uTonemapEnabled == 1) {
+        col = ToneMapACES(col);
+    }
+    return vec4(col, 1.0);
 }

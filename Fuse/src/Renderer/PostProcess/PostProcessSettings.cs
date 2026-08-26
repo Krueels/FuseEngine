@@ -6,6 +6,9 @@ public sealed class PostProcessSettings
 {
     public bool Enabled = false;
 
+    // Debug
+    public int DebugView = 0;
+
     // Exposure / Tonemap
     public float Exposure = 0.58f;
     public bool TonemapEnabled = true;
@@ -29,8 +32,6 @@ public sealed class PostProcessSettings
     public int BlurIterations = 1;
     public int BlurRadius = 4;
 
-    // Debug
-    public int DebugView = 0;
 
     // Motion Blur
     public bool MotionBlurEnabled = true;
@@ -40,8 +41,8 @@ public sealed class PostProcessSettings
     // SSAO
     public bool SsaoEnabled = true;
     public float SsaoIntensity = 1.0f;
-    public float SsaoRadius = 0.5f;
+    public float SsaoRadius = 2.0f;
     public float SsaoBias = 0.025f;
-    public int SsaoKernelSize = 64;
+    public int SsaoKernelSize = 32;
     public float SsaoScale = 0.5f; // resolução reduzida (0.5 = metade)
 }
