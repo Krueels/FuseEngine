@@ -37,7 +37,7 @@ public sealed class AKWeapon : IWeapon
     public string ReloadEmptyAudioPath => Bible.Audio(Bible.AKReloadEmpty);
 
     public float FireRate => 11.666f;      // 600 RPM
-    public float Damage => 25f;
+    public float Damage => 15f;
     public float Range => 100f;
     public int MagazineSize => 30;
     public int CurrentAmmo { get; set; }

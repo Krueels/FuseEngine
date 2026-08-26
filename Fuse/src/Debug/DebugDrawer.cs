@@ -484,7 +484,7 @@ public unsafe class DebugDrawer : IDisposable
 
             if (nodePositions.TryGetValue(node.Parent, out var parentPos))
             {
-                PushLine(kvp.Value, parentPos, new Vector3(0, 1, 0));
+                PushLine(kvp.Value, parentPos, new Vector3(0, 0, 1));
             }
         }
     }
