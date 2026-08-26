@@ -25,6 +25,7 @@ public static class Bible
 
     // Models
     public const string GlockModel = "skinned_models/Glock.fbx";
+    public const string AKModel = "skinned_models/AKS47U.fbx";
 
     // UnisexGuy
     public const string UniSexGuy = "skinned_models/UniSexGuyScaled.fbx";
@@ -62,11 +63,14 @@ public static class Bible
     public const string PostProcessFrag = "Shaders/PostProcess/composite.frag";
 
     // Audio
+    public const string BulletImpact = "Audio/weapons/Bullet_Impact_Flesh_";
     public const string GlockDrawFirst = "Audio/weapons/glock/Glock_DrawFirst.wav";
     public const string GlockReload = "Audio/weapons/glock/Glock_Reload.wav";
     public const string GlockReloadEmpty = "Audio/weapons/glock/Glock_ReloadEmpty.wav";
     public const string GlockFire = "Audio/weapons/glock/Glock_Fire";
-    public const string BulletImpact = "Audio/weapons/Bullet_Impact_Flesh_";
+    public const string AKFire = "Audio/weapons/ak/AKS74U_Fire";
+    public const string AKReload = "Audio/weapons/ak/AKS74U_Reload.wav";
+    public const string AKReloadEmpty = "Audio/weapons/ak/AKS74U_ReloadEmpty.wav";
 
     // Helpers
     public static string Tex(string name) => $"{ResPath.Path}/Textures/{name}";

@@ -127,6 +127,7 @@ public unsafe class Application : IDisposable
         // Weapon System
         _weaponSystem = new WeaponSystem(_player, _player.Camera, _physics, _assets, _audio, _sceneManager);
         _weaponSystem.RegisterWeapon(new GlockWeapon());
+        _weaponSystem.RegisterWeapon(new AKWeapon());
         _weaponSystem.EnemySystem = _enemySystem;
 
         // Default Map Loading

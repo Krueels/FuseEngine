@@ -77,6 +77,8 @@ public static class DevShortcuts
         // Weapon switching (1, 0)
         if (Input.Input.KeyPressed(KeyCodes.D1))
             weaponSystem?.SwitchWeapon("glock");
+        if (Input.Input.KeyPressed(KeyCodes.D2))
+            weaponSystem?.SwitchWeapon("ak");
         if (Input.Input.KeyPressed(KeyCodes.D0))
             weaponSystem?.Unequip();
 

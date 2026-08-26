@@ -294,7 +294,7 @@ public static unsafe class SkinnedModelLoader
                 ticksPerSecond = 30.0f;
                 Logger.Warn($"[AnimLoad] Normalizando TicksPerSecond para 30 (original={anim->MTicksPerSecond})");
             }
-                
+
 
 
             result.Add(new AnimationClip
@@ -303,7 +303,7 @@ public static unsafe class SkinnedModelLoader
                 DurationTicks = duration,
                 TicksPerSecond = ticksPerSecond,
                 Channels = [.. channels],
-                Loop = name is "Idle" or "Walk",
+                Loop = name.Contains("Idle", StringComparison.OrdinalIgnoreCase) || name.Contains("Walk", StringComparison.OrdinalIgnoreCase),
             });
         }
 
