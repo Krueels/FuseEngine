@@ -2929,6 +2929,181 @@
           0.0625
         ]
       }
+    },
+    {
+      "id": "brush_896c9cdb",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -10,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -10,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -0.44721362,
+            0.89442724,
+            0
+          ],
+          "d": -0.89442724,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0.44721362,
+            -0.89442724,
+            0
+          ],
+          "d": -0.89442724,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -10,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -10,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          40,
+          4,
+          20
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          10,
+          6,
+          10
+        ]
+      }
     }
   ],
   "player_spawn": {

@@ -239,7 +239,10 @@ public sealed class SpiderEnemy : IEnemy
             UpdateWallLean(dt, bodyPosition, forward);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
-            _proceduralWalk.Update(dt, speed, forward, bodyPosition, modelWorldRotation, totalModelScale);
+            Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
+                                     Matrix4x4.CreateFromQuaternion(modelWorldRotation) *
+                                     Matrix4x4.CreateTranslation(bodyPosition);
+            _proceduralWalk.Update(dt, speed, forward, bodyPosition, modelWorldRotation, totalModelScale, modelMatrix);
         }
     }
 

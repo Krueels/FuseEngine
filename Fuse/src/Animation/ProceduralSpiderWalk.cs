@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Fuse.Core;
+using Fuse.Debug;
 using Fuse.Enemy;
 using Fuse.Scene;
 
@@ -12,7 +13,7 @@ namespace Fuse.Animation;
 /// convention (translation in M14/M24/M34), so its bone-space math is kept
 /// separate from System.Numerics' regular world-space helpers.
 /// </summary>
-public sealed class ProceduralSpiderWalk
+public sealed class ProceduralSpiderWalk : IGizmoDrawable
 {
     // The bind pose is already close to the leg's maximum reach. Start moving a
     // trailing foot early, but place it far ahead so this large spider takes long,
@@ -21,14 +22,15 @@ public sealed class ProceduralSpiderWalk
     private const float StepDistanceThreshold = 0.18f;
     private const float LateralStepThreshold = 0.75f;
     private const float StepForwardPlacement = 1.5f;
-    private const float StepSpeed = 12.0f;
-    private const float RaycastDistance = 15.0f;
+    private const float StepSpeed = 7.0f;
+    private const float RaycastDistance = 10.0f;
     private const float Epsilon = 0.0001f;
 
     private Skeleton _skeleton = null!;
     private readonly SceneManager _sceneManager;
     private LegState[] _legs = Array.Empty<LegState>();
     private bool _initialized;
+    private Matrix4x4 _lastModelMatrix = Matrix4x4.Identity;
 
     public Matrix4x4[]? FinalBoneMatrices { get; private set; }
 
@@ -53,6 +55,13 @@ public sealed class ProceduralSpiderWalk
         public float StepProgress;
         public bool IsStepping;
         public bool HasPlantedFoot;
+
+        // Debug info
+        public Vector3 DebugRayStart;
+        public Vector3 DebugRayEnd;
+        public Vector3 DebugIdealBeforeRaycast;
+        public bool DebugRaycastHit;
+        public Vector3 DebugLandingPoint;
     }
 
     public ProceduralSpiderWalk(SceneManager scene) => _sceneManager = scene;
@@ -61,6 +70,7 @@ public sealed class ProceduralSpiderWalk
 
     internal void Initialize(Skeleton skeleton, SpiderEnemy.LegData[] data)
     {
+        Debug.DebugDrawer.Register(this);
         _skeleton = skeleton;
         FinalBoneMatrices = new Matrix4x4[_skeleton.Bones.Length];
 
@@ -123,11 +133,13 @@ public sealed class ProceduralSpiderWalk
         Vector3 forward,
         Vector3 bodyPosition,
         Quaternion modelWorldRotation,
-        Vector3 modelScale)
+        Vector3 modelScale,
+        Matrix4x4 modelMatrix)
     {
         if (!_initialized)
             return;
 
+        _lastModelMatrix = modelMatrix;
         modelScale = SanitizeScale(modelScale);
         _skeleton.ComputeGlobalTransforms();
 
@@ -149,7 +161,13 @@ public sealed class ProceduralSpiderWalk
                 continue;
 
             Vector3 desiredFootWorld = ModelToWorld(leg.RestFootModel, bodyPosition, modelWorldRotation, modelScale);
-            desiredFootWorld = ProjectToGround(desiredFootWorld);
+            leg.DebugIdealBeforeRaycast = desiredFootWorld;
+            leg.DebugRayStart = desiredFootWorld + Vector3.UnitY * (RaycastDistance * 0.5f);
+            leg.DebugRayEnd = desiredFootWorld - Vector3.UnitY * (RaycastDistance * 0.5f);
+            leg.DebugRaycastHit = _sceneManager.Raycast(leg.DebugRayStart, -Vector3.UnitY, RaycastDistance, out var groundHit);
+            if (leg.DebugRaycastHit)
+                leg.DebugRayEnd = groundHit.Position;
+            desiredFootWorld = leg.DebugRaycastHit ? groundHit.Position : desiredFootWorld;
 
             // The first valid frame starts each foot on the floor instead of letting
             // the bind pose decide where its contact point should be.
@@ -180,6 +198,7 @@ public sealed class ProceduralSpiderWalk
                     // room to travel before this same leg needs another step.
                     Vector3 landingPoint = desiredFootWorld + forward * StepForwardPlacement;
                     leg.TargetFootWorld = ProjectToGround(landingPoint);
+                    leg.DebugLandingPoint = leg.TargetFootWorld;
 
                     if (leg.GaitGroup == 0) group0IsStepping = true;
                     else group1IsStepping = true;
@@ -368,5 +387,94 @@ public sealed class ProceduralSpiderWalk
 
         Vector3 rotationAxis = Vector3.Normalize(Vector3.Cross(from, to));
         return Quaternion.CreateFromAxisAngle(rotationAxis, MathF.Acos(dot));
+    }
+
+    private Vector3 ModelToWorld(Vector3 modelPoint)
+    {
+        return Vector3.Transform(modelPoint, _lastModelMatrix);
+    }
+
+    public void OnDrawGizmos(DebugDrawer drawer)
+    {
+        if (!_initialized) return;
+
+        for (int i = 0; i < _legs.Length; i++)
+        {
+            var leg = _legs[i];
+            if (!IsValidLeg(leg)) continue;
+
+            // Skeleton: world-space
+            Vector3 hipPos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global));
+            Vector3 kneePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global));
+
+            // Feet: already world-space
+            Vector3 footCurrent = leg.CurrentFootWorld;
+            Vector3 footTarget = leg.IsStepping ? leg.TargetFootWorld : leg.CurrentFootWorld;
+
+            Vector3 groupColor = leg.GaitGroup == 0
+                ? new Vector3(1, 0.5f, 0)
+                : new Vector3(0, 0.5f, 1);
+
+            // --- RAYCAST DEBUG ---
+            // Linha do raycast (ciano se acertou, vermelho se errou)
+            Vector3 rayColor = leg.DebugRaycastHit ? new Vector3(0, 1, 1) : new Vector3(1, 0, 0);
+            drawer.PushLine(leg.DebugRayStart, leg.DebugRayEnd, rayColor);
+
+            // Esfera no início do raycast (pequena, branca)
+            drawer.DrawSphere(leg.DebugRayStart, Quaternion.Identity, 0.04f, new Vector3(1, 1, 1));
+
+            // Esfera no ponto de hit (ciano)
+            if (leg.DebugRaycastHit)
+            {
+                drawer.DrawSphere(leg.DebugRayEnd, Quaternion.Identity, 0.06f, new Vector3(0, 1, 1));
+            }
+
+            // Posição ideal ANTES do raycast (vermelha, translúcida)
+            drawer.DrawSphere(leg.DebugIdealBeforeRaycast, Quaternion.Identity, 0.05f, new Vector3(1, 0.3f, 0.3f));
+
+            // Linha da posição ideal até o hit (mostra offset do terreno)
+            if (leg.DebugRaycastHit)
+            {
+                drawer.PushLine(leg.DebugIdealBeforeRaycast, leg.DebugRayEnd, new Vector3(1, 0.3f, 0.3f));
+            }
+
+            // --- SKELETON DEBUG ---
+            drawer.PushLine(hipPos, kneePos, groupColor);
+            drawer.PushLine(kneePos, footCurrent, groupColor);
+
+            // --- FOOT DEBUG ---
+            // Pé atual (verde)
+            drawer.DrawSphere(footCurrent, Quaternion.Identity, 0.05f, new Vector3(0, 1, 0));
+
+            // Target (amarelo se stance, magenta se swing)
+            drawer.DrawSphere(footTarget, Quaternion.Identity, 0.08f,
+                leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(0, 1, 0));
+
+            // Linha quadril -> target
+            drawer.PushLine(hipPos, footTarget, leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(1, 1, 1));
+
+            // --- LANDING POINT ---
+            if (leg.IsStepping)
+            {
+                // Landing point (onde o pé vai pousar)
+                drawer.DrawSphere(leg.DebugLandingPoint, Quaternion.Identity, 0.07f, new Vector3(1, 1, 0));
+
+                // Linha do target até o landing point
+                drawer.PushLine(footTarget, leg.DebugLandingPoint, new Vector3(1, 1, 0));
+
+                // Arco do step
+                Vector3 arcStart = leg.StepStartWorld;
+                Vector3 arcEnd = leg.TargetFootWorld;
+                int segments = 10;
+                for (int s = 0; s < segments; s++)
+                {
+                    float t0 = (float)s / segments;
+                    float t1 = (float)(s + 1) / segments;
+                    Vector3 p0 = Vector3.Lerp(arcStart, arcEnd, t0) + Vector3.UnitY * MathF.Sin(t0 * MathF.PI) * StepHeight;
+                    Vector3 p1 = Vector3.Lerp(arcStart, arcEnd, t1) + Vector3.UnitY * MathF.Sin(t1 * MathF.PI) * StepHeight;
+                    drawer.PushLine(p0, p1, new Vector3(1, 0, 1));
+                }
+            }
+        }
     }
 }
