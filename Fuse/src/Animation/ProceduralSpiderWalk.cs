@@ -14,10 +14,15 @@ namespace Fuse.Animation;
 /// </summary>
 public sealed class ProceduralSpiderWalk
 {
-    private const float StepHeight = 0.4f;
-    private const float StepDistanceThreshold = 0.6f;
-    private const float StepSpeed = 8.0f;
-    private const float RaycastDistance = 3.0f;
+    // The bind pose is already close to the leg's maximum reach. Start moving a
+    // trailing foot early, but place it far ahead so this large spider takes long,
+    // deliberate strides instead of continuously shuffling in tiny increments.
+    private const float StepHeight = 0.55f;
+    private const float StepDistanceThreshold = 0.18f;
+    private const float LateralStepThreshold = 0.75f;
+    private const float StepForwardPlacement = 1.5f;
+    private const float StepSpeed = 12.0f;
+    private const float RaycastDistance = 15.0f;
     private const float Epsilon = 0.0001f;
 
     private Skeleton _skeleton = null!;
@@ -117,7 +122,7 @@ public sealed class ProceduralSpiderWalk
         float speed,
         Vector3 forward,
         Vector3 bodyPosition,
-        Quaternion bodyRotation,
+        Quaternion modelWorldRotation,
         Vector3 modelScale)
     {
         if (!_initialized)
@@ -143,30 +148,38 @@ public sealed class ProceduralSpiderWalk
             if (!IsValidLeg(leg))
                 continue;
 
-            Vector3 idealFootWorld = ModelToWorld(leg.RestFootModel, bodyPosition, bodyRotation, modelScale);
-            idealFootWorld += forward * MathF.Min(speed * 0.2f, 0.8f);
-            idealFootWorld = ProjectToGround(idealFootWorld);
+            Vector3 desiredFootWorld = ModelToWorld(leg.RestFootModel, bodyPosition, modelWorldRotation, modelScale);
+            desiredFootWorld = ProjectToGround(desiredFootWorld);
 
             // The first valid frame starts each foot on the floor instead of letting
             // the bind pose decide where its contact point should be.
             if (!leg.HasPlantedFoot)
             {
-                leg.CurrentFootWorld = idealFootWorld;
-                leg.TargetFootWorld = idealFootWorld;
-                leg.StepStartWorld = idealFootWorld;
+                leg.CurrentFootWorld = desiredFootWorld;
+                leg.TargetFootWorld = desiredFootWorld;
+                leg.StepStartWorld = desiredFootWorld;
                 leg.HasPlantedFoot = true;
             }
             else
             {
                 bool oppositeGroupIsStepping = leg.GaitGroup == 0 ? group1IsStepping : group0IsStepping;
-                float distanceToIdeal = Vector3.Distance(leg.CurrentFootWorld, idealFootWorld);
+                Vector3 footError = desiredFootWorld - leg.CurrentFootWorld;
+                float forwardError = Vector3.Dot(footError, forward);
+                Vector3 lateralError = footError - forward * forwardError;
+                bool footIsTrailing = forwardError > StepDistanceThreshold;
+                bool footIsOutOfPosition = lateralError.LengthSquared() > LateralStepThreshold * LateralStepThreshold;
 
-                if (!leg.IsStepping && !oppositeGroupIsStepping && distanceToIdeal > StepDistanceThreshold)
+                if (!leg.IsStepping && !oppositeGroupIsStepping && (footIsTrailing || footIsOutOfPosition))
                 {
                     leg.IsStepping = true;
                     leg.StepProgress = 0.0f;
                     leg.StepStartWorld = leg.CurrentFootWorld;
-                    leg.TargetFootWorld = idealFootWorld;
+
+                    // The resting point determines when the leg is late. The
+                    // landing point is deliberately ahead of it, giving the body
+                    // room to travel before this same leg needs another step.
+                    Vector3 landingPoint = desiredFootWorld + forward * StepForwardPlacement;
+                    leg.TargetFootWorld = ProjectToGround(landingPoint);
 
                     if (leg.GaitGroup == 0) group0IsStepping = true;
                     else group1IsStepping = true;
@@ -175,7 +188,7 @@ public sealed class ProceduralSpiderWalk
                 UpdateFootStep(ref leg, dt);
             }
 
-            Vector3 targetInModel = WorldToModel(leg.CurrentFootWorld, bodyPosition, bodyRotation, modelScale);
+            Vector3 targetInModel = WorldToModel(leg.CurrentFootWorld, bodyPosition, modelWorldRotation, modelScale);
             SolveTwoBoneIK(ref leg, targetInModel);
         }
 

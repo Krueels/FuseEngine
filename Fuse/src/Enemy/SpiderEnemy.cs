@@ -30,6 +30,13 @@ public sealed class SpiderEnemy : IEnemy
     private EnemyPatrol? _patrol;
     private SkinnedModel? _model;
     private ProceduralSpiderWalk? _proceduralWalk;
+    private float _wallLeanAngle;
+
+    private const float WallProbeDistance = 2.5f;
+    private const float WallLeanStartDistance = 2.0f;
+    private const float WallLeanFullDistance = 0.55f;
+    private const float MaxWallLeanRadians = 55f * (MathF.PI / 180f);
+    private const float WallLeanResponse = 10f;
 
     // Leg bone indices (resolved at init)
     private readonly LegData[] _legs = new LegData[8];
@@ -229,9 +236,39 @@ public sealed class SpiderEnemy : IEnemy
             Quaternion bodyRotation = Body.Rotation(physics);
             Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
             Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
+            UpdateWallLean(dt, bodyPosition, forward);
+            Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
-            _proceduralWalk.Update(dt, speed, forward, bodyPosition, bodyRotation, totalModelScale);
+            _proceduralWalk.Update(dt, speed, forward, bodyPosition, modelWorldRotation, totalModelScale);
         }
+    }
+
+    private void UpdateWallLean(float dt, Vector3 bodyPosition, Vector3 forward)
+    {
+        float targetLean = 0f;
+        Vector3 probeStart = bodyPosition + Vector3.UnitY * 0.7f + forward * 0.75f;
+
+        if (_sceneManager != null && _sceneManager.Raycast(probeStart, forward, WallProbeDistance, out var hit))
+        {
+            // Only vertical surfaces directly in front of the spider can cause a lean.
+            bool isWall = MathF.Abs(hit.Normal.Y) < 0.25f;
+            bool facesSpider = Vector3.Dot(-hit.Normal, forward) > 0.55f;
+            if (isWall && facesSpider)
+            {
+                float closeness = System.Math.Clamp(
+                    (WallLeanStartDistance - hit.Distance) / (WallLeanStartDistance - WallLeanFullDistance),
+                    0f,
+                    1f);
+                targetLean = MaxWallLeanRadians * closeness;
+            }
+        }
+
+        float blend = 1f - MathF.Exp(-WallLeanResponse * dt);
+        _wallLeanAngle += (targetLean - _wallLeanAngle) * blend;
+
+        // A negative local X rotation raises the front (+Z) of the model toward
+        // the wall. This remains visual-only; physics continues to use its yaw.
+        Entity.ModelRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -_wallLeanAngle);
     }
 
     public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)

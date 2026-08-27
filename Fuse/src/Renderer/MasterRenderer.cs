@@ -853,6 +853,7 @@ public unsafe class MasterRenderer
             shader.Use();
 
             var modelMatrix = Matrix4x4.CreateScale(e.Transform.Scale * e.ModelScale) *
+                              Matrix4x4.CreateFromQuaternion(e.ModelRotation) *
                               Matrix4x4.CreateFromQuaternion(e.Transform.Rotation) *
                               Matrix4x4.CreateTranslation(e.Transform.Position + e.ModelOffset);
             shader.SetMat4("uModel", modelMatrix);

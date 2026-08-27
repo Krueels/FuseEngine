@@ -38,6 +38,8 @@ public class Entity
     public Animation.SkinnedModel? SkinnedModel { get; set; }
     public Animation.Animator? Animator { get; set; }
     public Vector3 ModelOffset { get; set; } = Vector3.Zero;
+    /// <summary>Visual-only local rotation applied before the entity's world rotation.</summary>
+    public Quaternion ModelRotation { get; set; } = Quaternion.Identity;
     public string ParentId { get; set; } = "";
     public Vector3 InitialRelativePosition { get; set; }
     public Quaternion InitialRelativeRotation { get; set; } = Quaternion.Identity;
