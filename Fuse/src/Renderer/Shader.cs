@@ -39,7 +39,7 @@ public unsafe class Shader : IDisposable
         return new Shader(gl, vertSrc, fragSrc);
     }
 
-    private static string PreprocessIncludes(string source, string dir)
+    internal static string PreprocessIncludes(string source, string dir)
     {
         var included = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return ProcessIncludes(source, dir, included);

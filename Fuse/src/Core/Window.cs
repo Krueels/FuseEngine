@@ -58,6 +58,14 @@ public unsafe class Window : IDisposable
         _gl = GL.GetApi(_glfw.GetProcAddress);
         Logger.Important("OpenGL Init");
 
+        string renderer = _gl.GetStringS(StringName.Renderer);
+        string vendor = _gl.GetStringS(StringName.Vendor);
+        string version = _gl.GetStringS(StringName.Version);
+
+        Logger.Important($"Vendor: {vendor}");
+        Logger.Important($"GPU: {renderer}");
+        Logger.Important($"OpenGL Version: {version}");
+
         _gl.Enable(EnableCap.DepthTest);
         _gl.Enable(EnableCap.CullFace);
         _gl.CullFace(GLEnum.Back);
@@ -73,6 +81,8 @@ public unsafe class Window : IDisposable
         _glfw.SetCharCallback(_handle, OnCharCallback);
 
         Input.Input.Init(_glfw, _handle);
+        Logger.Important("Input Init");
+
     }
 
     public void Dispose()

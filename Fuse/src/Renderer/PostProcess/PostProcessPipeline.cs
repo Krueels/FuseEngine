@@ -37,6 +37,11 @@ public sealed class PostProcessPipeline : IDisposable
 
     public PostProcessSettings Settings => _settings;
 
+    public void ReloadShader()
+    {
+        _shader.Reload();
+    }
+
     public void SetViewProj(Matrix4x4 prevViewProj, Matrix4x4 view, Matrix4x4 proj)
     {
         _prevViewProj = prevViewProj;
@@ -235,11 +240,19 @@ public sealed class PostProcessPipeline : IDisposable
         _shader.SetSceneTexture(0);
 
         // Bind SSAO blurred texture (se disponível)
-        if (useSsao)
+        if (useSsao || _settings.DebugView == 4)
         {
             _shader.SetSsaoTexture(1);
             _gl.ActiveTexture(TextureUnit.Texture1);
             _gl.BindTexture(TextureTarget.Texture2D, _fbPool.SsaoBlurColorTex);
+        }
+
+        // Bind depth texture para debug view
+        if (_settings.DebugView == 5)
+        {
+            _shader.SetDepthTexture(2);
+            _gl.ActiveTexture(TextureUnit.Texture2);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.HdrDepthTexture);
         }
 
         _gl.ActiveTexture(TextureUnit.Texture0);
@@ -288,6 +301,21 @@ public sealed class PostProcessPipeline : IDisposable
 
         _shader.SetPass(6);
         _shader.SetSceneTexture(0);
+
+        if (_settings.DebugView == 4)
+        {
+            _shader.SetSsaoTexture(1);
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.SsaoBlurColorTex);
+        }
+
+        if (_settings.DebugView == 5)
+        {
+            _shader.SetDepthTexture(2);
+            _gl.ActiveTexture(TextureUnit.Texture2);
+            _gl.BindTexture(TextureTarget.Texture2D, _fbPool.HdrDepthTexture);
+        }
+
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneToComposite);
         _quad.Draw();

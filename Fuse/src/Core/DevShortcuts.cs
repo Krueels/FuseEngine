@@ -29,6 +29,9 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.F2))
             screenshotRequested = true;
 
+        if (Input.Input.KeyPressed(KeyCodes.F4))
+            renderer.ReloadPostProcessShader();
+    
         // Map reload
         if (Input.Input.KeyPressed(KeyCodes.F5))
             requestMapReload();

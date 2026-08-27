@@ -7,7 +7,8 @@ namespace Fuse.Renderer.PostProcess;
 public sealed class PostProcessShader : IDisposable
 {
     private readonly GL _gl;
-    private readonly Shader _shader;
+    private readonly AssetManager _assets;
+    private Shader _shader;
     
     // Uniform locations
     public int UPass { get; private set; }
@@ -51,6 +52,24 @@ public sealed class PostProcessShader : IDisposable
             Bible.Shader(Bible.PostProcessVert),
             Bible.Shader(Bible.PostProcessFrag))!;
         CacheUniforms();
+    }
+
+    public bool Reload()
+    {
+        string vertPath = Bible.Shader(Bible.PostProcessVert);
+        string fragPath = Bible.Shader(Bible.PostProcessFrag);
+
+        string vertSrc = Shader.PreprocessIncludes(File.ReadAllText(vertPath), Path.GetDirectoryName(vertPath)!);
+        string fragSrc = Shader.PreprocessIncludes(File.ReadAllText(fragPath), Path.GetDirectoryName(fragPath)!);
+
+        var newShader = new Shader(_gl, vertSrc, fragSrc);
+
+        _shader.Dispose();
+        _shader = newShader;
+        CacheUniforms();
+
+        Logger.InfoGold("[ShaderHotReload] Post-process shader recarregado com sucesso");
+        return true;
     }
 
     private void CacheUniforms()

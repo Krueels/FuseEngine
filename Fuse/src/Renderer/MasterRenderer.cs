@@ -122,6 +122,11 @@ public unsafe class MasterRenderer
         _decalQueue.Add(decal);
     }
 
+    public void ReloadPostProcessShader()
+    {
+        _postPipeline.ReloadShader();
+    }
+
     /// <summary>
     /// Spawns a deferred box projected decal at the given world position and orientation.
     /// If parentBody is specified, the decal automatically follows the physical object when it moves or rotates.

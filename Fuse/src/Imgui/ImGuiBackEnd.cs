@@ -69,6 +69,8 @@ public unsafe class ImGuiBackEnd : IDisposable
             ImGuiNET.ImGui.Checkbox("Bloom Enabled", ref pp.BloomEnabled);
             ImGuiNET.ImGui.Checkbox("Motion Blur Enabled", ref pp.MotionBlurEnabled);
             ImGuiNET.ImGui.Checkbox("SSAO Enabled", ref pp.SsaoEnabled);
+            ImGuiNET.ImGui.SeparatorText("Debug View");
+            ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract", "SSAO Mask", "Depth"], 6);
 
             if (pp.Enabled)
             {
@@ -114,8 +116,6 @@ public unsafe class ImGuiBackEnd : IDisposable
 
                 }
 
-                ImGuiNET.ImGui.SeparatorText("Debug View");
-                ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract"], 4);
             }
         }
         ImGui.End();
