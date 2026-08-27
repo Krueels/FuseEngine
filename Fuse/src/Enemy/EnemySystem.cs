@@ -15,6 +15,7 @@ public sealed class EnemySystem : IDisposable
     private readonly Scene.SceneManager _sceneManager;
     private readonly AssetManager _assets;
     private readonly List<Enemy> _enemies = new();
+    private readonly List<SpiderEnemy> _spiders = new();
 
     public EnemySystem(PhysicsWorld physics, Scene.SceneManager sceneManager, AssetManager assets)
     {
@@ -23,6 +24,7 @@ public sealed class EnemySystem : IDisposable
         _assets = assets;
     }
 
+    public IReadOnlyList<Enemy> GetEnemies() => _enemies;
     public Enemy SpawnEnemy(Vector3 position, float health = 100f)
     {
         string id = $"enemy_{_enemies.Count}";
@@ -30,6 +32,17 @@ public sealed class EnemySystem : IDisposable
         enemy.Initialize(_physics, _sceneManager, position);
         _enemies.Add(enemy);
         return enemy;
+    }
+
+    public IReadOnlyList<SpiderEnemy> GetSpiders() => _spiders;
+
+    public SpiderEnemy SpawnSpider(Vector3 position, float health = 80f)
+    {
+        string id = $"spider_{_spiders.Count}";
+        var spider = new SpiderEnemy(id, health, _assets);
+        spider.Initialize(_physics, _sceneManager, position);
+        _spiders.Add(spider);
+        return spider;
     }
 
     public void Update(float dt)
@@ -48,21 +61,37 @@ public sealed class EnemySystem : IDisposable
                 e.Update(dt, _physics);
             }
         }
+
+        for (int i = _spiders.Count - 1; i >= 0; i--)
+        {
+            var s = _spiders[i];
+            if (s.IsDead)
+            {
+                s.OnDeath(_physics, _sceneManager);
+                s.Dispose();
+                _spiders.RemoveAt(i);
+            }
+            else
+            {
+                s.Update(dt, _physics);
+            }
+        }
     }
 
-    public bool TryGetEnemy(BodyID bodyId, out Enemy? enemy)
+    public bool TryGetEnemy(BodyID bodyId, out IEnemy? enemy)
     {
         var entity = _sceneManager.ActiveScene.GetEntityByBody(bodyId);
         if (entity != null)
         {
-            enemy = _enemies.Find(e => e.Entity.Id == entity.Id);
-            return enemy != null;
+            var e = _enemies.Find(e => e.Entity.Id == entity.Id);
+            if (e != null) { enemy = e; return true; }
+            var s = _spiders.Find(s => s.Entity.Id == entity.Id);
+            if (s != null) { enemy = s; return true; }
         }
         enemy = null;
         return false;
     }
 
-    public IReadOnlyList<Enemy> GetEnemies() => _enemies;
 
     public void DrawDebug(Renderer.MasterRenderer renderer, Camera camera, float aspect)
     {
@@ -76,6 +105,17 @@ public sealed class EnemySystem : IDisposable
             if (!enemy.IsDead)
             {
                 var pos = enemy.Entity.Transform.Position;
+                pos.Y += 2.0f; // Acima da cápsula
+                renderer.QueueBillboard(view, proj, enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
+            }
+        }
+
+        for (int i = 0; i < _spiders.Count; i++)
+        {
+            var spider = _spiders[i];
+            if (!spider.IsDead)
+            {
+                var pos = spider.Entity.Transform.Position;
                 pos.Y += 2.0f; // Acima da cápsula
                 renderer.QueueBillboard(view, proj, enemyTex.ID, pos, new Vector2(0.5f, 0.5f), new Vector4(1, 0, 0, 0.8f));
             }
@@ -100,6 +140,22 @@ public sealed class EnemySystem : IDisposable
         }
 
         _enemies.Clear();
+
+        for (int i = _spiders.Count - 1; i >= 0; i--)
+        {
+            var s = _spiders[i];
+
+            if (s.Body.IsBuilt)
+            {
+                _physics.DestroyBody(s.Body.Native);
+                s.Body.Destroy();
+            }
+
+            _sceneManager.ActiveScene.Remove(s.Entity);
+            s.Dispose();
+        }
+
+        _spiders.Clear();
     }
 
     public void Dispose()

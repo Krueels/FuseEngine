@@ -36,6 +36,9 @@ public static class Bible
     public const string UniSexBody = "UniSexGuyBody_ALB.png";
     public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
 
+    // Spider
+    public const string SpiderModel = "skinned_models/spider.fbx";
+
     // Decals
     public const string DecalBulletHoleAlbedo = "decals/decal_bullet_hole.png";
 
@@ -98,6 +101,7 @@ public static class Bible
         assets.GetSkinnedModel(Model(GlockModel));
         assets.GetSkinnedModel(Model(AKModel));
         assets.GetSkinnedModel(Model(UniSexGuy));
+        assets.GetSkinnedModel(Model(SpiderModel));
 
         // --- Animações do inimigo ---
         SkinnedModelLoader.MergeAnimationsFromFile(

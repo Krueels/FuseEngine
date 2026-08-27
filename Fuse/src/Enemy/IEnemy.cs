@@ -14,6 +14,7 @@ public interface IEnemy : IDisposable
     float Health { get; set; }
     float MaxHealth { get; }
     bool IsDead { get; }
+    EnemyPatrol? Patrol { get; }
 
     void Initialize(PhysicsWorld physics, SceneManager sceneManager, Vector3 spawnPos);
     void TakeDamage(float damage, Vector3 hitPos, Vector3 hitDirection, PhysicsWorld physics);

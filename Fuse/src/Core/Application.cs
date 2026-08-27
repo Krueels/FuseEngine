@@ -439,7 +439,7 @@ public unsafe class Application : IDisposable
                 var mousePos = Input.Input.MousePosition;
                 var ray = _player.Camera.GetMouseRay(mousePos, _renderer.Width, _renderer.Height);
 
-                Fuse.Enemy.Enemy? hitEnemy = null;
+                IEnemy? hitEnemy = null;
                 if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit,
                     new Physics.DefaultBroadPhaseLayerFilter(),
                     new Physics.DefaultObjectLayerFilter(),

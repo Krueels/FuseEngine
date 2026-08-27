@@ -8,7 +8,7 @@ public sealed class EnemyDebugHUD
 {
     private readonly HUD _hud = new();
     private readonly List<HUDText> _lines = [];
-    private Fuse.Enemy.Enemy? _target;
+    private IEnemy? _target;
     private bool _visible;
     private Debug.DebugDrawer? _debugDrawer;
 
@@ -25,7 +25,7 @@ public sealed class EnemyDebugHUD
         }
     }
 
-    public void SetTarget(Fuse.Enemy.Enemy? enemy)
+    public void SetTarget(IEnemy? enemy)
     {
         _target = enemy;
         _visible = enemy != null;

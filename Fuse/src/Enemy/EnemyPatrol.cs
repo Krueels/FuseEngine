@@ -12,7 +12,7 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 {
     private enum PatrolState { Idle, Walking }
 
-    private readonly Enemy _enemy;
+    private readonly IEnemy _enemy;
     private readonly Physics.PhysicsWorld _physics;
     private PatrolState _state = PatrolState.Idle;
     private Vector3 _targetPos;
@@ -36,7 +36,7 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
     private static readonly Random s_random = new();
 
-    public EnemyPatrol(Enemy enemy, Physics.PhysicsWorld physics)
+    public EnemyPatrol(IEnemy enemy, Physics.PhysicsWorld physics)
     {
         _enemy = enemy;
         _physics = physics;

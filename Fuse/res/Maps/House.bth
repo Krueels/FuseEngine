@@ -1258,7 +1258,7 @@
           "rotation": 0
         }
       ],
-      "texture": "Textures/dev_measurecrate01.bmp",
+      "texture": "Textures/hl2/concrete/concreteceiling003a.bmp",
       "body": {
         "shape": "box",
         "position": [

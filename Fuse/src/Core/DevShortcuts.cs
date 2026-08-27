@@ -64,6 +64,13 @@ public static class DevShortcuts
                 enemySystem?.SpawnEnemy(hit.Position, 50f);
         }
 
+        // J: Spawn spider at raycast hit
+        if (Input.Input.KeyPressed(KeyCodes.V))
+        {
+            if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+                enemySystem?.SpawnSpider(hit.Position, 50f);
+        }
+
         // T: Spray decal
         if (Input.Input.KeyPressed(KeyCodes.T))
         {
