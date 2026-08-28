@@ -564,23 +564,13 @@ public unsafe class MasterRenderer
             }
         }
 
-        // --- 2. Regular Render Pass (no HDR FBO para post-process) ---
-        uint targetFbo = _postPipeline.Settings.Enabled ? _postPipeline.HdrFbo : 0;
-        
-        // Validate HDR FBO before binding
-        if (_postPipeline.Settings.Enabled)
+        // --- 2. Regular Render Pass (sempre no HDR FBO) ---
+        if (!_postPipeline.ValidateHdrFbo(_gl))
         {
-            if (!_postPipeline.ValidateHdrFbo(_gl))
-            {
-                _postPipeline.Reset();
-            }
-            targetFbo = _postPipeline.HdrFbo;
+            _postPipeline.Reset();
         }
-        else
-        {
-            targetFbo = 0;
-        }
-        
+        uint targetFbo = _postPipeline.HdrFbo;
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
         _gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
         _gl.ClearColor(0.1f, 0.1f, 0.15f, 1.0f);
@@ -699,6 +689,16 @@ public unsafe class MasterRenderer
         {
             _postPipeline.SetViewProj(_prevViewProj, view, proj);
             _postPipeline.Execute(_postPipeline.HdrColorId, 0); // 0 = tela final
+        }
+        else
+        {
+            // Sem post-process: blit simples do HDR FBO para a tela
+            _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+            _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _postPipeline.HdrFbo);
+            _gl.BlitFramebuffer(0, 0, _postPipeline.Width, _postPipeline.Height,
+                                0, 0, _scrWidth, _scrHeight,
+                                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         }
 
         _prevViewProj = view * proj;

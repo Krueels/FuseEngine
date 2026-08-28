@@ -266,7 +266,12 @@ private void ClearCurrentMap()
     /// Performs an exact raycast against the physics world and calculates the accurate surface normal
     /// for boxes, planes, spheres, and complex .OBJ trimesh/convex hull geometry.
     /// </summary>
-    public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out SceneRaycastHit hitResult)
+    public bool Raycast(
+        Vector3 origin,
+        Vector3 direction,
+        float maxDistance,
+        out SceneRaycastHit hitResult,
+        BodyID? excludedBody = null)
     {
         hitResult = default;
         Vector3 dirNormalized = Vector3.Normalize(direction);
@@ -275,7 +280,12 @@ private void ClearCurrentMap()
 
         using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
         using var olFilter = new Physics.DefaultObjectLayerFilter();
-        using var bodyFilter = new Physics.DefaultBodyFilter();
+        // Procedural animation probes must never use their own collider as a
+        // landing surface. Keeping this optional preserves the normal scene
+        // raycast behaviour for every other caller.
+        using BodyFilter bodyFilter = excludedBody.HasValue
+            ? new Physics.EnemyBodyFilter(excludedBody.Value)
+            : new Physics.DefaultBodyFilter();
 
         if (!_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
             return false;

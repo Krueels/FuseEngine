@@ -67,6 +67,10 @@ public static class Bible
     public const string PostProcessVert = "Shaders/PostProcess/composite.vert";
     public const string PostProcessFrag = "Shaders/PostProcess/composite.frag";
 
+    // Shaders - DeathScreen
+    public const string DeathScreenGlsl = "Shaders/death_screen.glsl";
+    public const string DeathScreenVert = "Shaders/death_screen.vert";
+
     // Audio
     public const string BulletImpact = "Audio/weapons/Bullet_Impact_Flesh_";
     public const string GlockDrawFirst = "Audio/weapons/glock/Glock_DrawFirst.wav";

@@ -88,7 +88,10 @@ public static class DevShortcuts
             }
         }
 
-
+        if (Input.Input.KeyPressed(KeyCodes.Z))
+        {
+            player.TakeDamage(30f);
+        }
 
         // Weapon switching (1, 0)
         if (Input.Input.KeyPressed(KeyCodes.D1))

@@ -52,6 +52,7 @@ namespace Fuse.Enemy
                 .SetRestitution(0.1f)
                 .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
                 .Build(physics);
+            
 
             var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
             if (model != null)

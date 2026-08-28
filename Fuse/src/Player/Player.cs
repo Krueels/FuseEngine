@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.Intrinsics.X86;
 using System.Threading.Tasks.Dataflow;
+using Accessibility;
 using Fuse.Core;
 using Fuse.Input;
 using Fuse.Physics;
@@ -11,6 +12,18 @@ namespace Fuse.Player;
 
 public class Player : IDisposable
 {
+    public float MaxHealth { get; set; } = 100f;
+    public float Health { get; private set; } = 100f;
+    public bool IsDead => Health <= 0f;
+    public bool Invulnerable { get; set; }
+
+    private bool _isDead;
+    private float _deathTimer;
+    private float _respawnDelay = 3.0f;
+    private Vector3 _spawnPosition;
+    private Action? _onPlayerDeath;
+    private Action? _onPlayerRespawn;
+    
     private readonly Physics.PhysicsWorld _world;
     private readonly Camera _camera;
     private readonly CharacterVirtual _character;
@@ -66,6 +79,7 @@ public class Player : IDisposable
     public Player(Physics.PhysicsWorld world, Vector3 position)
     {
         _world = world;
+        _spawnPosition = position;
         _camera = new Camera(position) { FOV = 70 };
         _objectLayer = world.ObjectLayer;
         _bli = world.Native.BodyLockInterface;
@@ -99,24 +113,92 @@ public class Player : IDisposable
         SyncCamera();
     }
 
+    // --- HEALTH ---
+    public void TakeDamage(float amount, Vector3? hitDirection = null)
+    {
+        if (_isDead || Invulnerable || amount <= 0f) return;
+
+        Health = float.Max(Health - amount, 0f);
+        Logger.Info($"[PLAYER] Took {amount} damage. Health: {Health}/{MaxHealth}");
+
+        // KnockBack
+        if (hitDirection.HasValue && hitDirection.Value.LengthSquared() > 0.001f)
+        {
+            Vector3 push = Vector3.Normalize(hitDirection.Value) * -3.0f;
+            var vel = _character.LinearVelocity;
+            vel.X += push.X;
+            vel.Y += (float)(push.Y * 0.5);
+            vel.Z += push.Z;
+            _character.LinearVelocity = vel;
+        }
+
+        if (Health <= 0f)
+            Die();
+    }
+
+    public void Heal(float amount)
+    {
+        if (_isDead || amount <= 0f) return;
+        Health = float.Min(Health + amount, MaxHealth);
+        Logger.Info($"[PLAYER] Healed {amount}. Health: {Health}/{MaxHealth}");
+    }
+
+    public void SetSpawnPoint(Vector3 position)
+    {
+        _spawnPosition = position;
+    }
+
+    private void Die()
+    {
+        if (_isDead) return;
+
+        _isDead = true;
+        _deathTimer = _respawnDelay;
+
+        Logger.Info("[PLAYER] DIED!");
+        _onPlayerDeath?.Invoke();
+
+        // Freezes the player
+        var vel = _character.LinearVelocity;
+        vel.X = 0f;
+        vel.Z = 0f;
+        _character.LinearVelocity = vel;
+    }
+
+    private void Respawn()
+    {
+        _isDead = false;
+        Health = MaxHealth;
+        _character.Position = new Vector3(_spawnPosition.X, _spawnPosition.Y, _spawnPosition.Z);
+        _character.LinearVelocity = Vector3.Zero;
+        _camera.SetRotation(-90.0f, 0.0f);
+        SyncCamera();
+
+        Logger.Info("[PLAYER] Respawned!");
+        _onPlayerRespawn?.Invoke();
+    }
+
+    public void OnPlayerDeath(Action callback) => _onPlayerDeath += callback;
+    public void OnPlayerRespawn(Action callback) => _onPlayerRespawn += callback;
+
     public void Dispose()
     {
         _character.OnContactAdded -= OnContactAdded;
         _character.OnContactPersisted -= OnContactPersisted;
         _character.Dispose();
     }
-
-    private void ProcessInput(float dt)
-    {
-        HandleNoclipToggle();
-        HandleSprint();
-        if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
-        HandleCrouch();
-        HandleFlashlightToggle();
-        ApplyMovement(dt);
-    }
     public void Update(float dt)
     {
+        // Respawn Timer
+        if (_isDead)
+        {
+            _deathTimer -= dt;
+            if (_deathTimer <= 0f)
+                Respawn();
+            SyncCamera();
+            return;
+        }
+        
         bool imguiWantsKeyboard = ImGuiNET.ImGui.GetIO().WantCaptureKeyboard;
 
         if (!_imguiWantedKeyboardPrev && imguiWantsKeyboard)
@@ -194,6 +276,15 @@ public class Player : IDisposable
         SyncCamera();
         SyncFlashlight();
         PushDynamicBodies();
+    }
+    private void ProcessInput(float dt)
+    {
+        HandleNoclipToggle();
+        HandleSprint();
+        if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
+        HandleCrouch();
+        HandleFlashlightToggle();
+        ApplyMovement(dt);
     }
 
     private void HandleFlashlightToggle()
@@ -594,8 +685,6 @@ public class Player : IDisposable
             }
         }
     }
-
-
 
     private void OnContactAdded(CharacterVirtual character, in BodyID bodyID2, SubShapeID subShapeID2,
         in RVector3 contactPosition, in Vector3 contactNormal, ref CharacterContactSettings settings)

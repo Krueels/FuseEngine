@@ -35,6 +35,7 @@ public unsafe class Application : IDisposable
     private Light _flashlight = null!;
     private WeaponSystem _weaponSystem = null!;
     private EnemySystem _enemySystem = null!;
+    private DeathScreen? _deathScreen;
 
     // UI, HUD & Debug
     private UIRenderer _ui = null!;
@@ -104,6 +105,13 @@ public unsafe class Application : IDisposable
         _pickup = new PickupController(_physics, _player.Camera, default, _audio);
         _flashlight = CreatePlayerFlashlight();
         _player.SetFlashlight(_flashlight);
+        _deathScreen = new DeathScreen(_window.GL, _assets);
+        _player.OnPlayerDeath(() =>
+        {
+            _deathScreen?.Trigger();
+            _weaponSystem?.Unequip();
+        });
+        _player.OnPlayerRespawn(() => _deathScreen?.Reset());
 
         // Console setup
         _console = new Fuse.Imgui.Console();
@@ -129,6 +137,7 @@ public unsafe class Application : IDisposable
         _weaponSystem.RegisterWeapon(new GlockWeapon());
         _weaponSystem.RegisterWeapon(new AKWeapon());
         _weaponSystem.EnemySystem = _enemySystem;
+        _enemySystem.SetPlayer(_player);
 
         // Default Map Loading
         LoadMap(initialMap, OnLoadProgress);
@@ -286,6 +295,7 @@ public unsafe class Application : IDisposable
                     _weaponSystem?.Update(dt);
                     _weaponSystem?.PhysicsUpdate(dt);
                     _enemySystem?.Update(dt);
+                    _enemySystem?.UpdateContactDamage(dt);
 
                     if (_sceneManager.CheckPendingResets())
                         RequestMapReload();
@@ -300,6 +310,10 @@ public unsafe class Application : IDisposable
 
                 // World Render
                 _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
+
+                //deathscren
+                _deathScreen?.Update(dt, _player.IsDead);
+                _deathScreen?.Render(_renderer.PostPipeline.HdrColorId, _scrWidth, _scrHeight, (float)now);
 
                 if (_screenshotRequested)
                 {

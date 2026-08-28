@@ -16,6 +16,8 @@ public sealed class EnemySystem : IDisposable
     private readonly AssetManager _assets;
     private readonly List<Enemy> _enemies = new();
     private readonly List<SpiderEnemy> _spiders = new();
+    private Player.Player? _player;
+    private float _contactDamageCooldown;
 
     public EnemySystem(PhysicsWorld physics, Scene.SceneManager sceneManager, AssetManager assets)
     {
@@ -23,6 +25,8 @@ public sealed class EnemySystem : IDisposable
         _sceneManager = sceneManager;
         _assets = assets;
     }
+
+    public void SetPlayer(Player.Player player) => _player = player;
 
     public IReadOnlyList<Enemy> GetEnemies() => _enemies;
     public Enemy SpawnEnemy(Vector3 position, float health = 100f)
@@ -78,6 +82,44 @@ public sealed class EnemySystem : IDisposable
         }
     }
 
+    public void UpdateContactDamage(float dt)
+    {
+        if (_player == null || _player.IsDead) return;
+
+        _contactDamageCooldown -= dt;
+        if (_contactDamageCooldown > 0f) return;
+
+        Vector3 playerPos = _player.Position;
+
+        //foreach (var s in _enemies)
+        //{
+        //    if (s.IsDead || !s.Body.IsBuilt) continue;
+        //    Vector3 enemyPos = s.Entity.Transform.Position;
+        //    float dist = Vector3.Distance(playerPos, enemyPos);
+        //    if (dist < 1.8f)
+        //    {
+        //        Vector3 dir = Vector3.Normalize(playerPos - enemyPos);
+        //        _player.TakeDamage(15f, dir);
+        //        _contactDamageCooldown = 0.5f;
+        //        return;
+        //    }
+        //}
+
+        foreach (var s in _spiders)
+        {
+            if (s.IsDead || !s.Body.IsBuilt) continue;
+            Vector3 spiderPos = s.Entity.Transform.Position;
+            float dist = Vector3.Distance(playerPos, spiderPos);
+            if (dist < 1.8f)
+            {
+                Vector3 dir = Vector3.Normalize(playerPos - spiderPos);
+                _player.TakeDamage(15f, dir);
+                _contactDamageCooldown = 0.5f;
+                return;
+            }
+        }
+    }
+
     public bool TryGetEnemy(BodyID bodyId, out IEnemy? enemy)
     {
         var entity = _sceneManager.ActiveScene.GetEntityByBody(bodyId);
@@ -91,7 +133,6 @@ public sealed class EnemySystem : IDisposable
         enemy = null;
         return false;
     }
-
 
     public void DrawDebug(Renderer.MasterRenderer renderer, Camera camera, float aspect)
     {

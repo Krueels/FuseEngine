@@ -176,7 +176,7 @@ public unsafe class Shader : IDisposable
     }
 
     private readonly Dictionary<string, int> _uniformCache = new();
-    private int GetUniformLoc(string name)
+    public int GetUniformLoc(string name)
     {
         if (_uniformCache.TryGetValue(name, out int loc))
             return loc;

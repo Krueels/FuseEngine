@@ -30,13 +30,12 @@ public sealed class SpiderEnemy : IEnemy
     private EnemyPatrol? _patrol;
     private SkinnedModel? _model;
     private ProceduralSpiderWalk? _proceduralWalk;
-    private float _wallLeanAngle;
 
-    private const float WallProbeDistance = 2.5f;
-    private const float WallLeanStartDistance = 2.0f;
-    private const float WallLeanFullDistance = 0.55f;
-    private const float MaxWallLeanRadians = 55f * (MathF.PI / 180f);
-    private const float WallLeanResponse = 10f;
+    private const float SurfaceProbeDistance = 2.5f;
+    private const float SurfaceLeanStartDistance = 2.0f;
+    private const float SurfaceLeanFullDistance = 0.55f;
+    private const float MaxSurfaceLeanRadians = 72f * (MathF.PI / 180f);
+    private const float SurfaceLeanResponse = 9f;
 
     // Leg bone indices (resolved at init)
     private readonly LegData[] _legs = new LegData[8];
@@ -70,13 +69,14 @@ public sealed class SpiderEnemy : IEnemy
         _sceneManager = sceneManager;
 
         // Physics — spider is flatter and wider than humanoid
-        Body.SetCapsule(0.6f, 0.8f)
+        Body.SetCapsule(0.6f, 0.3f)
             .SetPosition(spawnPos)
             .SetMass(30f)
             .SetFriction(0.5f)
             .SetRestitution(0.1f)
             .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
             .Build(physics);
+
 
         _model = _assets.GetSkinnedModel(Bible.Model(Bible.SpiderModel));
 
@@ -236,42 +236,108 @@ public sealed class SpiderEnemy : IEnemy
             Quaternion bodyRotation = Body.Rotation(physics);
             Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
             Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
-            UpdateWallLean(dt, bodyPosition, forward);
+            UpdateSurfaceOrientation(dt, bodyPosition, bodyRotation);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
             Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
                                      Matrix4x4.CreateFromQuaternion(modelWorldRotation) *
                                      Matrix4x4.CreateTranslation(bodyPosition);
-            _proceduralWalk.Update(dt, speed, forward, bodyPosition, modelWorldRotation, totalModelScale, modelMatrix);
+            _proceduralWalk.Update(
+                dt,
+                speed,
+                forward,
+                bodyPosition,
+                modelWorldRotation,
+                totalModelScale,
+                modelMatrix,
+                Body.Native);
         }
     }
 
-    private void UpdateWallLean(float dt, Vector3 bodyPosition, Vector3 forward)
+    private void UpdateSurfaceOrientation(float dt, Vector3 bodyPosition, Quaternion bodyRotation)
     {
-        float targetLean = 0f;
-        Vector3 probeStart = bodyPosition + Vector3.UnitY * 0.7f + forward * 0.75f;
+        Quaternion targetRotation = Quaternion.Identity;
 
-        if (_sceneManager != null && _sceneManager.Raycast(probeStart, forward, WallProbeDistance, out var hit))
+        if (_sceneManager != null)
         {
-            // Only vertical surfaces directly in front of the spider can cause a lean.
-            bool isWall = MathF.Abs(hit.Normal.Y) < 0.25f;
-            bool facesSpider = Vector3.Dot(-hit.Normal, forward) > 0.55f;
-            if (isWall && facesSpider)
+            Vector3 forward = Vector3.Normalize(Vector3.Transform(Vector3.UnitZ, bodyRotation));
+            Vector3 right = Vector3.Normalize(Vector3.Transform(Vector3.UnitX, bodyRotation));
+            Vector3 diagonalForwardRight = Vector3.Normalize(forward + right);
+            Vector3 diagonalForwardLeft = Vector3.Normalize(forward - right);
+            Vector3 probeStart = bodyPosition + Vector3.UnitY * 0.35f;
+
+            // Accumulating nearby side normals allows front/back/left/right
+            // (and corners) to influence the body. Opposite walls cancel out,
+            // so a cramped corridor keeps the body stable instead of forcing a
+            // random lean into one of its walls.
+            Vector3 normalSum = Vector3.UnitY * 0.45f;
+            float sideContactWeight = 0f;
+
+            AddSurfaceProbe(forward, 1.0f);
+            AddSurfaceProbe(-forward, 1.0f);
+            AddSurfaceProbe(right, 1.0f);
+            AddSurfaceProbe(-right, 1.0f);
+            AddSurfaceProbe(diagonalForwardRight, 0.65f);
+            AddSurfaceProbe(-diagonalForwardRight, 0.65f);
+            AddSurfaceProbe(diagonalForwardLeft, 0.65f);
+            AddSurfaceProbe(-diagonalForwardLeft, 0.65f);
+
+            if (sideContactWeight > 0.001f && normalSum.LengthSquared() > 0.0001f)
             {
+                Vector3 targetWorldUp = Vector3.Normalize(normalSum);
+                Vector3 targetLocalUp = Vector3.Transform(targetWorldUp, Quaternion.Inverse(bodyRotation));
+                targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
+
+                float dot = System.Math.Clamp(Vector3.Dot(Vector3.UnitY, targetLocalUp), -1f, 1f);
+                float tilt = MathF.Acos(dot);
+                if (tilt > MaxSurfaceLeanRadians)
+                    targetRotation = Quaternion.Slerp(Quaternion.Identity, targetRotation, MaxSurfaceLeanRadians / tilt);
+            }
+
+            void AddSurfaceProbe(Vector3 direction, float directionalWeight)
+            {
+                if (!_sceneManager.Raycast(probeStart, direction, SurfaceProbeDistance, out var hit, Body.Native))
+                    return;
+
+                // A ceiling should not make the visual model flip over. Floors
+                // are handled by their support legs; here we only orient toward
+                // nearby side surfaces and slopes that face the spider.
+                float facing = Vector3.Dot(hit.Normal, -direction);
+                if (facing < 0.2f || hit.Normal.Y < -0.15f)
+                    return;
+
                 float closeness = System.Math.Clamp(
-                    (WallLeanStartDistance - hit.Distance) / (WallLeanStartDistance - WallLeanFullDistance),
+                    (SurfaceLeanStartDistance - hit.Distance) /
+                    (SurfaceLeanStartDistance - SurfaceLeanFullDistance),
                     0f,
                     1f);
-                targetLean = MaxWallLeanRadians * closeness;
+                if (closeness <= 0f)
+                    return;
+
+                float sideFactor = 1f - MathF.Abs(hit.Normal.Y);
+                if (sideFactor < 0.20f)
+                    return;
+
+                float weight = closeness * directionalWeight * (0.4f + sideFactor * 1.6f);
+                normalSum += Vector3.Normalize(hit.Normal) * weight;
+                sideContactWeight += weight;
             }
         }
 
-        float blend = 1f - MathF.Exp(-WallLeanResponse * dt);
-        _wallLeanAngle += (targetLean - _wallLeanAngle) * blend;
+        float blend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
+        Entity.ModelRotation = Quaternion.Normalize(Quaternion.Slerp(Entity.ModelRotation, targetRotation, blend));
+    }
 
-        // A negative local X rotation raises the front (+Z) of the model toward
-        // the wall. This remains visual-only; physics continues to use its yaw.
-        Entity.ModelRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -_wallLeanAngle);
+    private static Quaternion RotationBetween(Vector3 from, Vector3 to)
+    {
+        float dot = System.Math.Clamp(Vector3.Dot(from, to), -1f, 1f);
+        if (dot > 0.99999f)
+            return Quaternion.Identity;
+
+        if (dot < -0.99999f)
+            return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+
+        return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(from, to)), MathF.Acos(dot));
     }
 
     public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)
