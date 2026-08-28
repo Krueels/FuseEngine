@@ -13,21 +13,26 @@ using JoltPhysicsSharp;
 
 namespace Fuse.Enemy;
 
-public sealed class SpiderEnemy : IEnemy
+public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 {
     public string Id { get; }
     public Entity Entity { get; private set; } = null!;
     public RigidBody Body { get; private set; } = new();
+    public CharacterVirtual? Character => null;
     public float Health { get; set; }
     public float MaxHealth { get; }
     public bool IsDead => Health <= 0f;
 
     private readonly AssetManager _assets;
     private Scene.SceneManager? _sceneManager;
+    private PhysicsWorld? _physics;
     private bool _initialized;
     private bool _hasDied;
     private Animation.Animator? _animator;
-    private EnemyPatrol? _patrol;
+    // SpiderPatrol owns the ground-safe route and exposes its target/velocity
+    // to the leg solver and debug visualisation.
+    private SpiderPatrol? _spiderPatrol;
+    private SpiderSurfaceSolver? _surfaceSolver;
     private SkinnedModel? _model;
     private ProceduralSpiderWalk? _proceduralWalk;
 
@@ -52,7 +57,7 @@ public sealed class SpiderEnemy : IEnemy
         "R.thigh.3",    // 7
     };
 
-    public EnemyPatrol? Patrol => _patrol;
+    public EnemyPatrol? Patrol => null;
 
     public SpiderEnemy(string id, float maxHealth = 100f, AssetManager? assets = null)
     {
@@ -67,11 +72,14 @@ public sealed class SpiderEnemy : IEnemy
         if (_initialized) return;
 
         _sceneManager = sceneManager;
+        _physics = physics;
 
-        // Physics — spider is flatter and wider than humanoid
+        // Kinematic body — SpiderPatrol controls position directly via
+        // SetPosition/SetRotation. No Jolt gravity; manual gravity only
+        // when airborne.
         Body.SetCapsule(0.6f, 0.3f)
             .SetPosition(spawnPos)
-            .SetMass(30f)
+            .SetKinematic(true)
             .SetFriction(0.5f)
             .SetRestitution(0.1f)
             .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
@@ -96,7 +104,8 @@ public sealed class SpiderEnemy : IEnemy
             LogBoneNames();
             ResolveLegBones();
 
-            _proceduralWalk = new ProceduralSpiderWalk(_sceneManager);
+            _surfaceSolver = new SpiderSurfaceSolver(_sceneManager);
+            _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver);
             _proceduralWalk.Initialize(_model.Skeleton, _legs);
 
             // 2. Conecta o buffer de matrizes do Animator ao ProceduralSpiderWalk
@@ -115,7 +124,9 @@ public sealed class SpiderEnemy : IEnemy
         }
 
         sceneManager.ActiveScene.RegisterBody(Entity);
-        _patrol = new EnemyPatrol(this, physics);
+        _surfaceSolver ??= new SpiderSurfaceSolver(sceneManager);
+        _spiderPatrol = new SpiderPatrol(this, physics, _surfaceSolver, sceneManager);
+        Debug.DebugDrawer.Register(this);
         _initialized = true;
     }
 
@@ -224,18 +235,18 @@ public sealed class SpiderEnemy : IEnemy
     {
         if (IsDead || !_initialized) return;
 
-        _patrol?.Update(dt);
+        _spiderPatrol?.Update(dt);
 
-        float speed = _patrol?.CurrentSpeed ?? 0f;
+        float speed = _spiderPatrol?.CurrentSpeed ?? 0f;
         if (_proceduralWalk != null && Entity != null)
         {
-            // The entity transform is synchronized from physics during rendering,
-            // after enemies update. Read the body directly so IK uses this frame's
-            // real position and rotation instead of the previous frame's values.
             Vector3 bodyPosition = Body.Position(physics) + Entity.ModelOffset;
             Quaternion bodyRotation = Body.Rotation(physics);
             Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
             Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
+
+            // The physical body stays collision-safe on the ground. Lean is a
+            // visual pose and never changes the collision body's up direction.
             UpdateSurfaceOrientation(dt, bodyPosition, bodyRotation);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
@@ -246,11 +257,13 @@ public sealed class SpiderEnemy : IEnemy
                 dt,
                 speed,
                 forward,
+                _spiderPatrol?.CurrentVelocity ?? forward * speed,
                 bodyPosition,
                 modelWorldRotation,
                 totalModelScale,
                 modelMatrix,
-                Body.Native);
+                Body.Native,
+                _spiderPatrol?.SurfaceContact ?? default);
         }
     }
 
@@ -266,10 +279,6 @@ public sealed class SpiderEnemy : IEnemy
             Vector3 diagonalForwardLeft = Vector3.Normalize(forward - right);
             Vector3 probeStart = bodyPosition + Vector3.UnitY * 0.35f;
 
-            // Accumulating nearby side normals allows front/back/left/right
-            // (and corners) to influence the body. Opposite walls cancel out,
-            // so a cramped corridor keeps the body stable instead of forcing a
-            // random lean into one of its walls.
             Vector3 normalSum = Vector3.UnitY * 0.45f;
             float sideContactWeight = 0f;
 
@@ -288,8 +297,7 @@ public sealed class SpiderEnemy : IEnemy
                 Vector3 targetLocalUp = Vector3.Transform(targetWorldUp, Quaternion.Inverse(bodyRotation));
                 targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
 
-                float dot = System.Math.Clamp(Vector3.Dot(Vector3.UnitY, targetLocalUp), -1f, 1f);
-                float tilt = MathF.Acos(dot);
+                float tilt = MathF.Acos(System.Math.Clamp(Vector3.Dot(Vector3.UnitY, targetLocalUp), -1f, 1f));
                 if (tilt > MaxSurfaceLeanRadians)
                     targetRotation = Quaternion.Slerp(Quaternion.Identity, targetRotation, MaxSurfaceLeanRadians / tilt);
             }
@@ -299,9 +307,6 @@ public sealed class SpiderEnemy : IEnemy
                 if (!_sceneManager.Raycast(probeStart, direction, SurfaceProbeDistance, out var hit, Body.Native))
                     return;
 
-                // A ceiling should not make the visual model flip over. Floors
-                // are handled by their support legs; here we only orient toward
-                // nearby side surfaces and slopes that face the spider.
                 float facing = Vector3.Dot(hit.Normal, -direction);
                 if (facing < 0.2f || hit.Normal.Y < -0.15f)
                     return;
@@ -333,10 +338,8 @@ public sealed class SpiderEnemy : IEnemy
         float dot = System.Math.Clamp(Vector3.Dot(from, to), -1f, 1f);
         if (dot > 0.99999f)
             return Quaternion.Identity;
-
         if (dot < -0.99999f)
             return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
-
         return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(from, to)), MathF.Acos(dot));
     }
 
@@ -355,6 +358,15 @@ public sealed class SpiderEnemy : IEnemy
         }
 
         sceneManager?.ActiveScene.Remove(Entity);
+    }
+
+    public void OnDrawGizmos(Debug.DebugDrawer drawer)
+    {
+        if (IsDead || !Body.IsBuilt || _physics == null) return;
+
+        Vector3 pos = Body.Position(_physics);
+        Quaternion rot = Body.Rotation(_physics);
+        drawer.DrawCapsule(pos, rot, 0.3f, 0.6f, new Vector3(1, 0.5f, 0));
     }
 
     public void Dispose()

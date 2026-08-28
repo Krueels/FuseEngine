@@ -14,20 +14,16 @@ namespace Fuse.Animation;
 /// </summary>
 public sealed class ProceduralSpiderWalk : IGizmoDrawable
 {
-    private const float StepHeight = 0.55f;
-    private const float StepDistanceThreshold = 0.58f;
-    private const float LateralStepThreshold = 0.75f;
-    private const float StepForwardPlacement = 1.90f;
+    private const float MinStepHeight = 0.55f;
+    private const float MaxStepHeight = 1.45f;
+    private const float MinStepDistanceThreshold = 0.90f;
+    private const float MaxStepDistanceThreshold = 2.60f;
     private const float StepSpeed = 6.0f;
-    private const float RaycastDistance = 10.0f;
-    private const float SurfaceProbeOffset = 1.35f;
     private const float ComfortableMinReachFraction = 0.30f;
-    private const float FootPlantSnapHeight = 1.20f;
-    private const float FootPlantSnapDistance = 2.50f;
     private const float Epsilon = 0.0001f;
 
     private Skeleton _skeleton = null!;
-    private readonly SceneManager _sceneManager;
+    private readonly SpiderSurfaceSolver _surfaceSolver;
     private LegState[] _legs = Array.Empty<LegState>();
     private readonly int[] _nextGaitPair = new int[2];
     private readonly int[] _activeGaitPair = { -1, -1 };
@@ -41,17 +37,21 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
     {
         public int Hip;
         public int Knee;
+        public int Ankle;
         public int Tip;
         public int GaitGroup;
         public int GaitPair;
 
         public float Length1;
         public float Length2;
+        public float Length3;
+        public float TipReach;
         public Vector3 RestFootModel;
         public Vector3 RestOutwardModel;
         public Vector3 RestKneeDirectionModel;
         public Matrix4x4 HipRestLocal;
         public Matrix4x4 KneeRestLocal;
+        public Matrix4x4 AnkleRestLocal;
 
         public Vector3 CurrentFootWorld;
         public Vector3 TargetFootWorld;
@@ -59,6 +59,10 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public Vector3 CurrentFootNormalWorld;
         public Vector3 TargetFootNormalWorld;
         public Vector3 StepStartNormalWorld;
+        public SpiderSurfaceContact PlantedContact;
+        public SpiderSurfaceContact TargetContact;
+        public float StepUrgency;
+        public bool WantsStep;
         public float StepProgress;
         public bool IsStepping;
         public bool HasPlantedFoot;
@@ -71,21 +75,10 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public Vector3 DebugLandingPoint;
     }
 
-    private readonly struct SurfacePoint
+    public ProceduralSpiderWalk(SceneManager scene, SpiderSurfaceSolver surfaceSolver)
     {
-        public SurfacePoint(Vector3 position, Vector3 normal, bool isValid)
-        {
-            Position = position;
-            Normal = normal;
-            IsValid = isValid;
-        }
-
-        public Vector3 Position { get; }
-        public Vector3 Normal { get; }
-        public bool IsValid { get; }
+        _surfaceSolver = surfaceSolver;
     }
-
-    public ProceduralSpiderWalk(SceneManager scene) => _sceneManager = scene;
 
     public void SetFinalBoneMatrices(Matrix4x4[] matrices) => FinalBoneMatrices = matrices;
 
@@ -106,6 +99,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             {
                 Hip = -1,
                 Knee = -1,
+                Ankle = -1,
                 Tip = -1,
                 StepProgress = 1.0f
             };
@@ -115,19 +109,22 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             int ankle = data[i].SegmentNodeIndices[1];
             int tip = data[i].SegmentNodeIndices[2] >= 0 ? data[i].SegmentNodeIndices[2] : ankle;
 
-            if (!IsValidNode(hip) || !IsValidNode(knee) || !IsValidNode(tip))
+            if (!IsValidNode(hip) || !IsValidNode(knee) || !IsValidNode(ankle) || !IsValidNode(tip))
             {
-                Logger.Warn($"[SpiderWalk] Leg {i} has an incomplete chain: hip={hip}, knee={knee}, tip={tip}");
+                Logger.Warn($"[SpiderWalk] Leg {i} has an incomplete chain: hip={hip}, knee={knee}, ankle={ankle}, tip={tip}");
                 continue;
             }
 
             Vector3 hipPosition = GetSkeletonPoint(_skeleton.Nodes[hip].Global);
             Vector3 kneePosition = GetSkeletonPoint(_skeleton.Nodes[knee].Global);
+            Vector3 anklePosition = GetSkeletonPoint(_skeleton.Nodes[ankle].Global);
             Vector3 tipPosition = GetSkeletonPoint(_skeleton.Nodes[tip].Global);
 
             float length1 = Vector3.Distance(hipPosition, kneePosition);
-            float length2 = Vector3.Distance(kneePosition, tipPosition);
-            if (length1 <= Epsilon || length2 <= Epsilon)
+            float length2 = Vector3.Distance(kneePosition, anklePosition);
+            float length3 = Vector3.Distance(anklePosition, tipPosition);
+            float tipReach = Vector3.Distance(kneePosition, tipPosition);
+            if (length1 <= Epsilon || length2 <= Epsilon || length3 <= Epsilon || tipReach <= Epsilon)
             {
                 Logger.Warn($"[SpiderWalk] Leg {i} has zero-length IK segments.");
                 continue;
@@ -145,11 +142,14 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             {
                 Hip = hip,
                 Knee = knee,
+                Ankle = ankle,
                 Tip = tip,
                 GaitGroup = gaitGroup,
                 GaitPair = gaitPair,
                 Length1 = length1,
                 Length2 = length2,
+                Length3 = length3,
+                TipReach = tipReach,
                 RestFootModel = tipPosition,
                 // The pole is captured once from the authored pose. It stops
                 // the solver from choosing a different (inside-out) knee side
@@ -160,6 +160,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 RestKneeDirectionModel = NormalizeOrFallback(kneePosition - hipPosition, Vector3.UnitY),
                 HipRestLocal = _skeleton.Nodes[hip].RestLocal,
                 KneeRestLocal = _skeleton.Nodes[knee].RestLocal,
+                AnkleRestLocal = _skeleton.Nodes[ankle].RestLocal,
                 StepProgress = 1.0f,
             };
         }
@@ -171,21 +172,29 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         float dt,
         float speed,
         Vector3 forward,
+        Vector3 bodyVelocity,
         Vector3 bodyPosition,
         Quaternion modelWorldRotation,
         Vector3 modelScale,
         Matrix4x4 modelMatrix,
-        BodyID selfBody)
+        BodyID selfBody,
+        SpiderSurfaceContact bodySurfaceContact)
     {
         if (!_initialized)
             return;
 
         _lastModelMatrix = modelMatrix;
         modelScale = SanitizeScale(modelScale);
+        _surfaceSolver.BeginFrame();
+        ResetLegPose();
         _skeleton.ComputeGlobalTransforms();
 
-        Vector3 bodyUp = NormalizeOrFallback(Vector3.Transform(Vector3.UnitY, modelWorldRotation), Vector3.UnitY);
-        Vector3 walkForward = ProjectOnPlane(forward, bodyUp);
+        Vector3 bodyUp = bodySurfaceContact.IsValid
+            ? bodySurfaceContact.Normal
+            : NormalizeOrFallback(Vector3.Transform(Vector3.UnitY, modelWorldRotation), Vector3.UnitY);
+        Vector3 walkForward = ProjectOnPlane(bodyVelocity, bodyUp);
+        if (walkForward.LengthSquared() <= Epsilon * Epsilon)
+            walkForward = ProjectOnPlane(forward, bodyUp);
         if (walkForward.LengthSquared() <= Epsilon * Epsilon)
             walkForward = ProjectOnPlane(Vector3.Transform(Vector3.UnitZ, modelWorldRotation), bodyUp);
         walkForward = NormalizeOrFallback(walkForward, Vector3.UnitZ);
@@ -220,13 +229,13 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 outwardDirWorld = Vector3.Transform(i < 4 ? -Vector3.UnitX : Vector3.UnitX, modelWorldRotation);
 
             float reachScale = MathF.Max(modelScale.X, MathF.Max(modelScale.Y, modelScale.Z));
-            float maxReach = (leg.Length1 + leg.Length2) * reachScale * 0.995f;
+            float maxReach = (leg.Length1 + leg.TipReach) * reachScale * 0.995f;
             // Contact selection must accept any physically reachable support.
             // Surface selection may use a very close contact. The IK solver
             // itself still clamps to its mechanical minimum afterwards.
             float surfaceMinReach = 0.02f;
 
-            SurfacePoint desiredSurface = FindSupportSurface(
+            SpiderSurfaceContact desiredSurface = FindSupportSurface(
                 hipWorld,
                 desiredFootWorld,
                 bodyUp,
@@ -238,7 +247,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 out leg.DebugRayEnd);
             leg.DebugRaycastHit = desiredSurface.IsValid;
             Vector3 safeDesiredFoot = desiredSurface.IsValid
-                ? desiredSurface.Position
+                ? desiredSurface.Point
                 : ClampToReachableBand(hipWorld, desiredFootWorld, surfaceMinReach, maxReach, bodyUp);
 
             if (!leg.HasPlantedFoot)
@@ -249,35 +258,59 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 leg.CurrentFootNormalWorld = desiredSurface.IsValid ? desiredSurface.Normal : bodyUp;
                 leg.TargetFootNormalWorld = leg.CurrentFootNormalWorld;
                 leg.StepStartNormalWorld = leg.CurrentFootNormalWorld;
+                leg.PlantedContact = desiredSurface;
                 leg.HasPlantedFoot = true;
             }
             else
             {
                 if (!leg.IsStepping)
-                    SnapPlantedFootToGround(ref leg, selfBody);
+                {
+                    // A planted foot follows its support body through its local
+                    // anchor. It is never snapped against world-down.
+                    leg.PlantedContact = _surfaceSolver.Refresh(leg.PlantedContact);
+                    if (leg.PlantedContact.IsValid)
+                    {
+                        leg.CurrentFootWorld = leg.PlantedContact.Point;
+                        leg.CurrentFootNormalWorld = leg.PlantedContact.Normal;
+                    }
+                }
 
                 bool oppositeGroupIsStepping = leg.GaitGroup == 0 ? group1IsStepping : group0IsStepping;
                 Vector3 footError = safeDesiredFoot - leg.CurrentFootWorld;
                 float forwardError = Vector3.Dot(footError, walkForward);
                 Vector3 lateralError = footError - walkForward * forwardError;
-                bool footIsTrailing = forwardError > StepDistanceThreshold;
-                bool footIsOutOfPosition = lateralError.LengthSquared() > LateralStepThreshold * LateralStepThreshold;
+                // A large model must not make tiny rapid steps. The actual
+                // stride is derived from its measured chain length, clamped to
+                // keep an imported small model usable as well.
+                float strideThreshold = System.Math.Clamp(maxReach * 0.16f, MinStepDistanceThreshold, MaxStepDistanceThreshold);
+                float lateralThreshold = MathF.Max(strideThreshold * 0.85f, 0.85f);
+                float landingStride = System.Math.Clamp(maxReach * 0.23f, 1.60f, 3.80f);
+                bool footIsTrailing = forwardError > strideThreshold;
+                bool footIsOutOfPosition = lateralError.LengthSquared() > lateralThreshold * lateralThreshold;
                 bool isMoving = speed > 0.05f;
+                // A missing planted contact is recovered even while the body is
+                // idle. This prevents a single failed probe from leaving a leg
+                // floating until the next patrol movement begins.
+                bool needsContactRecovery = !leg.PlantedContact.IsValid;
                 bool emergencyReposition = isMoving &&
-                                           (forwardError > StepDistanceThreshold * 4f ||
-                                            lateralError.LengthSquared() > LateralStepThreshold * LateralStepThreshold * 4f);
+                                           (forwardError > strideThreshold * 2.5f ||
+                                            lateralError.LengthSquared() > lateralThreshold * lateralThreshold * 2.5f);
+                leg.StepUrgency = MathF.Max(0f, forwardError - strideThreshold) +
+                                  MathF.Max(0f, lateralError.Length() - lateralThreshold) +
+                                  (desiredSurface.IsValid ? 0f : 2f);
+                leg.WantsStep = (isMoving && (footIsTrailing || footIsOutOfPosition)) || needsContactRecovery;
                 bool scheduledPair = IsScheduledPair(leg);
 
                 // The alternate gait is preserved during normal movement, but a
                 // badly trailing leg is allowed to recover immediately instead
                 // of remaining planted while the other group finishes its step.
                 if (!leg.IsStepping && (scheduledPair || emergencyReposition) &&
-                    (isMoving || emergencyReposition) &&
+                    (isMoving || emergencyReposition || needsContactRecovery) &&
                     (!oppositeGroupIsStepping || emergencyReposition) &&
-                    (footIsTrailing || footIsOutOfPosition))
+                    (footIsTrailing || footIsOutOfPosition || needsContactRecovery))
                 {
-                    Vector3 landingPoint = safeDesiredFoot + walkForward * (StepForwardPlacement + speed * 0.25f);
-                    SurfacePoint landingSurface = FindSupportSurface(
+                    Vector3 landingPoint = safeDesiredFoot + walkForward * landingStride + bodyVelocity * 0.18f;
+                    SpiderSurfaceContact landingSurface = FindSupportSurface(
                         hipWorld,
                         landingPoint,
                         bodyUp,
@@ -295,18 +328,25 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                         // the latest known support normal for its lift arc.
                         landingSurface = desiredSurface.IsValid
                             ? desiredSurface
-                            : new SurfacePoint(
+                            : new SpiderSurfaceContact(
+                                true,
                                 safeDesiredFoot,
                                 NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp),
-                                true);
+                                default,
+                                null,
+                                safeDesiredFoot,
+                                NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp),
+                                0f);
                     }
 
                     leg.IsStepping = true;
                     leg.StepProgress = 0.0f;
                     leg.StepStartWorld = leg.CurrentFootWorld;
                     leg.StepStartNormalWorld = NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp);
-                    leg.TargetFootWorld = landingSurface.Position;
+                    leg.TargetFootWorld = landingSurface.Point;
                     leg.TargetFootNormalWorld = landingSurface.Normal;
+                    leg.TargetContact = landingSurface;
+                    leg.WantsStep = false;
                     leg.DebugLandingPoint = leg.TargetFootWorld;
 
                     if (!emergencyReposition)
@@ -320,7 +360,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             }
 
             Vector3 targetInModel = WorldToModel(leg.CurrentFootWorld, bodyPosition, modelWorldRotation, modelScale);
-            SolveTwoBoneIK(ref leg, targetInModel);
+            SolveLegIK(ref leg, targetInModel);
         }
 
         if (FinalBoneMatrices != null)
@@ -375,10 +415,17 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         if (!leg.IsStepping)
             return;
 
+        if (leg.TargetContact.IsValid)
+        {
+            leg.TargetContact = _surfaceSolver.Refresh(leg.TargetContact);
+            leg.TargetFootWorld = leg.TargetContact.Point;
+            leg.TargetFootNormalWorld = leg.TargetContact.Normal;
+        }
+
         float speedAdjustedStepRate = StepSpeed + MathF.Max(0f, movementSpeed) * 0.75f;
         leg.StepProgress = MathF.Min(leg.StepProgress + dt * speedAdjustedStepRate, 1.0f);
         Vector3 linearPosition = Vector3.Lerp(leg.StepStartWorld, leg.TargetFootWorld, leg.StepProgress);
-        float arcHeight = MathF.Sin(leg.StepProgress * MathF.PI) * StepHeight;
+        float arcHeight = MathF.Sin(leg.StepProgress * MathF.PI) * GetStepLiftHeight(leg);
         Vector3 liftNormal = NormalizeOrFallback(
             Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, leg.StepProgress),
             leg.TargetFootNormalWorld);
@@ -389,50 +436,63 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         {
             leg.CurrentFootWorld = leg.TargetFootWorld;
             leg.CurrentFootNormalWorld = leg.TargetFootNormalWorld;
+            if (leg.TargetContact.IsValid)
+                leg.PlantedContact = leg.TargetContact;
             leg.IsStepping = false;
         }
     }
 
-    private void SnapPlantedFootToGround(ref LegState leg, BodyID selfBody)
+    private static float GetStepLiftHeight(in LegState leg)
     {
-        Vector3 probeStart = leg.CurrentFootWorld + Vector3.UnitY * FootPlantSnapHeight;
-        if (!_sceneManager.Raycast(
-                probeStart,
-                -Vector3.UnitY,
-                FootPlantSnapDistance,
-                out var hit,
-                selfBody) || hit.Normal.Y < 0.20f)
-            return;
-
-        // This only corrects nearby horizontal/sloped supports. A foot already
-        // attached to a wall will not find a close floor and remains untouched.
-        leg.CurrentFootWorld = hit.Position;
-        leg.CurrentFootNormalWorld = NormalizeOrFallback(hit.Normal, Vector3.UnitY);
+        float strideLength = Vector3.Distance(leg.StepStartWorld, leg.TargetFootWorld);
+        float normalChange = 1f - System.Math.Clamp(Vector3.Dot(
+            NormalizeOrFallback(leg.StepStartNormalWorld, Vector3.UnitY),
+            NormalizeOrFallback(leg.TargetFootNormalWorld, Vector3.UnitY)),
+            -1f,
+            1f);
+        return System.Math.Clamp(MinStepHeight + strideLength * 0.20f + normalChange * 0.18f, MinStepHeight, MaxStepHeight);
     }
 
-    private void SolveTwoBoneIK(ref LegState leg, Vector3 requestedTarget)
+    private void ResetLegPose()
+    {
+        foreach (LegState leg in _legs)
+        {
+            if (!IsValidLeg(leg))
+                continue;
+
+            _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
+            _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
+            _skeleton.Nodes[leg.Ankle].Local = leg.AnkleRestLocal;
+        }
+    }
+
+    /// <summary>
+    /// Conservative two-bone solve to the toe. The imported model's foot and
+    /// toe joints are not a straight mechanical chain, so solving all three as
+    /// FABRIK made the mesh fold inside-out. The ankle stays in its authored
+    /// pose while the hip/knee drive the actual toe contact.
+    /// </summary>
+    private void SolveLegIK(ref LegState leg, Vector3 requestedTarget)
     {
         _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
         _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
+        _skeleton.Nodes[leg.Ankle].Local = leg.AnkleRestLocal;
         _skeleton.ComputeGlobalTransforms();
 
         Vector3 hipPosition = GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global);
         Vector3 toTarget = requestedTarget - hipPosition;
         float requestedDistance = toTarget.Length();
-        if (requestedDistance <= Epsilon) return;
+        if (requestedDistance <= Epsilon)
+            return;
 
         Vector3 targetDirection = toTarget / requestedDistance;
-        // A fully folded two-bone chain is technically valid IK, but visually it
-        // makes a spider's knee snap back into its abdomen. Keep a comfortable
-        // minimum extension and use a stable, authored outward/upward pole.
         float minReach = MathF.Max(
-            MathF.Abs(leg.Length1 - leg.Length2) + 0.0005f,
-            (leg.Length1 + leg.Length2) * ComfortableMinReachFraction);
-        float maxReach = MathF.Max(minReach, leg.Length1 + leg.Length2 - 0.0005f);
+            MathF.Abs(leg.Length1 - leg.TipReach) + 0.0005f,
+            (leg.Length1 + leg.TipReach) * ComfortableMinReachFraction);
+        float maxReach = MathF.Max(minReach, leg.Length1 + leg.TipReach - 0.0005f);
         float distance = System.Math.Clamp(requestedDistance, minReach, maxReach);
         Vector3 target = hipPosition + targetDirection * distance;
 
-        Vector3 currentKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
         Vector3 preferredKneeDirection = NormalizeOrFallback(
             leg.RestOutwardModel * 0.90f + Vector3.UnitY * 1.15f,
             leg.RestKneeDirectionModel);
@@ -446,7 +506,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         pole = Vector3.Normalize(pole);
 
         float cosHip = System.Math.Clamp(
-            (leg.Length1 * leg.Length1 + distance * distance - leg.Length2 * leg.Length2) /
+            (leg.Length1 * leg.Length1 + distance * distance - leg.TipReach * leg.TipReach) /
             (2.0f * leg.Length1 * distance),
             -1.0f,
             1.0f);
@@ -454,6 +514,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         Vector3 desiredKnee = hipPosition + targetDirection * (MathF.Cos(hipAngle) * leg.Length1) +
                               pole * (MathF.Sin(hipAngle) * leg.Length1);
 
+        Vector3 currentKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
         ApplyAimRotation(leg.Hip, leg.HipRestLocal, currentKnee - hipPosition, desiredKnee - hipPosition);
         _skeleton.ComputeGlobalTransforms();
 
@@ -461,6 +522,117 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         Vector3 currentTip = GetSkeletonPoint(_skeleton.Nodes[leg.Tip].Global);
         ApplyAimRotation(leg.Knee, leg.KneeRestLocal, currentTip - solvedKnee, target - solvedKnee);
         _skeleton.ComputeGlobalTransforms();
+    }
+
+    // Retained temporarily for comparison while stabilising the rig. It is not
+    // called because this particular GLB does not expose a straight 3-link IK
+    // chain.
+    private void SolveExperimentalThreeBoneIK(ref LegState leg, Vector3 requestedTarget)
+    {
+        _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
+        _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
+        _skeleton.Nodes[leg.Ankle].Local = leg.AnkleRestLocal;
+        _skeleton.ComputeGlobalTransforms();
+
+        Vector3 root = GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global);
+        Vector3 knee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
+        Vector3 ankle = GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global);
+        Vector3 tip = GetSkeletonPoint(_skeleton.Nodes[leg.Tip].Global);
+
+        Vector3 toTarget = requestedTarget - root;
+        float requestedDistance = toTarget.Length();
+        if (requestedDistance <= Epsilon)
+            return;
+
+        Vector3 targetDirection = toTarget / requestedDistance;
+        float totalLength = leg.Length1 + leg.Length2 + leg.Length3;
+        // The mechanical lower limit prevents the chain from folding in on the
+        // body, while the upper limit avoids the singular fully-straight pose.
+        float minReach = totalLength * ComfortableMinReachFraction;
+        float maxReach = MathF.Max(minReach, totalLength - 0.0005f);
+        float distance = System.Math.Clamp(requestedDistance, minReach, maxReach);
+        Vector3 target = root + targetDirection * distance;
+
+        Vector3 preferredBend = NormalizeOrFallback(
+            leg.RestOutwardModel * 0.85f + Vector3.UnitY * 1.20f,
+            leg.RestKneeDirectionModel);
+        Vector3 pole = ProjectOnPlane(preferredBend, targetDirection);
+        if (pole.LengthSquared() <= Epsilon * Epsilon)
+            pole = ProjectOnPlane(leg.RestKneeDirectionModel, targetDirection);
+        pole = NormalizeOrFallback(pole, Vector3.Cross(targetDirection, Vector3.UnitX));
+
+        Vector3 restRootToKnee = NormalizeOrFallback(knee - root, preferredBend);
+        Vector3 restKneeToAnkle = NormalizeOrFallback(ankle - knee, preferredBend);
+        Vector3 restAnkleToTip = NormalizeOrFallback(tip - ankle, -preferredBend);
+
+        // A few short passes are sufficient for a three-link leg and are much
+        // more stable at edges than solving each joint independently.
+        for (int iteration = 0; iteration < 7; iteration++)
+        {
+            tip = target;
+            ankle = tip + NormalizeOrFallback(ankle - tip, -restAnkleToTip) * leg.Length3;
+            knee = ankle + NormalizeOrFallback(knee - ankle, -restKneeToAnkle) * leg.Length2;
+
+            knee = PullTowardPole(root, tip, knee, pole, 0.32f);
+            ankle = PullTowardPole(root, tip, ankle, pole, 0.12f);
+
+            knee = root + NormalizeOrFallback(knee - root, restRootToKnee) * leg.Length1;
+            ankle = knee + NormalizeOrFallback(ankle - knee, restKneeToAnkle) * leg.Length2;
+            tip = ankle + NormalizeOrFallback(tip - ankle, restAnkleToTip) * leg.Length3;
+        }
+
+        // Finish on the requested contact, then perform one exact backward /
+        // forward pass so all three segment lengths remain intact.
+        tip = target;
+        ankle = tip + NormalizeOrFallback(ankle - tip, -restAnkleToTip) * leg.Length3;
+        knee = ankle + NormalizeOrFallback(knee - ankle, -restKneeToAnkle) * leg.Length2;
+        knee = root + NormalizeOrFallback(knee - root, restRootToKnee) * leg.Length1;
+        ankle = knee + NormalizeOrFallback(ankle - knee, restKneeToAnkle) * leg.Length2;
+        tip = ankle + NormalizeOrFallback(tip - ankle, restAnkleToTip) * leg.Length3;
+
+        Vector3 originalKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
+        ApplyAimRotation(leg.Hip, leg.HipRestLocal, originalKnee - root, knee - root);
+        _skeleton.ComputeGlobalTransforms();
+
+        Vector3 solvedKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
+        Vector3 solvedAnkleBeforeKneeRotation = GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global);
+        ApplyAimRotation(
+            leg.Knee,
+            leg.KneeRestLocal,
+            solvedAnkleBeforeKneeRotation - solvedKnee,
+            ankle - solvedKnee);
+        _skeleton.ComputeGlobalTransforms();
+
+        Vector3 solvedAnkle = GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global);
+        Vector3 solvedTipBeforeAnkleRotation = GetSkeletonPoint(_skeleton.Nodes[leg.Tip].Global);
+        ApplyAimRotation(
+            leg.Ankle,
+            leg.AnkleRestLocal,
+            solvedTipBeforeAnkleRotation - solvedAnkle,
+            tip - solvedAnkle);
+        _skeleton.ComputeGlobalTransforms();
+    }
+
+    private static Vector3 PullTowardPole(
+        Vector3 root,
+        Vector3 end,
+        Vector3 joint,
+        Vector3 pole,
+        float weight)
+    {
+        Vector3 axis = end - root;
+        if (axis.LengthSquared() <= Epsilon * Epsilon)
+            return joint;
+
+        axis = Vector3.Normalize(axis);
+        Vector3 jointCenter = root + axis * Vector3.Dot(joint - root, axis);
+        Vector3 radial = joint - jointCenter;
+        Vector3 poleRadial = pole - axis * Vector3.Dot(pole, axis);
+        if (radial.LengthSquared() <= Epsilon * Epsilon || poleRadial.LengthSquared() <= Epsilon * Epsilon)
+            return joint;
+
+        Vector3 desired = jointCenter + Vector3.Normalize(poleRadial) * radial.Length();
+        return Vector3.Lerp(joint, desired, weight);
     }
 
     private void ApplyAimRotation(int nodeIndex, Matrix4x4 restLocal, Vector3 fromModel, Vector3 toModel)
@@ -482,7 +654,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         _skeleton.Nodes[nodeIndex].Local = translation * deltaRotation * orientationAndScale;
     }
 
-    private SurfacePoint FindSupportSurface(
+    private SpiderSurfaceContact FindSupportSurface(
         Vector3 hipWorld,
         Vector3 idealFootWorld,
         Vector3 bodyUp,
@@ -493,130 +665,30 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         out Vector3 rayStart,
         out Vector3 rayEnd)
     {
-        bodyUp = NormalizeOrFallback(bodyUp, Vector3.UnitY);
-        outwardDirWorld = NormalizeOrFallback(outwardDirWorld, Vector3.UnitX);
-
-        SurfacePoint best = new(Vector3.Zero, bodyUp, false);
-        float bestScore = float.MaxValue;
         rayStart = idealFootWorld;
         rayEnd = idealFootWorld;
-
-        // On normal locomotion, a floor/slope under the desired foot always
-        // wins. The visual body can lean toward a wall, but that must not pull
-        // ground legs into the wall or leave them hovering.
-        TrySelectSurfaceRay(
-            idealFootWorld + Vector3.UnitY * SurfaceProbeOffset,
-            -Vector3.UnitY,
-            RaycastDistance,
-            hipWorld,
-            idealFootWorld,
-            bodyUp,
-            minReach,
-            maxReach,
-            selfBody,
-            ref best,
-            ref bestScore,
-            ref rayStart,
-            ref rayEnd);
-
-        if (best.IsValid)
-            return best;
-
-        // If there is no ground inside the leg's reach, look along the current
-        // surface normal and then sideways. These are the wall/corner fallbacks.
-        TrySelectSurfaceRay(
-            idealFootWorld + bodyUp * SurfaceProbeOffset,
-            -bodyUp,
-            RaycastDistance,
-            hipWorld,
-            idealFootWorld,
-            bodyUp,
-            minReach,
-            maxReach,
-            selfBody,
-            ref best,
-            ref bestScore,
-            ref rayStart,
-            ref rayEnd);
-
-        TrySelectSurfaceRay(
-            idealFootWorld - outwardDirWorld * SurfaceProbeOffset,
-            outwardDirWorld,
-            SurfaceProbeOffset * 2f + 0.5f,
-            hipWorld,
-            idealFootWorld,
-            bodyUp,
-            minReach,
-            maxReach,
-            selfBody,
-            ref best,
-            ref bestScore,
-            ref rayStart,
-            ref rayEnd);
-
-        Vector3 toIdeal = idealFootWorld - hipWorld;
-        if (toIdeal.LengthSquared() > Epsilon * Epsilon)
-        {
-            TrySelectSurfaceRay(
-                hipWorld + bodyUp * 0.08f,
-                Vector3.Normalize(toIdeal),
-                MathF.Min(toIdeal.Length() + SurfaceProbeOffset, maxReach + SurfaceProbeOffset),
+        if (_surfaceSolver.TryFindFootContact(
                 hipWorld,
                 idealFootWorld,
                 bodyUp,
+                outwardDirWorld,
                 minReach,
                 maxReach,
                 selfBody,
-                ref best,
-                ref bestScore,
-                ref rayStart,
-                ref rayEnd);
+                out SpiderSurfaceContact contact))
+        {
+            rayEnd = contact.Point;
+            return contact;
         }
 
-        return best;
-    }
-
-    private void TrySelectSurfaceRay(
-        Vector3 origin,
-        Vector3 direction,
-        float maxDistance,
-        Vector3 hipWorld,
-        Vector3 idealFootWorld,
-        Vector3 bodyUp,
-        float minReach,
-        float maxReach,
-        BodyID selfBody,
-        ref SurfacePoint best,
-        ref float bestScore,
-        ref Vector3 debugStart,
-        ref Vector3 debugEnd)
-    {
-        if (direction.LengthSquared() <= Epsilon * Epsilon || maxDistance <= Epsilon ||
-            !_sceneManager.Raycast(origin, direction, maxDistance, out var hit, selfBody))
-            return;
-
-        float reach = Vector3.Distance(hipWorld, hit.Position);
-        if (reach < minReach || reach > maxReach)
-            return;
-
-        Vector3 normal = NormalizeOrFallback(hit.Normal, bodyUp);
-        float normalPenalty = 1f - MathF.Max(0f, Vector3.Dot(normal, bodyUp));
-        float score = Vector3.DistanceSquared(hit.Position, idealFootWorld) +
-                      normalPenalty * maxReach * maxReach * 0.18f;
-        if (score >= bestScore)
-            return;
-
-        bestScore = score;
-        best = new SurfacePoint(hit.Position, normal, true);
-        debugStart = origin;
-        debugEnd = hit.Position;
+        return default;
     }
 
     private bool IsValidNode(int nodeIndex) => nodeIndex >= 0 && nodeIndex < _skeleton.Nodes.Length;
 
     private bool IsValidLeg(in LegState leg) =>
-        IsValidNode(leg.Hip) && IsValidNode(leg.Knee) && IsValidNode(leg.Tip) &&
-        (leg.Length1 + leg.Length2) > 0.001f;
+        IsValidNode(leg.Hip) && IsValidNode(leg.Knee) && IsValidNode(leg.Ankle) && IsValidNode(leg.Tip) &&
+        (leg.Length1 + leg.Length2 + leg.Length3) > 0.001f;
 
     private static Vector3 ModelToWorld(Vector3 modelPoint, Vector3 bodyPosition, Quaternion bodyRotation, Vector3 modelScale)
     {
@@ -724,6 +796,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
             Vector3 hipPos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global));
             Vector3 kneePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global));
+            Vector3 anklePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global));
 
             Vector3 footCurrent = leg.CurrentFootWorld;
             Vector3 footTarget = leg.IsStepping ? leg.TargetFootWorld : leg.CurrentFootWorld;
@@ -749,9 +822,17 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             }
 
             drawer.PushLine(hipPos, kneePos, groupColor);
-            drawer.PushLine(kneePos, footCurrent, groupColor);
+            drawer.PushLine(kneePos, anklePos, groupColor);
+            drawer.PushLine(anklePos, footCurrent, groupColor);
 
             drawer.DrawSphere(footCurrent, Quaternion.Identity, 0.05f, new Vector3(0, 1, 0));
+            Vector3 contactNormal = leg.IsStepping
+                ? NormalizeOrFallback(leg.TargetFootNormalWorld, Vector3.UnitY)
+                : NormalizeOrFallback(leg.CurrentFootNormalWorld, Vector3.UnitY);
+            Vector3 contactColor = leg.IsStepping
+                ? new Vector3(1f, 0f, 1f)
+                : leg.PlantedContact.IsValid ? new Vector3(0.1f, 1f, 0.25f) : new Vector3(1f, 0.1f, 0.1f);
+            drawer.PushLine(footCurrent, footCurrent + contactNormal * 0.22f, contactColor);
 
             drawer.DrawSphere(footTarget, Quaternion.Identity, 0.08f,
                 leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(0, 1, 0));
@@ -772,8 +853,9 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                     float t1 = (float)(s + 1) / segments;
                     Vector3 n0 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t0), leg.TargetFootNormalWorld);
                     Vector3 n1 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t1), leg.TargetFootNormalWorld);
-                    Vector3 p0 = Vector3.Lerp(arcStart, arcEnd, t0) + n0 * MathF.Sin(t0 * MathF.PI) * StepHeight;
-                    Vector3 p1 = Vector3.Lerp(arcStart, arcEnd, t1) + n1 * MathF.Sin(t1 * MathF.PI) * StepHeight;
+                    float stepHeight = GetStepLiftHeight(leg);
+                    Vector3 p0 = Vector3.Lerp(arcStart, arcEnd, t0) + n0 * MathF.Sin(t0 * MathF.PI) * stepHeight;
+                    Vector3 p1 = Vector3.Lerp(arcStart, arcEnd, t1) + n1 * MathF.Sin(t1 * MathF.PI) * stepHeight;
                     drawer.PushLine(p0, p1, new Vector3(1, 0, 1));
                 }
             }

@@ -91,19 +91,19 @@ public sealed class EnemySystem : IDisposable
 
         Vector3 playerPos = _player.Position;
 
-        //foreach (var s in _enemies)
-        //{
-        //    if (s.IsDead || !s.Body.IsBuilt) continue;
-        //    Vector3 enemyPos = s.Entity.Transform.Position;
-        //    float dist = Vector3.Distance(playerPos, enemyPos);
-        //    if (dist < 1.8f)
-        //    {
-        //        Vector3 dir = Vector3.Normalize(playerPos - enemyPos);
-        //        _player.TakeDamage(15f, dir);
-        //        _contactDamageCooldown = 0.5f;
-        //        return;
-        //    }
-        //}
+        foreach (var e in _enemies)
+        {
+            if (e.IsDead || e.Character == null) continue;
+            Vector3 enemyPos = e.Character.Position;
+            float dist = Vector3.Distance(playerPos, enemyPos);
+            if (dist < 1.8f)
+            {
+                Vector3 dir = Vector3.Normalize(playerPos - enemyPos);
+                _player.TakeDamage(15f, dir);
+                _contactDamageCooldown = 0.5f;
+                return;
+            }
+        }
 
         foreach (var s in _spiders)
         {
@@ -169,6 +169,8 @@ public sealed class EnemySystem : IDisposable
         for (int i = _enemies.Count - 1; i >= 0; i--)
         {
             var e = _enemies[i];
+
+            e.Character?.Dispose();
 
             if (e.Body.IsBuilt)
             {

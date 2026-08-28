@@ -937,10 +937,10 @@ public unsafe class MasterRenderer
     {
         if (_decalQueue.Count == 0) return;
 
-        // Selecionar depth FBO compatível com o target atual
-        bool isHdr = _postPipeline.Settings.Enabled;
-        uint decalDepthFbo = isHdr ? _decalDepthFboHdr : _decalDepthFboDefault;
-        uint decalDepthTex = isHdr ? _decalDepthTexHdr : _decalDepthTexDefault;
+        // A cena SEMPRE é renderizada no HDR FBO, então o depth copy
+        // precisa do formato DepthComponent32f independente do post-process.
+        uint decalDepthFbo = _decalDepthFboHdr;
+        uint decalDepthTex = _decalDepthTexHdr;
 
         // 1. Copia o Depth Buffer — formato agora é idêntico ao source
         _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);

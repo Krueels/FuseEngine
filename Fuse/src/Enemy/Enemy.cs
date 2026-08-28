@@ -11,7 +11,7 @@ using Silk.NET.OpenGL;
 
 namespace Fuse.Enemy
 {
-    public sealed class Enemy : IEnemy
+    public sealed class Enemy : IEnemy, Debug.IGizmoDrawable
     {
         public string Id { get; }
         public Entity Entity { get; private set; } = null!;
@@ -28,8 +28,12 @@ namespace Fuse.Enemy
         private bool _hasDied;
         private Animation.Animator? _animator;
         private EnemyPatrol? _patrol;
+        private CharacterVirtual? _character;
+        private ObjectLayer _objectLayer;
+        private PhysicsWorld? _physics;
 
         public EnemyPatrol? Patrol => _patrol;
+        public CharacterVirtual? Character => _character;
 
         public Enemy(string id, float maxHealth = 100f, AssetManager? assets = null)
         {
@@ -44,14 +48,45 @@ namespace Fuse.Enemy
             if (_initialized) return;
 
             _sceneManager = sceneManager;
+            _physics = physics;
 
+            // Raycast down from spawn to find the actual floor
+            Vector3 safeSpawn = spawnPos;
+            if (sceneManager.Raycast(spawnPos + Vector3.UnitY * 2f, -Vector3.UnitY, 10f, out var spawnHit))
+            {
+                safeSpawn = spawnHit.Position + Vector3.UnitY * (_capsuleHeight * 0.5f + _capsuleRadius + 0.05f);
+            }
+
+            // RigidBody kinematic — apenas para registro na cena e detecção de hits pelas armas
             Body.SetCapsule(_capsuleRadius, _capsuleHeight)
-                .SetPosition(spawnPos)
-                .SetMass(70f)
+                .SetPosition(safeSpawn)
+                .SetKinematic(true)
                 .SetFriction(0.5f)
                 .SetRestitution(0.1f)
-                .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
+                .SetAllowedDOFs(AllowedDOFs.All)
                 .Build(physics);
+
+            // CharacterVirtual — movimentação real com gravidade, rampas, escadas
+            _objectLayer = physics.ObjectLayer;
+            var charSettings = new CharacterVirtualSettings
+            {
+                Mass = 70f,
+                Shape = new CapsuleShape(_capsuleHeight * 0.5f, _capsuleRadius),
+                MaxSlopeAngle = float.DegreesToRadians(45.0f),
+                CharacterPadding = 0.02f,
+                PenetrationRecoverySpeed = 0.9f,
+                PredictiveContactDistance = 0.05f,
+                MaxCollisionIterations = 10,
+                MaxConstraintIterations = 30,
+                MinTimeRemaining = 1.0e-4f,
+                CollisionTolerance = 1.0e-3f,
+                MaxNumHits = 256,
+                HitReductionCosMaxAngle = 0.999f,
+            };
+
+            Vector3 posVec = safeSpawn;
+            Quaternion identity = Quaternion.Identity;
+            _character = new CharacterVirtual(charSettings, ref posVec, ref identity, 0, physics.Native);
             
 
             var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
@@ -114,6 +149,7 @@ namespace Fuse.Enemy
 
             sceneManager.ActiveScene.RegisterBody(Entity);
             _patrol = new EnemyPatrol(this, physics);
+            Debug.DebugDrawer.Register(this);
             _initialized = true;
         }
 
@@ -123,12 +159,6 @@ namespace Fuse.Enemy
 
             Health -= damage;
             Logger.Info($"[Enemy] {Id} took {damage} damage. Health: {Health}/{MaxHealth}");
-
-            if (Body.IsBuilt)
-            {
-                Vector3 impulse = hitDirection * damage * 0.3f;
-                physics.BodyInterface.AddImpulse(Body.Native, impulse);
-            }
         }
 
         public void Update(float dt, PhysicsWorld physics)
@@ -136,6 +166,55 @@ namespace Fuse.Enemy
             if (IsDead || !_initialized) return;
 
             _patrol?.Update(dt);
+
+            if (_character != null)
+            {
+                bool onGround = _character.GroundState == GroundState.OnGround;
+
+                Vector3 vel = _character.LinearVelocity;
+                if (onGround)
+                {
+                    vel.Y = 0f;
+                }
+                else
+                {
+                    vel += physics.Gravity * dt;
+
+                    // Safety: clamp fall speed and prevent falling through the floor
+                    if (vel.Y < -30f) vel.Y = -30f;
+                }
+                _character.LinearVelocity = vel;
+
+                var updSettings = new ExtendedUpdateSettings
+                {
+                    StickToFloorStepDown = new Vector3(0, -0.5f, 0),
+                    WalkStairsStepUp = new Vector3(0, 0.5f, 0),
+                    WalkStairsMinStepForward = 0.02f,
+                    WalkStairsStepForwardTest = 0.15f,
+                    WalkStairsCosAngleForwardContact = float.Cos(float.DegreesToRadians(75.0f)),
+                    WalkStairsStepDownExtra = Vector3.Zero,
+                };
+
+                using var bodyFilter = new EnemyBodyFilter(Body.Native);
+                using var shapeFilter = new DefaultShapeFilter();
+                _character.ExtendedUpdate(dt, updSettings, ref _objectLayer, physics.Native, bodyFilter, shapeFilter);
+
+                // Safety: if character fell way below the map, teleport back up
+                Vector3 charPos = _character.Position;
+                if (charPos.Y < -50f)
+                {
+                    charPos.Y = 5f;
+                    _character.Position = charPos;
+                    _character.LinearVelocity = Vector3.Zero;
+                }
+
+                if (Body.IsBuilt)
+                {
+                    Quaternion charRot = _character.Rotation;
+                    physics.BodyInterface.SetPositionAndRotation(Body.Native, charPos, charRot, Activation.Activate);
+                }
+            }
+
             _animator?.Update(dt);
         }
 
@@ -147,6 +226,9 @@ namespace Fuse.Enemy
             Logger.Info($"[Enemy] {Id} died!");
             Entity.Visible = false;
 
+            _character?.Dispose();
+            _character = null;
+
             if (Body.IsBuilt)
             {
                 physics.DestroyBody(Body.Native);
@@ -156,8 +238,20 @@ namespace Fuse.Enemy
             sceneManager?.ActiveScene.Remove(Entity);
         }
 
+        public void OnDrawGizmos(Debug.DebugDrawer drawer)
+        {
+            if (IsDead || !Body.IsBuilt) return;
+
+            Vector3 pos = Body.Position(_physics);
+            Quaternion rot = Body.Rotation(_physics);
+            drawer.DrawCapsule(pos, rot, _capsuleHeight * 0.5f, _capsuleRadius, new Vector3(1, 0, 0));
+        }
+
         public void Dispose()
         {
+            _character?.Dispose();
+            _character = null;
+
             if (Entity != null && Entity.MeshOwnedByEntity && Entity.Mesh != null)
             {
                 Entity.Mesh.Dispose();

@@ -44,13 +44,13 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
         _physics = physics;
         Debug.DebugDrawer.Register(this);
 
-        Quaternion spawnRot = enemy.Body.Rotation(physics);
+        Quaternion spawnRot = enemy.Character?.Rotation ?? enemy.Body.Rotation(physics);
         _currentYRotation = MathF.Atan2(spawnRot.X, spawnRot.Z);
     }
 
     public void Update(float dt)
     {
-        if (!Enabled || _enemy.IsDead || !_enemy.Entity?.Body?.IsBuilt == true) return;
+        if (!Enabled || _enemy.IsDead || _enemy.Character == null) return;
 
         if (!_initialized)
         {
@@ -86,7 +86,10 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
     private void UpdateWalking(float dt)
     {
-        Vector3 currentPos = _enemy.Body.Position(_physics);
+        var character = _enemy.Character;
+        if (character == null) return;
+
+        Vector3 currentPos = character.Position;
         Vector3 dir = _targetPos - currentPos;
         dir.Y = 0f;
         float dist = dir.Length();
@@ -98,16 +101,17 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
             _waitTimer = 0f;
             _waitDuration = RandomWaitTime();
             PlayIdleAnimation();
+            character.LinearVelocity = Vector3.Zero;
             return;
         }
 
-        // Dois raycasts: alto (paredes) e baixo (objetos como mesas)
         Vector3 moveDir = dir / dist;
         Vector3 rayHigh = currentPos + Vector3.UnitY * 1.0f;
         Vector3 rayLow = currentPos + Vector3.UnitY * 0.1f;
         if (RaycastSelf(rayHigh, moveDir, 1.5f) || RaycastSelf(rayLow, moveDir, 1.5f))
         {
             _targetPos = PickRandomPoint();
+            character.LinearVelocity = Vector3.Zero;
             return;
         }
 
@@ -117,18 +121,17 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
         else
             _currentSpeed = MathF.Min(_currentSpeed + Acceleration * dt, MoveSpeed);
 
-        Vector3 newPos = currentPos + moveDir * _currentSpeed * dt;
-        _physics.BodyInterface.SetPosition(_enemy.Body.Native, newPos, JoltPhysicsSharp.Activation.Activate);
+        Vector3 velocity = moveDir * _currentSpeed;
+        character.LinearVelocity = new Vector3(velocity.X, character.LinearVelocity.Y, velocity.Z);
 
         var animator = _enemy.Entity?.Animator;
         if (animator != null)
             animator.Speed = (_currentSpeed / MoveSpeed) * WalkAnimSpeed;
 
-        // Rotação
         _targetYRotation = MathF.Atan2(moveDir.X, moveDir.Z);
         _currentYRotation = LerpAngle(_currentYRotation, _targetYRotation, RotationSpeed * dt);
         Quaternion rot = Quaternion.CreateFromAxisAngle(Vector3.UnitY, _currentYRotation);
-        _physics.BodyInterface.SetRotation(_enemy.Body.Native, rot, JoltPhysicsSharp.Activation.Activate);
+        character.Rotation = rot;
     }
 
     private static float LerpAngle(float from, float to, float t)
@@ -141,7 +144,7 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
     private Vector3 PickRandomPoint()
     {
-        Vector3 pos = _enemy.Entity.Transform.Position;
+        Vector3 pos = _enemy.Character?.Position ?? _enemy.Entity.Transform.Position;
         Vector3 rayOrigin = pos + Vector3.UnitY * 1.0f;
 
         for (int i = 0; i < 5; i++)
@@ -205,9 +208,9 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
     public void OnDrawGizmos(Debug.DebugDrawer drawer)
     {
-        if (_enemy.IsDead || !_enemy.Entity?.Body?.IsBuilt == true) return;
+        if (_enemy.IsDead || _enemy.Character == null) return;
 
-        Vector3 pos = _enemy.Body.Position(_physics);
+        Vector3 pos = _enemy.Character.Position;
 
         drawer.DrawBox(_targetPos, Quaternion.Identity, new Vector3(0.15f), new Vector3(1, 0, 0));
         drawer.PushLine(pos + Vector3.UnitY * 0.5f, _targetPos + Vector3.UnitY * 0.5f, _state == PatrolState.Walking ? new Vector3(0, 1, 0) : new Vector3(1, 1, 0));
