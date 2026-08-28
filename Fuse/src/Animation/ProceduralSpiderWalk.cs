@@ -9,15 +9,10 @@ namespace Fuse.Animation;
 
 /// <summary>
 /// Keeps the spider's feet planted in world space and solves the thigh/leg chain
-/// towards those planted positions. The skeleton imported by Assimp uses column
-/// convention (translation in M14/M24/M34), so its bone-space math is kept
-/// separate from System.Numerics' regular world-space helpers.
+/// towards those planted positions.
 /// </summary>
 public sealed class ProceduralSpiderWalk : IGizmoDrawable
 {
-    // The bind pose is already close to the leg's maximum reach. Start moving a
-    // trailing foot early, but place it far ahead so this large spider takes long,
-    // deliberate strides instead of continuously shuffling in tiny increments.
     private const float StepHeight = 0.55f;
     private const float StepDistanceThreshold = 0.18f;
     private const float LateralStepThreshold = 0.75f;
@@ -41,14 +36,12 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public int Tip;
         public int GaitGroup;
 
-        // Measured in the model's unscaled skeleton space.
         public float Length1;
         public float Length2;
         public Vector3 RestFootModel;
         public Matrix4x4 HipRestLocal;
         public Matrix4x4 KneeRestLocal;
 
-        // These positions deliberately stay in world space while a foot is planted.
         public Vector3 CurrentFootWorld;
         public Vector3 TargetFootWorld;
         public Vector3 StepStartWorld;
@@ -81,6 +74,14 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
         for (int i = 0; i < count; i++)
         {
+            _legs[i] = new LegState
+            {
+                Hip = -1,
+                Knee = -1,
+                Tip = -1,
+                StepProgress = 1.0f
+            };
+
             int hip = data[i].ThighNodeIndex;
             int knee = data[i].SegmentNodeIndices[0];
             int ankle = data[i].SegmentNodeIndices[1];
@@ -104,7 +105,6 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 continue;
             }
 
-            // L0/L2/R1/R3 move together, alternating with the other four legs.
             bool isLeft = i < 4;
             int pairIndex = i % 4;
             int gaitGroup = (pairIndex % 2 == 0) ? (isLeft ? 0 : 1) : (isLeft ? 1 : 0);
@@ -143,6 +143,8 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         modelScale = SanitizeScale(modelScale);
         _skeleton.ComputeGlobalTransforms();
 
+        Vector3 bodyUp = Vector3.Transform(Vector3.UnitY, modelWorldRotation);
+
         bool group0IsStepping = false;
         bool group1IsStepping = false;
         foreach (var leg in _legs)
@@ -160,17 +162,26 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             if (!IsValidLeg(leg))
                 continue;
 
+            Vector3 hipWorld = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global), bodyPosition, modelWorldRotation, modelScale);
             Vector3 desiredFootWorld = ModelToWorld(leg.RestFootModel, bodyPosition, modelWorldRotation, modelScale);
             leg.DebugIdealBeforeRaycast = desiredFootWorld;
-            leg.DebugRayStart = desiredFootWorld + Vector3.UnitY * (RaycastDistance * 0.5f);
-            leg.DebugRayEnd = desiredFootWorld - Vector3.UnitY * (RaycastDistance * 0.5f);
-            leg.DebugRaycastHit = _sceneManager.Raycast(leg.DebugRayStart, -Vector3.UnitY, RaycastDistance, out var groundHit);
-            if (leg.DebugRaycastHit)
-                leg.DebugRayEnd = groundHit.Position;
-            desiredFootWorld = leg.DebugRaycastHit ? groundHit.Position : desiredFootWorld;
 
-            // The first valid frame starts each foot on the floor instead of letting
-            // the bind pose decide where its contact point should be.
+            Vector3 outwardDirWorld = desiredFootWorld - hipWorld;
+            if (outwardDirWorld.LengthSquared() > Epsilon)
+                outwardDirWorld = Vector3.Normalize(outwardDirWorld);
+            else
+                outwardDirWorld = Vector3.Transform(i < 4 ? -Vector3.UnitX : Vector3.UnitX, modelWorldRotation);
+
+            desiredFootWorld = ProjectToGround(
+                hipWorld,
+                desiredFootWorld,
+                bodyUp,
+                outwardDirWorld,
+                out leg.DebugRaycastHit,
+                out leg.DebugRayStart,
+                out leg.DebugRayEnd,
+                out _);
+
             if (!leg.HasPlantedFoot)
             {
                 leg.CurrentFootWorld = desiredFootWorld;
@@ -193,11 +204,8 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                     leg.StepProgress = 0.0f;
                     leg.StepStartWorld = leg.CurrentFootWorld;
 
-                    // The resting point determines when the leg is late. The
-                    // landing point is deliberately ahead of it, giving the body
-                    // room to travel before this same leg needs another step.
                     Vector3 landingPoint = desiredFootWorld + forward * StepForwardPlacement;
-                    leg.TargetFootWorld = ProjectToGround(landingPoint);
+                    leg.TargetFootWorld = ProjectToGround(hipWorld, landingPoint, bodyUp, outwardDirWorld, out _, out _, out _, out _);
                     leg.DebugLandingPoint = leg.TargetFootWorld;
 
                     if (leg.GaitGroup == 0) group0IsStepping = true;
@@ -211,7 +219,6 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             SolveTwoBoneIK(ref leg, targetInModel);
         }
 
-        // This also rebuilds the global hierarchy before the matrices are uploaded.
         if (FinalBoneMatrices != null)
             _skeleton.ComputeFinalBoneMatrices(FinalBoneMatrices);
     }
@@ -235,8 +242,6 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
     private void SolveTwoBoneIK(ref LegState leg, Vector3 requestedTarget)
     {
-        // The animator has restored the bind pose earlier in the frame. Start this
-        // leg from that pose, so rotations never accumulate between frames.
         _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
         _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
         _skeleton.ComputeGlobalTransforms();
@@ -244,28 +249,60 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         Vector3 hipPosition = GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global);
         Vector3 toTarget = requestedTarget - hipPosition;
         float requestedDistance = toTarget.Length();
-        if (requestedDistance <= Epsilon)
-            return;
+        if (requestedDistance <= Epsilon) return;
 
         Vector3 targetDirection = toTarget / requestedDistance;
         float minReach = MathF.Abs(leg.Length1 - leg.Length2) + 0.0005f;
-        float maxReach = leg.Length1 + leg.Length2 - 0.0005f;
+        float maxReach = MathF.Max(minReach, leg.Length1 + leg.Length2 - 0.0005f);
         float distance = System.Math.Clamp(requestedDistance, minReach, maxReach);
         Vector3 target = hipPosition + targetDirection * distance;
 
-        // Pick the bend side from the current base pose. This prevents left/right
-        // legs from flipping their knees when the target is directly in front of
-        // the hip, while still allowing an animation to move the body.
         Vector3 currentKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
-        Vector3 restBend = currentKnee - hipPosition;
-        Vector3 pole = restBend - targetDirection * Vector3.Dot(restBend, targetDirection);
+
+        // --- CÁLCULO DE POLE VECTOR COM VIÉS ARACNÍDEO VERTICAL (+Y) ---
+        Vector3 restKneeDir = currentKnee - hipPosition;
+        float outwardX = restKneeDir.X;
+        float outwardZ = restKneeDir.Z;
+
+        if (MathF.Abs(outwardX) < Epsilon && MathF.Abs(outwardZ) < Epsilon)
+        {
+            Vector3 restFootDir = leg.RestFootModel - hipPosition;
+            outwardX = restFootDir.X;
+            outwardZ = restFootDir.Z;
+        }
+
+        // Garante viés vertical positivo em relação ao dorso do modelo
+        float outwardMag = MathF.Sqrt(outwardX * outwardX + outwardZ * outwardZ);
+        Vector3 preferredUp = new Vector3(
+            outwardX,
+            outwardMag * 1.2f + 1.5f,
+            outwardZ
+        );
+
+        if (preferredUp.LengthSquared() > Epsilon)
+            preferredUp = Vector3.Normalize(preferredUp);
+        else
+            preferredUp = Vector3.UnitY;
+
+        Vector3 pole = preferredUp - targetDirection * Vector3.Dot(preferredUp, targetDirection);
+
         if (pole.LengthSquared() <= Epsilon * Epsilon)
         {
-            pole = Vector3.Cross(targetDirection, Vector3.UnitY);
+            Vector3 outwardOnly = Vector3.Normalize(new Vector3(outwardX, 0f, outwardZ));
+            pole = outwardOnly - targetDirection * Vector3.Dot(outwardOnly, targetDirection);
             if (pole.LengthSquared() <= Epsilon * Epsilon)
-                pole = Vector3.Cross(targetDirection, Vector3.UnitX);
+            {
+                pole = Vector3.Cross(targetDirection, Vector3.UnitZ);
+            }
         }
+
         pole = Vector3.Normalize(pole);
+
+        // Impede que o joelho aponte para baixo/barriga da aranha
+        if (Vector3.Dot(pole, preferredUp) < 0f)
+        {
+            pole = -pole;
+        }
 
         float cosHip = System.Math.Clamp(
             (leg.Length1 * leg.Length1 + distance * distance - leg.Length2 * leg.Length2) /
@@ -299,27 +336,67 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         Vector3 toInParent = Vector3.Normalize(TransformSkeletonDirection(inverseParentGlobal, toModel));
         Matrix4x4 deltaRotation = CreateSkeletonRotation(RotationBetween(fromInParent, toInParent));
 
-        // Imported locals are T * R in column convention. Inserting the delta after
-        // T rotates the bone around its own joint instead of moving that joint.
         Matrix4x4 translation = CreateSkeletonTranslation(GetSkeletonTranslation(restLocal));
         Matrix4x4 orientationAndScale = ClearSkeletonTranslation(restLocal);
         _skeleton.Nodes[nodeIndex].Local = translation * deltaRotation * orientationAndScale;
     }
 
-    private Vector3 ProjectToGround(Vector3 idealFootWorld)
+    private Vector3 ProjectToGround(
+        Vector3 hipWorld,
+        Vector3 idealFootWorld,
+        Vector3 bodyUp,
+        Vector3 outwardDirWorld,
+        out bool rayHit,
+        out Vector3 rayStart,
+        out Vector3 rayEnd,
+        out Vector3 hitNormal)
     {
-        Vector3 rayStart = idealFootWorld + Vector3.UnitY * (RaycastDistance * 0.5f);
-        if (_sceneManager.Raycast(rayStart, -Vector3.UnitY, RaycastDistance, out var hit))
-            return hit.Position;
+        rayStart = hipWorld;
+        hitNormal = Vector3.UnitY;
 
+        Vector3 toTarget = idealFootWorld - hipWorld;
+        float dist = toTarget.Length();
+        if (dist > Epsilon)
+        {
+            Vector3 dir = toTarget / dist;
+            float castDistance = dist + 1.2f;
+            if (_sceneManager.Raycast(hipWorld, dir, castDistance, out var hit))
+            {
+                rayHit = true;
+                rayEnd = hit.Position;
+                hitNormal = hit.Normal;
+                return hit.Position;
+            }
+        }
+
+        Vector3 downStart = idealFootWorld + bodyUp * 0.8f;
+        if (_sceneManager.Raycast(downStart, -bodyUp, RaycastDistance, out var downHit))
+        {
+            rayHit = true;
+            rayEnd = downHit.Position;
+            hitNormal = downHit.Normal;
+            return downHit.Position;
+        }
+
+        Vector3 diagDir = Vector3.Normalize(outwardDirWorld - bodyUp * 0.6f);
+        if (_sceneManager.Raycast(hipWorld, diagDir, dist + 1.5f, out var diagHit))
+        {
+            rayHit = true;
+            rayEnd = diagHit.Position;
+            hitNormal = diagHit.Normal;
+            return diagHit.Position;
+        }
+
+        rayHit = false;
+        rayEnd = idealFootWorld;
         return idealFootWorld;
     }
 
-    private bool IsValidNode(int nodeIndex) => (uint)nodeIndex < (uint)_skeleton.Nodes.Length;
+    private bool IsValidNode(int nodeIndex) => nodeIndex >= 0 && nodeIndex < _skeleton.Nodes.Length;
 
     private bool IsValidLeg(in LegState leg) =>
         IsValidNode(leg.Hip) && IsValidNode(leg.Knee) && IsValidNode(leg.Tip) &&
-        leg.Length1 > Epsilon && leg.Length2 > Epsilon;
+        (leg.Length1 + leg.Length2) > 0.001f;
 
     private static Vector3 ModelToWorld(Vector3 modelPoint, Vector3 bodyPosition, Quaternion bodyRotation, Vector3 modelScale)
     {
@@ -337,7 +414,6 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         MathF.Max(MathF.Abs(scale.Y), Epsilon),
         MathF.Max(MathF.Abs(scale.Z), Epsilon));
 
-    // Assimp matrices are used as column-vector matrices throughout the skeleton.
     private static Vector3 GetSkeletonPoint(in Matrix4x4 matrix) => new(matrix.M14, matrix.M24, matrix.M34);
 
     private static Vector3 GetSkeletonTranslation(in Matrix4x4 matrix) => new(matrix.M14, matrix.M24, matrix.M34);
@@ -366,8 +442,6 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
     private static Matrix4x4 CreateSkeletonRotation(Quaternion rotation)
     {
-        // System.Numerics creates a row-vector matrix; transpose it for Assimp's
-        // column-vector skeleton matrices.
         return Matrix4x4.Transpose(Matrix4x4.CreateFromQuaternion(rotation));
     }
 
@@ -403,11 +477,9 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             var leg = _legs[i];
             if (!IsValidLeg(leg)) continue;
 
-            // Skeleton: world-space
             Vector3 hipPos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global));
             Vector3 kneePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global));
 
-            // Feet: already world-space
             Vector3 footCurrent = leg.CurrentFootWorld;
             Vector3 footTarget = leg.IsStepping ? leg.TargetFootWorld : leg.CurrentFootWorld;
 
@@ -415,54 +487,37 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 ? new Vector3(1, 0.5f, 0)
                 : new Vector3(0, 0.5f, 1);
 
-            // --- RAYCAST DEBUG ---
-            // Linha do raycast (ciano se acertou, vermelho se errou)
             Vector3 rayColor = leg.DebugRaycastHit ? new Vector3(0, 1, 1) : new Vector3(1, 0, 0);
             drawer.PushLine(leg.DebugRayStart, leg.DebugRayEnd, rayColor);
-
-            // Esfera no início do raycast (pequena, branca)
             drawer.DrawSphere(leg.DebugRayStart, Quaternion.Identity, 0.04f, new Vector3(1, 1, 1));
 
-            // Esfera no ponto de hit (ciano)
             if (leg.DebugRaycastHit)
             {
                 drawer.DrawSphere(leg.DebugRayEnd, Quaternion.Identity, 0.06f, new Vector3(0, 1, 1));
             }
 
-            // Posição ideal ANTES do raycast (vermelha, translúcida)
             drawer.DrawSphere(leg.DebugIdealBeforeRaycast, Quaternion.Identity, 0.05f, new Vector3(1, 0.3f, 0.3f));
 
-            // Linha da posição ideal até o hit (mostra offset do terreno)
             if (leg.DebugRaycastHit)
             {
                 drawer.PushLine(leg.DebugIdealBeforeRaycast, leg.DebugRayEnd, new Vector3(1, 0.3f, 0.3f));
             }
 
-            // --- SKELETON DEBUG ---
             drawer.PushLine(hipPos, kneePos, groupColor);
             drawer.PushLine(kneePos, footCurrent, groupColor);
 
-            // --- FOOT DEBUG ---
-            // Pé atual (verde)
             drawer.DrawSphere(footCurrent, Quaternion.Identity, 0.05f, new Vector3(0, 1, 0));
 
-            // Target (amarelo se stance, magenta se swing)
             drawer.DrawSphere(footTarget, Quaternion.Identity, 0.08f,
                 leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(0, 1, 0));
 
-            // Linha quadril -> target
             drawer.PushLine(hipPos, footTarget, leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(1, 1, 1));
 
-            // --- LANDING POINT ---
             if (leg.IsStepping)
             {
-                // Landing point (onde o pé vai pousar)
                 drawer.DrawSphere(leg.DebugLandingPoint, Quaternion.Identity, 0.07f, new Vector3(1, 1, 0));
-
-                // Linha do target até o landing point
                 drawer.PushLine(footTarget, leg.DebugLandingPoint, new Vector3(1, 1, 0));
 
-                // Arco do step
                 Vector3 arcStart = leg.StepStartWorld;
                 Vector3 arcEnd = leg.TargetFootWorld;
                 int segments = 10;

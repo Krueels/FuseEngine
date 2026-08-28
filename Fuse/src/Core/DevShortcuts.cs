@@ -31,6 +31,12 @@ public static class DevShortcuts
 
         if (Input.Input.KeyPressed(KeyCodes.F4))
             renderer.ReloadPostProcessShader();
+
+        if (Input.Input.KeyPressed(KeyCodes.F6))
+        {
+            EnemyPatrol.Enabled = !EnemyPatrol.Enabled;
+            Logger.Info($"[DevShortcuts] Patrol {(EnemyPatrol.Enabled ? "ON" : "OFF")}");
+        }
     
         // Map reload
         if (Input.Input.KeyPressed(KeyCodes.F5))

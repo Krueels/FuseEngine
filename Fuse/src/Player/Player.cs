@@ -132,6 +132,13 @@ public class Player : IDisposable
             ProcessInput(dt);
 
         _camera.UpdateRecoil(dt);
+
+        if (_noclip)
+        {
+            SyncCamera();
+            SyncFlashlight();
+            return;
+        }
         
         bool isGrounded = _character.GroundState == GroundState.OnGround;
 

@@ -10,6 +10,8 @@ namespace Fuse.Enemy;
 
 public sealed class EnemyPatrol : Debug.IGizmoDrawable
 {
+    public static bool Enabled = true;
+    
     private enum PatrolState { Idle, Walking }
 
     private readonly IEnemy _enemy;
@@ -48,7 +50,7 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
     public void Update(float dt)
     {
-        if (_enemy.IsDead || !_enemy.Entity?.Body?.IsBuilt == true) return;
+        if (!Enabled || _enemy.IsDead || !_enemy.Entity?.Body?.IsBuilt == true) return;
 
         if (!_initialized)
         {
