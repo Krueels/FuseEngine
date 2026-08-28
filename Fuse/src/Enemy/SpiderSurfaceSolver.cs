@@ -16,13 +16,9 @@ namespace Fuse.Enemy;
 public sealed class SpiderSurfaceSolver : IGizmoDrawable
 {
     private const float Epsilon = 0.0001f;
-    private const float BodyProbeHeight = 0.85f;
-    private const float BodyProbeDistance = 3.0f;
     private const float BodyProbeRadius = 0.48f;
     private const float FootProbeHeight = 1.35f;
     private const float FootProbeDistance = 4.5f;
-    private const float ContactNormalSimilarity = 0.55f;
-    private const float ActiveContactSwitchAdvantage = 0.20f;
 
     private readonly SceneManager _scene;
     private readonly List<DebugProbe> _debugProbes = new();
@@ -57,54 +53,61 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     }
 
     /// <summary>
-    /// Finds the body support from a surface-relative probe fan. There is no
-    /// world-down or cardinal-axis priority: an existing contact is deliberately
-    /// favoured until another surface is demonstrably better.
+    /// Samples only the currently expected support plane. Unlike the legacy
+    /// six-axis fallback this query is expressed entirely in the spider's local
+    /// surface frame, so +X/-X and +Z/-Z are genuinely equivalent.
     /// </summary>
-    public bool TryFindBodyContact(
-        Vector3 bodyPosition,
-        Vector3 preferredUp,
+    public bool TryFindSupportContact(
+        Vector3 bodyCenter,
+        Vector3 expectedNormal,
         Vector3 preferredForward,
-        in SpiderSurfaceContact activeContact,
+        float clearance,
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        BeginFrame();
-        preferredUp = NormalizeOrFallback(preferredUp, Vector3.UnitY);
-        BuildTangentBasis(preferredUp, preferredForward, out Vector3 forward, out Vector3 right);
+        expectedNormal = NormalizeOrFallback(expectedNormal, Vector3.UnitY);
+        BuildTangentBasis(expectedNormal, preferredForward, out Vector3 forward, out Vector3 right);
 
-        var hits = new List<ProbeHit>(14);
-        Vector3 probeStart = bodyPosition + preferredUp * (BodyProbeHeight + 0.45f);
-        AddProbe(hits, probeStart, -preferredUp, BodyProbeDistance + BodyProbeHeight + 0.45f, selfBody, preferredUp, 0f);
-
-        // Sample a small patch around the contact axis. These probes make an
-        // edge robust without changing preference from one world axis to another.
-        Vector3[] patchOffsets =
+        float patchRadius = MathF.Min(BodyProbeRadius, MathF.Max(0.18f, clearance * 0.42f));
+        Vector3[] offsets =
         {
-            forward * BodyProbeRadius,
-            -forward * BodyProbeRadius,
-            right * BodyProbeRadius,
-            -right * BodyProbeRadius,
-            (forward + right) * (BodyProbeRadius * 0.70f),
-            (forward - right) * (BodyProbeRadius * 0.70f)
+            Vector3.Zero,
+            forward * patchRadius,
+            -forward * patchRadius,
+            right * patchRadius,
+            -right * patchRadius
         };
-        foreach (Vector3 offset in patchOffsets)
+
+        SpiderSurfaceContact best = default;
+        float bestScore = float.MaxValue;
+        foreach (Vector3 offset in offsets)
         {
-            AddProbe(hits, probeStart + offset, -preferredUp, BodyProbeDistance + BodyProbeHeight + 0.45f, selfBody, preferredUp, 0.08f);
+            Vector3 origin = bodyCenter + expectedNormal * 0.18f + offset;
+            if (!TryProbeContact(
+                    origin,
+                    -expectedNormal,
+                    clearance + 0.85f,
+                    selfBody,
+                    out SpiderSurfaceContact candidate,
+                    out float distance))
+            {
+                continue;
+            }
+
+            float alignment = Vector3.Dot(candidate.Normal, expectedNormal);
+            if (alignment < 0.62f)
+                continue;
+
+            float score = distance + (1f - alignment) * 2f + offset.LengthSquared() * 0.08f;
+            if (score < bestScore)
+            {
+                best = candidate;
+                bestScore = score;
+            }
         }
 
-        // Directional fallbacks are only candidates, never a fixed priority.
-        // They allow an initial attachment or a convex-edge transition when the
-        // surface-relative patch has legitimately disappeared.
-        Vector3[] directions =
-        {
-            Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY,
-            -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ
-        };
-        foreach (Vector3 direction in directions)
-            AddProbe(hits, bodyPosition, direction, BodyProbeDistance, selfBody, preferredUp, 0.80f);
-
-        if (!TrySelectBodyContact(hits, preferredUp, activeContact, out contact))
+        contact = best;
+        if (!contact.IsValid)
             return false;
 
         _lastBodyContact = contact;
@@ -112,35 +115,151 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     }
 
     /// <summary>
-    /// Projects a point onto the currently active surface. Patrol uses this for
-    /// destinations, so walking on a wall never falls back to a world-down scan.
+    /// Searches for an adjacent face in the intended movement direction.
+    /// A forward probe handles concave corners; a quarter-circle probe fan
+    /// handles convex edges where the next wall is below and behind the body.
     /// </summary>
-    public bool TryProjectToSurface(
+    public bool TryFindTransitionContact(
         Vector3 bodyCenter,
-        Vector3 expectedNormal,
+        Vector3 currentNormal,
+        Vector3 movementDirection,
+        float clearance,
+        float lookAhead,
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        expectedNormal = NormalizeOrFallback(expectedNormal, Vector3.UnitY);
-        Vector3 origin = bodyCenter + expectedNormal * (BodyProbeHeight + 0.45f);
-        float distance = BodyProbeDistance + BodyProbeHeight + 0.45f;
-        bool didHit = _scene.Raycast(
-            origin,
-            -expectedNormal,
-            distance,
-            out SceneRaycastHit hit,
-            selfBody,
-            collideWithBackFaces: true);
-        _debugProbes.Add(new DebugProbe(origin, didHit ? hit.Position : origin - expectedNormal * distance, didHit));
-
-        if (!didHit || Vector3.Dot(hit.Normal, expectedNormal) < ContactNormalSimilarity)
+        currentNormal = NormalizeOrFallback(currentNormal, Vector3.UnitY);
+        movementDirection -= currentNormal * Vector3.Dot(movementDirection, currentNormal);
+        if (movementDirection.LengthSquared() <= Epsilon * Epsilon)
         {
             contact = default;
             return false;
         }
+        movementDirection = Vector3.Normalize(movementDirection);
 
-        contact = CreateContact(hit, 1f);
-        _debugCandidates.Add(contact);
+        // Concave transition: the spider is walking directly into the next face.
+        Vector3 forwardOrigin = bodyCenter + currentNormal * 0.10f;
+        if (TryProbeContact(
+                forwardOrigin,
+                movementDirection,
+                clearance + MathF.Max(0.12f, lookAhead),
+                selfBody,
+                out SpiderSurfaceContact forwardContact,
+                out _) &&
+            IsUsableTransition(forwardContact.Normal, currentNormal) &&
+            Vector3.Dot(forwardContact.Normal, movementDirection) < -0.28f)
+        {
+            contact = forwardContact;
+            _lastBodyContact = contact;
+            return true;
+        }
+
+        // Convex transition: rotate the support ray from -up toward -forward.
+        // This detects the outer face before the old support disappears fully.
+        Vector3 fanOrigin = bodyCenter + currentNormal * 0.10f +
+                            movementDirection * MathF.Max(0.08f, lookAhead * 0.45f);
+        SpiderSurfaceContact best = default;
+        float bestScore = float.MaxValue;
+        for (int i = 0; i < 6; i++)
+        {
+            float angle = (20f + i * 13f) * (MathF.PI / 180f);
+            Vector3 direction = NormalizeOrFallback(
+                -currentNormal * MathF.Cos(angle) - movementDirection * MathF.Sin(angle),
+                -currentNormal);
+
+            if (!TryProbeContact(
+                    fanOrigin,
+                    direction,
+                    clearance * 2.65f + MathF.Max(0.15f, lookAhead),
+                    selfBody,
+                    out SpiderSurfaceContact candidate,
+                    out float distance))
+            {
+                continue;
+            }
+
+            if (!IsUsableTransition(candidate.Normal, currentNormal))
+                continue;
+
+            float forwardAlignment = Vector3.Dot(candidate.Normal, movementDirection);
+            if (forwardAlignment < 0.20f)
+                continue;
+
+            float score = distance + (1f - forwardAlignment) * clearance;
+            if (score < bestScore)
+            {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+
+        contact = best;
+        if (!contact.IsValid)
+            return false;
+
+        _lastBodyContact = contact;
+        return true;
+    }
+
+    /// <summary>
+    /// Acquires a nearby surface using a local frame. This is used only for
+    /// spawn/recovery; normal walking stays locked to the current support or an
+    /// explicitly detected adjacent face.
+    /// </summary>
+    public bool TryAcquireContact(
+        Vector3 bodyCenter,
+        Vector3 preferredNormal,
+        Vector3 preferredForward,
+        float searchDistance,
+        BodyID selfBody,
+        out SpiderSurfaceContact contact)
+    {
+        preferredNormal = NormalizeOrFallback(preferredNormal, Vector3.UnitY);
+        BuildTangentBasis(preferredNormal, preferredForward, out Vector3 forward, out Vector3 right);
+
+        Vector3[] directions =
+        {
+            -preferredNormal,
+            forward,
+            -forward,
+            right,
+            -right,
+            preferredNormal,
+            NormalizeOrFallback(-preferredNormal + forward, -preferredNormal),
+            NormalizeOrFallback(-preferredNormal - forward, -preferredNormal),
+            NormalizeOrFallback(-preferredNormal + right, -preferredNormal),
+            NormalizeOrFallback(-preferredNormal - right, -preferredNormal)
+        };
+
+        SpiderSurfaceContact best = default;
+        float bestScore = float.MaxValue;
+        foreach (Vector3 direction in directions)
+        {
+            if (!TryProbeContact(
+                    bodyCenter,
+                    direction,
+                    searchDistance,
+                    selfBody,
+                    out SpiderSurfaceContact candidate,
+                    out float distance))
+            {
+                continue;
+            }
+
+            float continuity = Vector3.Dot(candidate.Normal, preferredNormal);
+            float score = distance + (1f - continuity) * 0.35f;
+            if (score < bestScore)
+            {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+
+        contact = best;
+        if (!contact.IsValid)
+            return false;
+
+        _lastBodyContact = contact;
         return true;
     }
 
@@ -188,7 +307,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         // Two diagonal probes are needed at a convex edge, where the next face
         // is neither directly below the foot nor directly in front of the hip.
         AddProbe(hits, desiredPosition + expectedNormal * 0.30f, NormalizeOrFallback(-expectedNormal + forward * 0.95f, -expectedNormal), FootProbeDistance, selfBody, expectedNormal, 0.15f);
-        AddProbe(hits, desiredPosition + expectedNormal * 0.30f, NormalizeOrFallback(-expectedNormal - forward * 0.70f, -expectedNormal), FootProbeDistance, selfBody, expectedNormal, 0.30f);
+        AddProbe(hits, desiredPosition + expectedNormal * 0.30f, NormalizeOrFallback(-expectedNormal - forward * 1.25f, -expectedNormal), FootProbeDistance, selfBody, expectedNormal, 0.30f);
 
         // Clearance probes are especially important in a narrow corridor. A
         // ground candidate remains preferred when it is available, but a foot
@@ -234,73 +353,50 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         return true;
     }
 
-    private bool TrySelectBodyContact(
-        List<ProbeHit> hits,
-        Vector3 preferredUp,
-        in SpiderSurfaceContact activeContact,
-        out SpiderSurfaceContact contact)
+    private bool TryProbeContact(
+        Vector3 origin,
+        Vector3 direction,
+        float distance,
+        BodyID selfBody,
+        out SpiderSurfaceContact contact,
+        out float hitDistance)
     {
-        ProbeHit? best = null;
-        float bestScore = float.MaxValue;
-        foreach (ProbeHit hit in hits)
-        {
-            float normalAlignment = MathF.Max(-1f, Vector3.Dot(hit.Hit.Normal, preferredUp));
-            float score = hit.Priority +
-                          (1f - normalAlignment) * 1.75f +
-                          hit.Hit.Distance * 0.02f;
+        direction = NormalizeOrFallback(direction, -Vector3.UnitY);
+        bool didHit = _scene.Raycast(
+            origin,
+            direction,
+            distance,
+            out SceneRaycastHit hit,
+            selfBody,
+            collideWithBackFaces: true);
 
-            if (activeContact.IsValid)
-            {
-                float activeAlignment = MathF.Max(-1f, Vector3.Dot(hit.Hit.Normal, activeContact.Normal));
-                score += (1f - activeAlignment) * 1.60f;
-                if (hit.Hit.BodyID == activeContact.BodyId)
-                    score -= ActiveContactSwitchAdvantage;
-            }
+        _debugProbes.Add(new DebugProbe(
+            origin,
+            didHit ? hit.Position : origin + direction * distance,
+            didHit));
 
-            _debugCandidates.Add(CreateContact(hit.Hit, 1f / (1f + MathF.Max(0f, score))));
-            if (score < bestScore)
-            {
-                best = hit;
-                bestScore = score;
-            }
-        }
-
-        if (best == null)
+        if (!didHit || Vector3.Dot(hit.Normal, -direction) < 0.08f)
         {
             contact = default;
+            hitDistance = float.MaxValue;
             return false;
         }
 
-        ProbeHit root = best.Value;
-        Vector3 normalSum = Vector3.Zero;
-        Vector3 pointSum = Vector3.Zero;
-        float weightSum = 0f;
-        int sampleCount = 0;
-
-        foreach (ProbeHit hit in hits)
-        {
-            if (hit.Hit.BodyID != root.Hit.BodyID ||
-                Vector3.Dot(hit.Hit.Normal, root.Hit.Normal) < ContactNormalSimilarity)
-                continue;
-
-            float weight = 1f / MathF.Max(0.05f, hit.Hit.Distance + hit.Priority + 0.05f);
-            normalSum += hit.Hit.Normal * weight;
-            pointSum += hit.Hit.Position * weight;
-            weightSum += weight;
-            sampleCount++;
-        }
-
-        if (weightSum <= Epsilon)
-        {
-            contact = default;
-            return false;
-        }
-
-        Vector3 point = pointSum / weightSum;
-        Vector3 normal = NormalizeOrFallback(normalSum, root.Hit.Normal);
-        float confidence = MathF.Min(1f, sampleCount / 5f);
-        contact = CreateContact(root.Hit, confidence, point, normal);
+        contact = CreateContact(hit, 1f);
+        hitDistance = hit.Distance;
+        _debugCandidates.Add(contact);
         return true;
+    }
+
+    private static bool IsUsableTransition(Vector3 candidateNormal, Vector3 currentNormal)
+    {
+        float alignment = Vector3.Dot(
+            NormalizeOrFallback(candidateNormal, currentNormal),
+            NormalizeOrFallback(currentNormal, Vector3.UnitY));
+
+        // Ignore the same face and the exact opposite face. Adjacent faces and
+        // smooth slopes remain valid, including transitions slightly over 90°.
+        return alignment < 0.82f && alignment > -0.42f;
     }
 
     private void AddProbe(

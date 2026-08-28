@@ -40,11 +40,11 @@ public sealed class EnemySystem : IDisposable
 
     public IReadOnlyList<SpiderEnemy> GetSpiders() => _spiders;
 
-    public SpiderEnemy SpawnSpider(Vector3 position, float health = 80f)
+    public SpiderEnemy SpawnSpider(Vector3 position, float health = 80f, Vector3? surfaceNormal = null)
     {
         string id = $"spider_{_spiders.Count}";
         var spider = new SpiderEnemy(id, health, _assets);
-        spider.Initialize(_physics, _sceneManager, position);
+        spider.Initialize(_physics, _sceneManager, position, surfaceNormal);
         _spiders.Add(spider);
         return spider;
     }

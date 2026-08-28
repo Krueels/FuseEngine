@@ -35,6 +35,7 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.F6))
         {
             EnemyPatrol.Enabled = !EnemyPatrol.Enabled;
+            SpiderPatrol.Enabled = !SpiderPatrol.Enabled;
             Logger.Info($"[DevShortcuts] Patrol {(EnemyPatrol.Enabled ? "ON" : "OFF")}");
         }
     
@@ -74,7 +75,7 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.V))
         {
             if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
-                enemySystem?.SpawnSpider(hit.Position, 50f);
+                enemySystem?.SpawnSpider(hit.Position, 50f, hit.Normal);
         }
 
         // T: Spray decal

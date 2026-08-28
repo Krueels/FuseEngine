@@ -18,7 +18,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     public string Id { get; }
     public Entity Entity { get; private set; } = null!;
     public RigidBody Body { get; private set; } = new();
-    public CharacterVirtual? Character => null;
+    public CharacterVirtual? Character => _surfaceMotor?.Character;
     public float Health { get; set; }
     public float MaxHealth { get; }
     public bool IsDead => Health <= 0f;
@@ -33,6 +33,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     // to the leg solver and debug visualisation.
     private SpiderPatrol? _spiderPatrol;
     private SpiderSurfaceSolver? _surfaceSolver;
+    private SpiderSurfaceMotor? _surfaceMotor;
     private SkinnedModel? _model;
     private ProceduralSpiderWalk? _proceduralWalk;
 
@@ -67,22 +68,52 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         _assets = assets!;
     }
 
-    public void Initialize(PhysicsWorld physics, Scene.SceneManager sceneManager, Vector3 spawnPos)
+    public void Initialize(PhysicsWorld physics, Scene.SceneManager sceneManager, Vector3 spawnPos) =>
+        Initialize(physics, sceneManager, spawnPos, null);
+
+    public void Initialize(
+        PhysicsWorld physics,
+        Scene.SceneManager sceneManager,
+        Vector3 spawnPos,
+        Vector3? spawnNormal)
     {
         if (_initialized) return;
 
         _sceneManager = sceneManager;
         _physics = physics;
 
-        // Kinematic body — SpiderPatrol controls position directly via
-        // SetPosition/SetRotation. No Jolt gravity; manual gravity only
-        // when airborne.
+        Vector3 initialNormal = NormalizeOrFallback(spawnNormal ?? Vector3.UnitY, Vector3.UnitY);
+        Vector3 safeSpawn = spawnPos;
+        const float initialClearance = 0.83f;
+        if (spawnNormal.HasValue)
+        {
+            // Spawn outside the selected collider. Starting exactly on a face
+            // makes rays beginning at fraction zero return ambiguous normals.
+            safeSpawn = spawnPos + initialNormal * initialClearance;
+        }
+        else if (sceneManager.Raycast(
+                     spawnPos + Vector3.UnitY * 2f,
+                     -Vector3.UnitY,
+                     10f,
+                     out SceneRaycastHit spawnHit))
+        {
+            initialNormal = NormalizeOrFallback(spawnHit.Normal, Vector3.UnitY);
+            safeSpawn = spawnHit.Position + initialNormal * initialClearance;
+        }
+
+        Vector3 initialForward = ProjectOnPlane(Vector3.UnitZ, initialNormal);
+        if (initialForward.LengthSquared() <= 0.0001f)
+            initialForward = ProjectOnPlane(Vector3.UnitX, initialNormal);
+        initialForward = NormalizeOrFallback(initialForward, Vector3.UnitZ);
+
+        // This kinematic body remains the render/hit proxy. Physical movement
+        // is solved by SpiderSurfaceMotor's CharacterVirtual and copied here.
         Body.SetCapsule(0.6f, 0.3f)
-            .SetPosition(spawnPos)
+            .SetPosition(safeSpawn)
             .SetKinematic(true)
             .SetFriction(0.5f)
             .SetRestitution(0.1f)
-            .SetAllowedDOFs(AllowedDOFs.TranslationX | AllowedDOFs.TranslationY | AllowedDOFs.TranslationZ)
+            .SetAllowedDOFs(AllowedDOFs.All)
             .Build(physics);
 
 
@@ -125,7 +156,14 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         sceneManager.ActiveScene.RegisterBody(Entity);
         _surfaceSolver ??= new SpiderSurfaceSolver(sceneManager);
-        _spiderPatrol = new SpiderPatrol(this, physics, _surfaceSolver, sceneManager);
+        _surfaceMotor = new SpiderSurfaceMotor(
+            physics,
+            Body,
+            _surfaceSolver,
+            safeSpawn,
+            initialNormal,
+            initialForward);
+        _spiderPatrol = new SpiderPatrol(this, physics, _surfaceMotor);
         Debug.DebugDrawer.Register(this);
         _initialized = true;
     }
@@ -297,6 +335,18 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(from, to)), MathF.Acos(dot));
     }
 
+    private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
+        value - normal * Vector3.Dot(value, normal);
+
+    private static Vector3 NormalizeOrFallback(Vector3 value, Vector3 fallback)
+    {
+        if (value.LengthSquared() > 0.0001f)
+            return Vector3.Normalize(value);
+        if (fallback.LengthSquared() > 0.0001f)
+            return Vector3.Normalize(fallback);
+        return Vector3.UnitY;
+    }
+
     public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)
     {
         if (_hasDied) return;
@@ -304,6 +354,8 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         Logger.Info($"[SpiderEnemy] {Id} died!");
         Entity.Visible = false;
+
+        _surfaceMotor?.Dispose();
 
         if (Body.IsBuilt)
         {
@@ -325,6 +377,8 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
     public void Dispose()
     {
+        _surfaceMotor?.Dispose();
+
         if (Entity != null && Entity.MeshOwnedByEntity && Entity.Mesh != null)
         {
             Entity.Mesh.Dispose();
