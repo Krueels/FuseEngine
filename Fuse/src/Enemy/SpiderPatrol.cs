@@ -89,7 +89,13 @@ public sealed class SpiderPatrol : Debug.IGizmoDrawable
             ? CurrentVelocity
             : Vector3.Transform(Vector3.UnitZ, bodyRotation);
 
-        if (_surfaceSolver.TryFindBodyContact(bodyPosition, preferredUp, preferredForward, _enemy.Body.Native, out var foundContact))
+        if (_surfaceSolver.TryFindBodyContact(
+                bodyPosition,
+                preferredUp,
+                preferredForward,
+                _surfaceContact,
+                _enemy.Body.Native,
+                out var foundContact))
         {
             _surfaceContact = foundContact;
             _lostSurfaceTime = 0f;
@@ -192,7 +198,13 @@ public sealed class SpiderPatrol : Debug.IGizmoDrawable
 
         float stepDistance = CurrentSpeed * dt;
         Vector3 predictedPosition = position + moveDirection * stepDistance;
-        if (!_surfaceSolver.TryFindBodyContact(predictedPosition, _surfaceContact.Normal, moveDirection, _enemy.Body.Native, out var nextContact) ||
+        if (!_surfaceSolver.TryFindBodyContact(
+                predictedPosition,
+                _surfaceContact.Normal,
+                moveDirection,
+                _surfaceContact,
+                _enemy.Body.Native,
+                out var nextContact) ||
             AngleBetween(_surfaceContact.Normal, nextContact.Normal) > MaxSurfaceTransitionRadians)
         {
             CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
@@ -239,36 +251,30 @@ public sealed class SpiderPatrol : Debug.IGizmoDrawable
         BuildTangentBasis(_surfaceContact.Normal, _travelForward, out Vector3 forward, out Vector3 right);
         float radius = 2f + (float)s_random.NextDouble() * MathF.Max(1f, PatrolRadius - 2f);
 
-        Vector3 bestTarget = position + forward * radius;
-        float bestHeight = float.MaxValue;
+        Vector3 bestTarget = position;
+        bool hasTarget = false;
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 10; i++)
         {
             float angle = (float)(s_random.NextDouble() * MathF.Tau);
             Vector3 dir = Vector3.Normalize(forward * MathF.Cos(angle) + right * MathF.Sin(angle));
             Vector3 candidate = position + dir * radius;
 
-            if (_scene.Raycast(candidate + Vector3.UnitY * 5f, -Vector3.UnitY, 15f, out var hit, _enemy.Body.Native))
+            // A candidate is projected back towards the active support normal,
+            // not towards world-down. This is what keeps a wall-walking spider
+            // on a +X or -X wall instead of sending it to the floor.
+            if (_surfaceSolver.TryProjectToSurface(candidate, _surfaceContact.Normal, _enemy.Body.Native, out var surface))
             {
-                float floorY = hit.Position.Y;
-                if (floorY < bestHeight)
-                {
-                    bestHeight = floorY;
-                    bestTarget = hit.Position + hit.Normal * BodyClearance;
-                }
-            }
-            else
-            {
-                float h = candidate.Y;
-                if (h < bestHeight)
-                {
-                    bestHeight = h;
-                    bestTarget = candidate;
-                }
+                bestTarget = surface.Point + surface.Normal * BodyClearance;
+                hasTarget = true;
+                break;
             }
         }
 
-        return bestTarget;
+        // No valid projection means the surface has ended. Returning the
+        // current center makes patrol pause and retry rather than walking into
+        // unsupported space or selecting the world floor.
+        return hasTarget ? bestTarget : position;
     }
 
     private void BeginIdle()
@@ -304,7 +310,13 @@ public sealed class SpiderPatrol : Debug.IGizmoDrawable
         normal = NormalizeOrFallback(normal, Vector3.UnitY);
         forward = ProjectOnPlane(desiredForward, normal);
         if (forward.LengthSquared() < 0.0001f)
-            forward = Vector3.Cross(MathF.Abs(normal.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitZ, normal);
+        {
+            // Keep a consistent tangent for normals +X and -X. The old
+            // Cross(UnitY, normal) fallback inverted the heading by 180°.
+            forward = ProjectOnPlane(Vector3.UnitZ, normal);
+            if (forward.LengthSquared() < 0.0001f)
+                forward = ProjectOnPlane(Vector3.UnitX, normal);
+        }
         forward = NormalizeOrFallback(forward, Vector3.UnitZ);
         right = NormalizeOrFallback(Vector3.Cross(normal, forward), Vector3.UnitX);
         forward = NormalizeOrFallback(Vector3.Cross(right, normal), forward);

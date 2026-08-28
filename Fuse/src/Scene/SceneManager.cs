@@ -271,7 +271,8 @@ private void ClearCurrentMap()
         Vector3 direction,
         float maxDistance,
         out SceneRaycastHit hitResult,
-        BodyID? excludedBody = null)
+        BodyID? excludedBody = null,
+        bool collideWithBackFaces = false)
     {
         hitResult = default;
         Vector3 dirNormalized = Vector3.Normalize(direction);
@@ -287,8 +288,39 @@ private void ClearCurrentMap()
             ? new Physics.EnemyBodyFilter(excludedBody.Value)
             : new Physics.DefaultBodyFilter();
 
-        if (!_physics.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
+        RayCastResult hit;
+        if (collideWithBackFaces)
+        {
+            // Procedural surface queries must see both windings. Imported and
+            // generated meshes can expose opposite cube faces with opposite
+            // triangle winding; Jolt's default raycast ignores one of them.
+            var settings = new RayCastSettings
+            {
+                BackFaceModeTriangles = BackFaceMode.CollideWithBackFaces,
+                BackFaceModeConvex = BackFaceMode.CollideWithBackFaces,
+                TreatConvexAsSolid = true
+            };
+            using var shapeFilter = new Physics.DefaultShapeFilter();
+            var hits = new List<RayCastResult>(1);
+            if (!_physics.NarrowPhaseQuery.CastRay(
+                    ray,
+                    settings,
+                    CollisionCollectorType.ClosestHit,
+                    hits,
+                    bpFilter,
+                    olFilter,
+                    bodyFilter,
+                    shapeFilter) || hits.Count == 0)
+            {
+                return false;
+            }
+
+            hit = hits[0];
+        }
+        else if (!_physics.NarrowPhaseQuery.CastRay(ray, out hit, bpFilter, olFilter, bodyFilter))
+        {
             return false;
+        }
 
         Vector3 hitPos = origin + dirNormalized * maxDistance * hit.Fraction;
         Vector3 hitNormal = -dirNormalized;

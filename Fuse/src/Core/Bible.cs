@@ -80,6 +80,7 @@ public static class Bible
     public const string AKFire = "Audio/weapons/ak/AKS74U_Fire";
     public const string AKReload = "Audio/weapons/ak/AKS74U_Reload.wav";
     public const string AKReloadEmpty = "Audio/weapons/ak/AKS74U_ReloadEmpty.wav";
+    public const string DeathSound = "Audio/DeathSound.mp3";
 
     // Helpers
     public static string Tex(string name) => $"{ResPath.Path}/Textures/{name}";

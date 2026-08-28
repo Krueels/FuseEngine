@@ -245,9 +245,10 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
             Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
 
-            // The physical body stays collision-safe on the ground. Lean is a
-            // visual pose and never changes the collision body's up direction.
-            UpdateSurfaceOrientation(dt, bodyPosition, bodyRotation);
+            // The visual model uses the exact same surface anchor selected by
+            // patrol. It must never perform a competing wall scan, otherwise
+            // the body can adhere to one side while the model leans to another.
+            UpdateSurfaceOrientation(dt, bodyRotation, _spiderPatrol?.SurfaceContact ?? default);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
             Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
@@ -267,66 +268,19 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         }
     }
 
-    private void UpdateSurfaceOrientation(float dt, Vector3 bodyPosition, Quaternion bodyRotation)
+    private void UpdateSurfaceOrientation(
+        float dt,
+        Quaternion bodyRotation,
+        in SpiderSurfaceContact surfaceContact)
     {
         Quaternion targetRotation = Quaternion.Identity;
 
-        if (_sceneManager != null)
+        if (surfaceContact.IsValid)
         {
-            Vector3 forward = Vector3.Normalize(Vector3.Transform(Vector3.UnitZ, bodyRotation));
-            Vector3 right = Vector3.Normalize(Vector3.Transform(Vector3.UnitX, bodyRotation));
-            Vector3 diagonalForwardRight = Vector3.Normalize(forward + right);
-            Vector3 diagonalForwardLeft = Vector3.Normalize(forward - right);
-            Vector3 probeStart = bodyPosition + Vector3.UnitY * 0.35f;
-
-            Vector3 normalSum = Vector3.UnitY * 0.45f;
-            float sideContactWeight = 0f;
-
-            AddSurfaceProbe(forward, 1.0f);
-            AddSurfaceProbe(-forward, 1.0f);
-            AddSurfaceProbe(right, 1.0f);
-            AddSurfaceProbe(-right, 1.0f);
-            AddSurfaceProbe(diagonalForwardRight, 0.65f);
-            AddSurfaceProbe(-diagonalForwardRight, 0.65f);
-            AddSurfaceProbe(diagonalForwardLeft, 0.65f);
-            AddSurfaceProbe(-diagonalForwardLeft, 0.65f);
-
-            if (sideContactWeight > 0.001f && normalSum.LengthSquared() > 0.0001f)
-            {
-                Vector3 targetWorldUp = Vector3.Normalize(normalSum);
-                Vector3 targetLocalUp = Vector3.Transform(targetWorldUp, Quaternion.Inverse(bodyRotation));
-                targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
-
-                float tilt = MathF.Acos(System.Math.Clamp(Vector3.Dot(Vector3.UnitY, targetLocalUp), -1f, 1f));
-                if (tilt > MaxSurfaceLeanRadians)
-                    targetRotation = Quaternion.Slerp(Quaternion.Identity, targetRotation, MaxSurfaceLeanRadians / tilt);
-            }
-
-            void AddSurfaceProbe(Vector3 direction, float directionalWeight)
-            {
-                if (!_sceneManager.Raycast(probeStart, direction, SurfaceProbeDistance, out var hit, Body.Native))
-                    return;
-
-                float facing = Vector3.Dot(hit.Normal, -direction);
-                if (facing < 0.2f || hit.Normal.Y < -0.15f)
-                    return;
-
-                float closeness = System.Math.Clamp(
-                    (SurfaceLeanStartDistance - hit.Distance) /
-                    (SurfaceLeanStartDistance - SurfaceLeanFullDistance),
-                    0f,
-                    1f);
-                if (closeness <= 0f)
-                    return;
-
-                float sideFactor = 1f - MathF.Abs(hit.Normal.Y);
-                if (sideFactor < 0.20f)
-                    return;
-
-                float weight = closeness * directionalWeight * (0.4f + sideFactor * 1.6f);
-                normalSum += Vector3.Normalize(hit.Normal) * weight;
-                sideContactWeight += weight;
-            }
+            Vector3 targetLocalUp = Vector3.Transform(
+                Vector3.Normalize(surfaceContact.Normal),
+                Quaternion.Inverse(bodyRotation));
+            targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
         }
 
         float blend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);

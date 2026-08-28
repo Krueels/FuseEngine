@@ -156,6 +156,7 @@ public class Player : IDisposable
         _deathTimer = _respawnDelay;
 
         Logger.Info("[PLAYER] DIED!");
+        _audio.Play(Bible.Audio(Bible.DeathSound), volume: 0.3f);
         _onPlayerDeath?.Invoke();
 
         // Freezes the player
