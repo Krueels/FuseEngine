@@ -75,6 +75,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private const float SurfaceLeanFullDistance = 0.55f;
     private const float MaxSurfaceLeanRadians = 72f * (MathF.PI / 180f);
     private const float SurfaceLeanResponse = 9f;
+    private Vector3 _visualSurfaceUp;
 
     // Leg bone indices (resolved at init)
     private readonly LegData[] _legs = new LegData[8];
@@ -890,6 +891,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         surfaceNormal = NormalizeOrZero(surfaceNormal);
         if (surfaceNormal.LengthSquared() <= 0.0001f)
         {
+            _visualSurfaceUp = Vector3.Zero;
             float resetBlend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
             Entity.ModelRotation = Quaternion.Normalize(
                 Quaternion.Slerp(Entity.ModelRotation, Quaternion.Identity, resetBlend));
@@ -929,6 +931,37 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
                     surfaceNormal * MathF.Cos(angle) + awayFromObstacle * MathF.Sin(angle));
             }
         }
+
+        // The physical motor already smooths the real surface normal, but the
+        // visual lean also receives nearby-obstacle raycast results. At a
+        // corner those rays can alternate between the two faces by one frame.
+        // Keep a filtered visual up vector so that this presentation layer does
+        // not turn a temporary probe difference into a visible rotation flip.
+        targetWorldUp = NormalizeOrZero(targetWorldUp);
+        if (targetWorldUp.LengthSquared() <= 0.0001f)
+            targetWorldUp = surfaceNormal;
+
+        if (_visualSurfaceUp.LengthSquared() <= 0.0001f)
+        {
+            _visualSurfaceUp = surfaceNormal;
+        }
+        else if (Vector3.Dot(_visualSurfaceUp, targetWorldUp) < -0.95f)
+        {
+            // Opposite normals cannot be interpolated through a useful
+            // direction. The locomotion motor must already have validated this
+            // transition, so reset the visual anchor to the new valid frame.
+            _visualSurfaceUp = targetWorldUp;
+        }
+        else
+        {
+            float visualBlend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
+            _visualSurfaceUp = NormalizeOrZero(Vector3.Lerp(
+                _visualSurfaceUp,
+                targetWorldUp,
+                visualBlend));
+        }
+
+        targetWorldUp = _visualSurfaceUp;
 
         // Re-anchor visual forward to locomotion every frame. Reusing the
         // previous visual rotation here accumulates yaw while the body leans.

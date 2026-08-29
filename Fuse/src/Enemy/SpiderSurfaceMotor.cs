@@ -18,6 +18,13 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private const float AdhesionSpeed = 2.6f;
     private const float MaxAirSpeed = 30f;
     private const float TransitionLookAhead = 0.38f;
+    private const float TransitionMinDuration = 0.12f;
+    private const float TransitionMaxDuration = 0.75f;
+    private const float TransitionCooldownDuration = 0.20f;
+    private const float TransitionSupportAlignment = 0.86f;
+    private const float TransitionCompletionAlignment = 0.96f;
+    private const int TransitionStableFrameCount = 3;
+    private const float TransitionCorrectionSpeed = 6f;
     private const float OutwardCorrectionSpeed = 4.5f;
     private const float SurfaceNormalResponse = 12f;
     private const float OrientationResponse = 14f;
@@ -38,7 +45,15 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private Vector3 _airVelocity;
     private Vector3 _requestedVelocity;
     private Vector3 _debugPredictedPosition;
+    private Vector3 _transitionStartNormal;
+    private Vector3 _transitionTargetNormal;
+    private Vector3 _transitionTargetPoint;
+    private SpiderSurfaceContact _transitionPreviousContact;
     private float _lostSurfaceTime;
+    private float _transitionElapsed;
+    private float _transitionCooldown;
+    private int _transitionStableFrames;
+    private bool _transitionActive;
     private bool _disposed;
 
     public CharacterVirtual Character { get; }
@@ -53,6 +68,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     public float CurrentSpeed { get; private set; }
     public bool IsBlocked { get; private set; }
     public bool HasSurface => _surfaceContact.IsValid && _lostSurfaceTime <= SurfaceLostGrace;
+    public bool IsTransitioning => _transitionActive;
+    public Vector3 TransitionTargetNormal => _transitionTargetNormal;
     public float Clearance { get; }
 
     /// <summary>
@@ -82,6 +99,14 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _surfaceForward = forward;
         _desiredDirection = forward;
         _movementDirection = forward;
+        _transitionStartNormal = Vector3.Zero;
+        _transitionTargetNormal = Vector3.Zero;
+        _transitionTargetPoint = Vector3.Zero;
+        _transitionPreviousContact = default;
+        _transitionElapsed = 0f;
+        _transitionCooldown = 0f;
+        _transitionStableFrames = 0;
+        _transitionActive = false;
         _airVelocity = Vector3.Zero;
         _requestedVelocity = Vector3.Zero;
         CurrentVelocity = Vector3.Zero;
@@ -187,11 +212,22 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         intendedSpeed = MathF.Max(0f, intendedSpeed);
         _solver.BeginFrame();
 
+        _transitionCooldown = MathF.Max(0f, _transitionCooldown - dt);
+        if (_transitionActive)
+        {
+            _transitionElapsed += dt;
+            if (_transitionElapsed >= TransitionMaxDuration)
+                CancelSurfaceTransition();
+        }
+
         Vector3 startPosition = Character.Position;
         if (_surfaceContact.IsValid)
         {
             _surfaceContact = _solver.Refresh(_surfaceContact);
-            SetDesiredSurfaceNormal(_surfaceContact.Normal);
+            if (!_transitionActive)
+                SetDesiredSurfaceNormal(_surfaceContact.Normal);
+            else if (IsAlignedWithTransitionTarget(_surfaceContact.Normal))
+                _transitionTargetPoint = _surfaceContact.Point;
         }
 
         Vector3 up = NormalizeOrFallback(_surfaceNormal, _desiredSurfaceNormal);
@@ -200,7 +236,10 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             tangent = BuildTangent(up, _movementDirection, _surfaceForward);
 
         RefreshOrAcquireSupport(startPosition, up, tangent);
-        up = SmoothSurfaceNormal(up, _desiredSurfaceNormal, dt);
+        Vector3 normalTarget = _transitionActive
+            ? _transitionTargetNormal
+            : _desiredSurfaceNormal;
+        up = SmoothSurfaceNormal(up, normalTarget, dt);
         _surfaceNormal = up;
         tangent = BuildTangent(up, tangent, _surfaceForward);
 
@@ -210,26 +249,33 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         if (HasSurface && commandSpeed > Epsilon)
         {
+            Vector3 supportNormal = _transitionActive
+                ? _transitionTargetNormal
+                : up;
+
             bool supportAhead = _solver.TryFindSupportContact(
                 _debugPredictedPosition,
-                up,
+                supportNormal,
                 tangent,
                 Clearance,
                 _body.Native,
                 out SpiderSurfaceContact aheadContact);
 
-            bool hasTransition = _solver.TryFindTransitionContact(
-                startPosition,
-                up,
-                tangent,
-                Clearance,
-                stepDistance + TransitionLookAhead,
-                _body.Native,
-                out SpiderSurfaceContact transitionContact);
+            SpiderSurfaceContact transitionContact = default;
+            bool hasTransition = !_transitionActive &&
+                _transitionCooldown <= 0f &&
+                _solver.TryFindTransitionContact(
+                    startPosition,
+                    up,
+                    tangent,
+                    Clearance,
+                    stepDistance + TransitionLookAhead,
+                    _body.Native,
+                    out transitionContact);
 
             if (hasTransition)
             {
-                ApplySurfaceContact(transitionContact, up, ref tangent, dt);
+                BeginSurfaceTransition(transitionContact, up, ref tangent, dt);
                 up = _surfaceNormal;
             }
             else if (supportAhead)
@@ -257,7 +303,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         if (HasSurface)
         {
             _airVelocity = Vector3.Zero;
-            _requestedVelocity = tangent * commandSpeed - up * AdhesionSpeed;
+            _requestedVelocity = tangent * commandSpeed - up * AdhesionSpeed +
+                                 GetTransitionCorrectionVelocity(startPosition, dt);
         }
         else
         {
@@ -314,19 +361,32 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
     private void RefreshOrAcquireSupport(Vector3 position, Vector3 up, Vector3 forward)
     {
+        Vector3 expectedNormal = _transitionActive
+            ? _transitionTargetNormal
+            : up;
+
         if (_solver.TryFindSupportContact(
                 position,
-                up,
+                expectedNormal,
                 forward,
                 Clearance,
                 _body.Native,
                 out SpiderSurfaceContact support))
         {
+            if (_transitionActive && !IsAlignedWithTransitionTarget(support.Normal))
+                return;
+
             _surfaceContact = support;
             _lostSurfaceTime = 0f;
-            SetDesiredSurfaceNormal(support.Normal);
+            if (_transitionActive)
+                _transitionTargetPoint = support.Point;
+            else
+                SetDesiredSurfaceNormal(support.Normal);
             return;
         }
+
+        if (_transitionActive)
+            return;
 
         if (_surfaceContact.IsValid)
             return;
@@ -354,8 +414,57 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         Vector3 nextNormal = NormalizeOrZero(contact.Normal);
         if (nextNormal.LengthSquared() <= Epsilon * Epsilon)
             return;
+        if (_transitionActive && !IsAlignedWithTransitionTarget(nextNormal))
+            return;
 
         tangent = TransportAcrossSurface(tangent, previousNormal, nextNormal, _surfaceForward);
+        _surfaceContact = contact;
+        _lostSurfaceTime = 0f;
+        if (_transitionActive)
+        {
+            _transitionTargetPoint = contact.Point;
+            _desiredSurfaceNormal = _transitionTargetNormal;
+            _surfaceNormal = SmoothSurfaceNormal(
+                previousNormal,
+                _transitionTargetNormal,
+                dt);
+        }
+        else
+        {
+            _desiredSurfaceNormal = nextNormal;
+            _surfaceNormal = SmoothSurfaceNormal(previousNormal, nextNormal, dt);
+        }
+        tangent = BuildTangent(_surfaceNormal, tangent, _surfaceForward);
+    }
+
+    private void BeginSurfaceTransition(
+        in SpiderSurfaceContact contact,
+        Vector3 previousNormal,
+        ref Vector3 tangent,
+        float dt)
+    {
+        Vector3 nextNormal = NormalizeOrZero(contact.Normal);
+        previousNormal = NormalizeOrZero(previousNormal);
+        if (nextNormal.LengthSquared() <= Epsilon * Epsilon ||
+            previousNormal.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return;
+        }
+
+        _transitionPreviousContact = _surfaceContact;
+        _transitionStartNormal = previousNormal;
+        _transitionTargetNormal = nextNormal;
+        _transitionTargetPoint = contact.Point;
+        _transitionElapsed = 0f;
+        _transitionStableFrames = 0;
+        _transitionActive = true;
+        _transitionCooldown = 0f;
+
+        tangent = TransportAcrossSurface(
+            tangent,
+            previousNormal,
+            nextNormal,
+            _surfaceForward);
         _surfaceContact = contact;
         _lostSurfaceTime = 0f;
         _desiredSurfaceNormal = nextNormal;
@@ -365,7 +474,9 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
     private void UpdatePostMoveContact(float dt, ref Vector3 position, Vector3 previousUp)
     {
-        Vector3 up = _surfaceNormal;
+        Vector3 up = _transitionActive
+            ? _transitionTargetNormal
+            : _surfaceNormal;
         if (_solver.TryFindSupportContact(
                 position,
                 up,
@@ -374,18 +485,38 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
                 _body.Native,
                 out SpiderSurfaceContact support))
         {
+            if (_transitionActive && !IsAlignedWithTransitionTarget(support.Normal))
+                return;
+
             _surfaceContact = support;
             _lostSurfaceTime = 0f;
-            SetDesiredSurfaceNormal(support.Normal);
-
-            Vector3 desiredCenter = support.Point + support.Normal * Clearance;
-            float outwardError = Vector3.Dot(desiredCenter - position, support.Normal);
-            if (outwardError > 0.01f && outwardError < Clearance)
+            if (_transitionActive)
             {
-                float correction = MathF.Min(outwardError, OutwardCorrectionSpeed * dt);
-                position += support.Normal * correction;
-                Character.Position = position;
+                _transitionTargetPoint = support.Point;
+                _desiredSurfaceNormal = _transitionTargetNormal;
             }
+            else
+            {
+                SetDesiredSurfaceNormal(support.Normal);
+            }
+
+            ApplySupportCorrection(
+                support,
+                _transitionActive ? _transitionTargetNormal : support.Normal,
+                ref position,
+                dt,
+                _transitionActive);
+
+            if (_transitionActive)
+                UpdateTransitionStability(support.Normal);
+            return;
+        }
+
+        if (_transitionActive)
+        {
+            _lostSurfaceTime = MathF.Min(
+                SurfaceLostGrace,
+                _lostSurfaceTime + dt);
             return;
         }
 
@@ -417,6 +548,153 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         }
 
         _surfaceContact = default;
+    }
+
+    private void ApplySupportCorrection(
+        in SpiderSurfaceContact support,
+        Vector3 supportNormal,
+        ref Vector3 position,
+        float dt,
+        bool isTransition)
+    {
+        supportNormal = NormalizeOrZero(supportNormal);
+        if (supportNormal.LengthSquared() <= Epsilon * Epsilon)
+            return;
+
+        Vector3 desiredCenter = support.Point + supportNormal * Clearance;
+        float normalError = Vector3.Dot(
+            desiredCenter - position,
+            supportNormal);
+        if (!float.IsFinite(normalError))
+            return;
+
+        float maximumError = Clearance * (isTransition ? 1.5f : 1f);
+        if (MathF.Abs(normalError) > maximumError)
+            return;
+
+        if (!isTransition && normalError <= 0.01f)
+            return;
+
+        float correctionSpeed = isTransition
+            ? TransitionCorrectionSpeed
+            : OutwardCorrectionSpeed;
+        float correction = System.Math.Clamp(
+            normalError,
+            -correctionSpeed * dt,
+            correctionSpeed * dt);
+        if (MathF.Abs(correction) <= 0.0001f)
+            return;
+
+        position += supportNormal * correction;
+        Character.Position = position;
+    }
+
+    private Vector3 GetTransitionCorrectionVelocity(Vector3 position, float dt)
+    {
+        if (!_transitionActive || dt <= Epsilon)
+            return Vector3.Zero;
+
+        Vector3 normal = NormalizeOrZero(_transitionTargetNormal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return Vector3.Zero;
+
+        Vector3 desiredCenter = _transitionTargetPoint + normal * Clearance;
+        float normalError = Vector3.Dot(desiredCenter - position, normal);
+        if (!float.IsFinite(normalError) ||
+            MathF.Abs(normalError) > Clearance * 1.5f)
+        {
+            return Vector3.Zero;
+        }
+
+        float speed = System.Math.Clamp(
+            normalError / dt,
+            -TransitionCorrectionSpeed,
+            TransitionCorrectionSpeed);
+        return normal * speed;
+    }
+
+    private void UpdateTransitionStability(Vector3 supportNormal)
+    {
+        if (!_transitionActive)
+            return;
+
+        float supportAlignment = Vector3.Dot(
+            NormalizeOrZero(supportNormal),
+            _transitionTargetNormal);
+        float normalAlignment = Vector3.Dot(
+            NormalizeOrZero(_surfaceNormal),
+            _transitionTargetNormal);
+
+        if (_transitionElapsed >= TransitionMinDuration &&
+            supportAlignment >= TransitionSupportAlignment &&
+            normalAlignment >= TransitionCompletionAlignment)
+        {
+            _transitionStableFrames++;
+        }
+        else
+        {
+            _transitionStableFrames = 0;
+        }
+
+        if (_transitionStableFrames >= TransitionStableFrameCount)
+            CompleteSurfaceTransition();
+    }
+
+    private bool IsAlignedWithTransitionTarget(Vector3 normal)
+    {
+        if (!_transitionActive)
+            return true;
+
+        normal = NormalizeOrZero(normal);
+        return normal.LengthSquared() > Epsilon * Epsilon &&
+               Vector3.Dot(normal, _transitionTargetNormal) >=
+               TransitionSupportAlignment;
+    }
+
+    private void CompleteSurfaceTransition()
+    {
+        if (!_transitionActive)
+            return;
+
+        _transitionActive = false;
+        _transitionCooldown = TransitionCooldownDuration;
+        _surfaceNormal = _transitionTargetNormal;
+        _desiredSurfaceNormal = _transitionTargetNormal;
+        _transitionStartNormal = Vector3.Zero;
+        _transitionTargetNormal = Vector3.Zero;
+        _transitionTargetPoint = Vector3.Zero;
+        _transitionPreviousContact = default;
+        _transitionElapsed = 0f;
+        _transitionStableFrames = 0;
+    }
+
+    private void CancelSurfaceTransition()
+    {
+        if (!_transitionActive)
+            return;
+
+        Vector3 previousNormal = NormalizeOrZero(_transitionStartNormal);
+        if (previousNormal.LengthSquared() > Epsilon * Epsilon)
+        {
+            _movementDirection = TransportAcrossSurface(
+                _movementDirection,
+                _surfaceNormal,
+                previousNormal,
+                _surfaceForward);
+            _desiredSurfaceNormal = previousNormal;
+        }
+
+        if (_transitionPreviousContact.IsValid)
+            _surfaceContact = _transitionPreviousContact;
+
+        _transitionActive = false;
+        _transitionCooldown = TransitionCooldownDuration;
+        _transitionStartNormal = Vector3.Zero;
+        _transitionTargetNormal = Vector3.Zero;
+        _transitionTargetPoint = Vector3.Zero;
+        _transitionPreviousContact = default;
+        _transitionElapsed = 0f;
+        _transitionStableFrames = 0;
     }
 
     private void SetDesiredSurfaceNormal(Vector3 normal)
