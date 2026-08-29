@@ -9,7 +9,7 @@ namespace Fuse.Enemy;
 /// <summary>
 /// Collision-safe locomotion motor for a creature whose local up axis follows
 /// an arbitrary surface. Patrol supplies intent; this class owns adhesion,
-/// surface transitions and all physical movement.
+/// surface transitions and physical movement.
 /// </summary>
 public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 {
@@ -19,6 +19,9 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private const float MaxAirSpeed = 30f;
     private const float TransitionLookAhead = 0.38f;
     private const float OutwardCorrectionSpeed = 4.5f;
+    private const float SurfaceNormalResponse = 12f;
+    private const float OrientationResponse = 14f;
+    private const float MaxDetachedDistance = 100f;
 
     private readonly PhysicsWorld _physics;
     private readonly RigidBody _body;
@@ -27,6 +30,10 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private readonly Vector3 _safeSpawn;
     private ObjectLayer _objectLayer;
     private SpiderSurfaceContact _surfaceContact;
+    private Vector3 _surfaceNormal;
+    private Vector3 _desiredSurfaceNormal;
+    private Vector3 _surfaceForward;
+    private Vector3 _desiredDirection;
     private Vector3 _movementDirection;
     private Vector3 _airVelocity;
     private Vector3 _requestedVelocity;
@@ -36,15 +43,58 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
     public CharacterVirtual Character { get; }
     public SpiderSurfaceContact SurfaceContact => _surfaceContact;
-    public Vector3 SurfaceNormal => _surfaceContact.IsValid
-        ? _surfaceContact.Normal
-        : NormalizeOrFallback(Character.Up, Vector3.UnitY);
+    public Vector3 SurfaceNormal => _surfaceNormal;
+    public Vector3 DesiredSurfaceNormal => _desiredSurfaceNormal;
+    public Vector3 Forward => _surfaceForward;
+    public Vector3 Right => NormalizeOrZero(Vector3.Cross(_surfaceForward, _surfaceNormal));
+    public Vector3 DesiredDirection => _desiredDirection;
     public Vector3 MovementDirection => _movementDirection;
     public Vector3 CurrentVelocity { get; private set; }
     public float CurrentSpeed { get; private set; }
     public bool IsBlocked { get; private set; }
     public bool HasSurface => _surfaceContact.IsValid && _lostSurfaceTime <= SurfaceLostGrace;
     public float Clearance { get; }
+
+    /// <summary>
+    /// Resets only transient locomotion state for a runtime diagnostic. It is
+    /// intentionally separate from normal gameplay movement so a test can
+    /// place the character at a mirrored surface without changing navigation.
+    /// </summary>
+    public void ResetRuntimeTestState(Vector3 position, Vector3 surfaceNormal, Vector3 forward)
+    {
+        if (_disposed)
+            return;
+        if (!IsFinite(position))
+            throw new ArgumentException("Runtime test position must be finite.", nameof(position));
+
+        surfaceNormal = NormalizeOrZero(surfaceNormal);
+        if (surfaceNormal.LengthSquared() <= Epsilon * Epsilon)
+            throw new ArgumentException("Runtime test normal must be valid.", nameof(surfaceNormal));
+
+        forward = BuildTangent(surfaceNormal, forward, _surfaceForward);
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            throw new ArgumentException("Runtime test forward must be tangent to the surface.", nameof(forward));
+
+        _surfaceContact = default;
+        _lostSurfaceTime = SurfaceLostGrace + 0.001f;
+        _surfaceNormal = surfaceNormal;
+        _desiredSurfaceNormal = surfaceNormal;
+        _surfaceForward = forward;
+        _desiredDirection = forward;
+        _movementDirection = forward;
+        _airVelocity = Vector3.Zero;
+        _requestedVelocity = Vector3.Zero;
+        CurrentVelocity = Vector3.Zero;
+        CurrentSpeed = 0f;
+        IsBlocked = false;
+        _debugPredictedPosition = position;
+
+        Character.Position = position;
+        Character.Up = surfaceNormal;
+        Character.Rotation = RotationFromSurface(surfaceNormal, forward, forward);
+        Character.LinearVelocity = Vector3.Zero;
+        SyncBody();
+    }
 
     public SpiderSurfaceMotor(
         PhysicsWorld physics,
@@ -60,11 +110,18 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _safeSpawn = spawnPosition;
         _objectLayer = physics.ObjectLayer;
 
-        initialNormal = NormalizeOrFallback(initialNormal, Vector3.UnitY);
-        initialForward = ProjectOnPlane(initialForward, initialNormal);
+        initialNormal = NormalizeOrZero(initialNormal);
+        if (initialNormal.LengthSquared() <= Epsilon * Epsilon)
+            throw new ArgumentException("SpiderSurfaceMotor requires a valid initial surface normal.", nameof(initialNormal));
+
+        initialForward = BuildTangent(initialNormal, initialForward, Vector3.Zero);
         if (initialForward.LengthSquared() <= Epsilon * Epsilon)
-            initialForward = BuildFallbackTangent(initialNormal);
-        initialForward = Vector3.Normalize(initialForward);
+            throw new ArgumentException("SpiderSurfaceMotor requires a valid initial tangent direction.", nameof(initialForward));
+
+        _surfaceNormal = initialNormal;
+        _desiredSurfaceNormal = initialNormal;
+        _surfaceForward = initialForward;
+        _desiredDirection = initialForward;
         _movementDirection = initialForward;
 
         float halfHeight = MathF.Max(0.01f, body.CapsuleHeight * 0.5f);
@@ -91,7 +148,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             EnhancedInternalEdgeRemoval = true
         };
 
-        Quaternion rotation = RotationFromSurface(initialNormal, initialForward);
+        Quaternion rotation = RotationFromSurface(initialNormal, initialForward, initialForward);
         Vector3 position = spawnPosition;
         Character = new CharacterVirtual(settings, ref position, ref rotation, 0, physics.Native);
 
@@ -104,9 +161,17 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
                 body.Native,
                 out SpiderSurfaceContact initialContact))
         {
-            _surfaceContact = initialContact;
-            Character.Up = initialContact.Normal;
-            Character.Rotation = RotationFromSurface(initialContact.Normal, initialForward);
+            Vector3 contactNormal = NormalizeOrZero(initialContact.Normal);
+            if (contactNormal.LengthSquared() > Epsilon * Epsilon)
+            {
+                _surfaceContact = initialContact;
+                _desiredSurfaceNormal = contactNormal;
+                _surfaceNormal = contactNormal;
+                _surfaceForward = BuildTangent(contactNormal, initialForward, initialForward);
+                _movementDirection = _surfaceForward;
+                Character.Up = _surfaceNormal;
+                Character.Rotation = RotationFromSurface(_surfaceNormal, _surfaceForward, _surfaceForward);
+            }
         }
 
         SyncBody();
@@ -124,17 +189,20 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         Vector3 startPosition = Character.Position;
         if (_surfaceContact.IsValid)
+        {
             _surfaceContact = _solver.Refresh(_surfaceContact);
+            SetDesiredSurfaceNormal(_surfaceContact.Normal);
+        }
 
-        Vector3 up = SurfaceNormal;
-        Vector3 tangent = ProjectOnPlane(intendedDirection, up);
+        Vector3 up = NormalizeOrFallback(_surfaceNormal, _desiredSurfaceNormal);
+        Vector3 tangent = BuildTangent(up, intendedDirection, _surfaceForward);
         if (tangent.LengthSquared() <= Epsilon * Epsilon)
-            tangent = ProjectOnPlane(_movementDirection, up);
-        tangent = NormalizeOrFallback(tangent, BuildFallbackTangent(up));
+            tangent = BuildTangent(up, _movementDirection, _surfaceForward);
 
         RefreshOrAcquireSupport(startPosition, up, tangent);
-        up = SurfaceNormal;
-        tangent = NormalizeOrFallback(ProjectOnPlane(tangent, up), BuildFallbackTangent(up));
+        up = SmoothSurfaceNormal(up, _desiredSurfaceNormal, dt);
+        _surfaceNormal = up;
+        tangent = BuildTangent(up, tangent, _surfaceForward);
 
         float commandSpeed = intendedSpeed;
         float stepDistance = commandSpeed * dt;
@@ -161,17 +229,13 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
             if (hasTransition)
             {
-                tangent = TransportAcrossSurface(tangent, up, transitionContact.Normal);
-                _surfaceContact = transitionContact;
-                _lostSurfaceTime = 0f;
-                up = transitionContact.Normal;
+                ApplySurfaceContact(transitionContact, up, ref tangent, dt);
+                up = _surfaceNormal;
             }
             else if (supportAhead)
             {
-                _surfaceContact = aheadContact;
-                _lostSurfaceTime = 0f;
-                up = aheadContact.Normal;
-                tangent = NormalizeOrFallback(ProjectOnPlane(tangent, up), _movementDirection);
+                ApplySurfaceContact(aheadContact, up, ref tangent, dt);
+                up = _surfaceNormal;
             }
             else
             {
@@ -182,9 +246,13 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             }
         }
 
-        Quaternion targetRotation = RotationFromSurface(up, tangent);
+        tangent = BuildTangent(up, tangent, _surfaceForward);
+        _desiredDirection = tangent;
+        _surfaceForward = ResolveForward(tangent, up, _surfaceForward);
+
+        Quaternion targetRotation = RotationFromSurface(up, tangent, _surfaceForward);
         Character.Up = up;
-        Character.Rotation = targetRotation;
+        Character.Rotation = SmoothRotation(Character.Rotation, targetRotation, dt);
 
         if (HasSurface)
         {
@@ -209,8 +277,12 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         Vector3 endPosition = Character.Position;
         Vector3 actualVelocity = (endPosition - startPosition) / dt;
         CurrentVelocity = actualVelocity;
-        CurrentSpeed = HasSurface ? ProjectOnPlane(actualVelocity, up).Length() : actualVelocity.Length();
-        _movementDirection = NormalizeOrFallback(ProjectOnPlane(tangent, up), BuildFallbackTangent(up));
+        Vector3 actualTangent = ProjectOnPlane(actualVelocity, _surfaceNormal);
+        CurrentSpeed = HasSurface ? actualTangent.Length() : actualVelocity.Length();
+
+        if (actualTangent.LengthSquared() > Epsilon * Epsilon)
+            _surfaceForward = ResolveForward(actualTangent, _surfaceNormal, _surfaceForward);
+        _movementDirection = ResolveForward(_surfaceForward, _surfaceNormal, _movementDirection);
 
         if (intendedSpeed > Epsilon)
         {
@@ -225,7 +297,10 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         UpdatePostMoveContact(dt, ref endPosition, up);
 
-        if (Character.Position.Y < -50f)
+        // Recovery is based on distance from the known safe spawn, never on a
+        // world coordinate. This keeps the motor valid in every orientation.
+        if (!HasSurface &&
+            Vector3.DistanceSquared(Character.Position, _safeSpawn) > MaxDetachedDistance * MaxDetachedDistance)
         {
             Character.Position = _safeSpawn;
             Character.LinearVelocity = Vector3.Zero;
@@ -249,6 +324,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         {
             _surfaceContact = support;
             _lostSurfaceTime = 0f;
+            SetDesiredSurfaceNormal(support.Normal);
             return;
         }
 
@@ -265,13 +341,31 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         {
             _surfaceContact = acquired;
             _lostSurfaceTime = 0f;
-            Character.Up = acquired.Normal;
+            SetDesiredSurfaceNormal(acquired.Normal);
         }
+    }
+
+    private void ApplySurfaceContact(
+        in SpiderSurfaceContact contact,
+        Vector3 previousNormal,
+        ref Vector3 tangent,
+        float dt)
+    {
+        Vector3 nextNormal = NormalizeOrZero(contact.Normal);
+        if (nextNormal.LengthSquared() <= Epsilon * Epsilon)
+            return;
+
+        tangent = TransportAcrossSurface(tangent, previousNormal, nextNormal, _surfaceForward);
+        _surfaceContact = contact;
+        _lostSurfaceTime = 0f;
+        _desiredSurfaceNormal = nextNormal;
+        _surfaceNormal = SmoothSurfaceNormal(previousNormal, nextNormal, dt);
+        tangent = BuildTangent(_surfaceNormal, tangent, _surfaceForward);
     }
 
     private void UpdatePostMoveContact(float dt, ref Vector3 position, Vector3 previousUp)
     {
-        Vector3 up = SurfaceNormal;
+        Vector3 up = _surfaceNormal;
         if (_solver.TryFindSupportContact(
                 position,
                 up,
@@ -282,6 +376,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         {
             _surfaceContact = support;
             _lostSurfaceTime = 0f;
+            SetDesiredSurfaceNormal(support.Normal);
 
             Vector3 desiredCenter = support.Point + support.Normal * Clearance;
             float outwardError = Vector3.Dot(desiredCenter - position, support.Normal);
@@ -306,16 +401,29 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
                 _body.Native,
                 out SpiderSurfaceContact acquired))
         {
-            _surfaceContact = acquired;
-            _lostSurfaceTime = 0f;
-            Character.Up = acquired.Normal;
-            _movementDirection = NormalizeOrFallback(
-                ProjectOnPlane(_movementDirection, acquired.Normal),
-                BuildFallbackTangent(acquired.Normal));
-            return;
+            Vector3 acquiredNormal = NormalizeOrZero(acquired.Normal);
+            if (acquiredNormal.LengthSquared() > Epsilon * Epsilon)
+            {
+                _surfaceContact = acquired;
+                _lostSurfaceTime = 0f;
+                _movementDirection = TransportAcrossSurface(
+                    _movementDirection,
+                    _surfaceNormal,
+                    acquiredNormal,
+                    _surfaceForward);
+                SetDesiredSurfaceNormal(acquiredNormal);
+                return;
+            }
         }
 
         _surfaceContact = default;
+    }
+
+    private void SetDesiredSurfaceNormal(Vector3 normal)
+    {
+        Vector3 normalized = NormalizeOrZero(normal);
+        if (normalized.LengthSquared() > Epsilon * Epsilon)
+            _desiredSurfaceNormal = normalized;
     }
 
     private void SyncBody()
@@ -330,53 +438,151 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             Activation.Activate);
     }
 
-    private static Quaternion RotationFromSurface(Vector3 normal, Vector3 desiredForward)
+    private static Quaternion RotationFromSurface(
+        Vector3 normal,
+        Vector3 desiredForward,
+        Vector3 previousForward)
     {
-        normal = NormalizeOrFallback(normal, Vector3.UnitY);
-        Vector3 forward = ProjectOnPlane(desiredForward, normal);
-        forward = NormalizeOrFallback(forward, BuildFallbackTangent(normal));
-        Vector3 right = NormalizeOrFallback(Vector3.Cross(normal, forward), Vector3.UnitX);
-        forward = NormalizeOrFallback(Vector3.Cross(right, normal), forward);
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return Quaternion.Identity;
 
+        // Keep the requested construction explicit. The second cross product
+        // re-orthogonalises forward after right was computed.
+        Vector3 forward = NormalizeOrZero(ProjectOnPlane(desiredForward, normal));
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            forward = NormalizeOrZero(ProjectOnPlane(previousForward, normal));
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            forward = BuildFallbackTangent(normal, previousForward);
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            return Quaternion.Identity;
+
+        Vector3 right = NormalizeOrZero(Vector3.Cross(forward, normal));
+        if (right.LengthSquared() <= Epsilon * Epsilon)
+            return Quaternion.Identity;
+        forward = NormalizeOrZero(Vector3.Cross(normal, right));
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            return Quaternion.Identity;
+
+        // Cross(forward, up) is the requested local right convention. The
+        // render/physics matrix is right-handed, therefore its physical right
+        // row is the negated convention vector while up and forward remain
+        // exactly the requested directions.
+        Vector3 matrixRight = -right;
         Matrix4x4 rotation = new(
-            right.X, right.Y, right.Z, 0f,
+            matrixRight.X, matrixRight.Y, matrixRight.Z, 0f,
             normal.X, normal.Y, normal.Z, 0f,
             forward.X, forward.Y, forward.Z, 0f,
             0f, 0f, 0f, 1f);
         return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(rotation));
     }
 
-    private static Vector3 TransportAcrossSurface(Vector3 direction, Vector3 oldNormal, Vector3 newNormal)
+    private static Quaternion SmoothRotation(Quaternion current, Quaternion target, float dt)
     {
-        oldNormal = NormalizeOrFallback(oldNormal, Vector3.UnitY);
-        newNormal = NormalizeOrFallback(newNormal, oldNormal);
-        float dot = System.Math.Clamp(Vector3.Dot(oldNormal, newNormal), -1f, 1f);
-        Vector3 transported = direction;
+        float blend = 1f - MathF.Exp(-OrientationResponse * dt);
+        return Quaternion.Normalize(Quaternion.Slerp(current, target, blend));
+    }
 
-        if (dot < 0.9999f)
+    private static Vector3 TransportAcrossSurface(
+        Vector3 direction,
+        Vector3 oldNormal,
+        Vector3 newNormal,
+        Vector3 previousForward)
+    {
+        oldNormal = NormalizeOrZero(oldNormal);
+        newNormal = NormalizeOrZero(newNormal);
+        if (newNormal.LengthSquared() <= Epsilon * Epsilon)
+            return NormalizeOrZero(direction);
+        if (oldNormal.LengthSquared() <= Epsilon * Epsilon)
+            return BuildTangent(newNormal, direction, previousForward);
+
+        Vector3 tangent = NormalizeOrZero(ProjectOnPlane(direction, oldNormal));
+        if (tangent.LengthSquared() <= Epsilon * Epsilon)
+            tangent = BuildTangent(oldNormal, previousForward, Vector3.Zero);
+
+        float dot = System.Math.Clamp(Vector3.Dot(oldNormal, newNormal), -1f, 1f);
+        Vector3 axis = Vector3.Cross(oldNormal, newNormal);
+        if (axis.LengthSquared() > Epsilon * Epsilon)
         {
-            Vector3 axis = Vector3.Cross(oldNormal, newNormal);
-            if (axis.LengthSquared() > Epsilon * Epsilon)
+            Quaternion rotation = Quaternion.CreateFromAxisAngle(
+                Vector3.Normalize(axis),
+                MathF.Acos(dot));
+            tangent = Vector3.Transform(tangent, rotation);
+        }
+        else if (dot < 0f)
+        {
+            Vector3 flipAxis = BuildFallbackTangent(oldNormal, tangent);
+            if (flipAxis.LengthSquared() > Epsilon * Epsilon)
             {
-                Quaternion rotation = Quaternion.CreateFromAxisAngle(
-                    Vector3.Normalize(axis),
-                    MathF.Acos(dot));
-                transported = Vector3.Transform(direction, rotation);
+                Quaternion rotation = Quaternion.CreateFromAxisAngle(flipAxis, MathF.PI);
+                tangent = Vector3.Transform(tangent, rotation);
             }
         }
 
-        return NormalizeOrFallback(
-            ProjectOnPlane(transported, newNormal),
-            BuildFallbackTangent(newNormal));
+        return BuildTangent(newNormal, tangent, previousForward);
     }
 
-    private static Vector3 BuildFallbackTangent(Vector3 normal)
+    private static Vector3 BuildTangent(Vector3 normal, Vector3 desired, Vector3 fallback)
     {
-        normal = NormalizeOrFallback(normal, Vector3.UnitY);
-        Vector3 tangent = ProjectOnPlane(Vector3.UnitZ, normal);
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return Vector3.Zero;
+
+        Vector3 tangent = NormalizeOrZero(ProjectOnPlane(desired, normal));
         if (tangent.LengthSquared() <= Epsilon * Epsilon)
-            tangent = ProjectOnPlane(Vector3.UnitX, normal);
-        return NormalizeOrFallback(tangent, Vector3.UnitX);
+            tangent = NormalizeOrZero(ProjectOnPlane(fallback, normal));
+        if (tangent.LengthSquared() <= Epsilon * Epsilon)
+            tangent = BuildFallbackTangent(normal, desired);
+        return tangent;
+    }
+
+    private static Vector3 ResolveForward(Vector3 desired, Vector3 normal, Vector3 previous)
+    {
+        Vector3 resolved = BuildTangent(normal, desired, previous);
+        return resolved.LengthSquared() > Epsilon * Epsilon
+            ? resolved
+            : NormalizeOrZero(previous);
+    }
+
+    private static Vector3 SmoothSurfaceNormal(Vector3 current, Vector3 target, float dt)
+    {
+        current = NormalizeOrZero(current);
+        target = NormalizeOrZero(target);
+        if (target.LengthSquared() <= Epsilon * Epsilon)
+            return current;
+        if (current.LengthSquared() <= Epsilon * Epsilon)
+            return target;
+
+        float blend = 1f - MathF.Exp(-SurfaceNormalResponse * dt);
+        Vector3 result = NormalizeOrZero(Vector3.Lerp(current, target, blend));
+        return result.LengthSquared() > Epsilon * Epsilon ? result : current;
+    }
+
+    private static Vector3 BuildFallbackTangent(Vector3 normal, Vector3 preferred)
+    {
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return Vector3.Zero;
+
+        Vector3 tangent = NormalizeOrZero(ProjectOnPlane(preferred, normal));
+        if (tangent.LengthSquared() > Epsilon * Epsilon)
+            return tangent;
+
+        // These are only an arbitrary reference set for the degenerate case;
+        // no one of them is treated as world up or as a movement direction.
+        Vector3 reference = Vector3.UnitX;
+        float smallestAlignment = MathF.Abs(Vector3.Dot(normal, reference));
+        Vector3[] candidates = { Vector3.UnitY, Vector3.UnitZ };
+        foreach (Vector3 candidate in candidates)
+        {
+            float alignment = MathF.Abs(Vector3.Dot(normal, candidate));
+            if (alignment >= smallestAlignment)
+                continue;
+            reference = candidate;
+            smallestAlignment = alignment;
+        }
+
+        return NormalizeOrZero(Vector3.Cross(normal, reference));
     }
 
     private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
@@ -384,12 +590,19 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
     private static Vector3 NormalizeOrFallback(Vector3 value, Vector3 fallback)
     {
-        if (value.LengthSquared() > Epsilon * Epsilon)
-            return Vector3.Normalize(value);
-        if (fallback.LengthSquared() > Epsilon * Epsilon)
-            return Vector3.Normalize(fallback);
-        return Vector3.UnitZ;
+        Vector3 normalized = NormalizeOrZero(value);
+        return normalized.LengthSquared() > Epsilon * Epsilon
+            ? normalized
+            : NormalizeOrZero(fallback);
     }
+
+    private static Vector3 NormalizeOrZero(Vector3 value) =>
+        value.LengthSquared() > Epsilon * Epsilon
+            ? Vector3.Normalize(value)
+            : Vector3.Zero;
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 
     public void OnDrawGizmos(DebugDrawer drawer)
     {
@@ -397,13 +610,21 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             return;
 
         Vector3 position = Character.Position;
-        Vector3 up = SurfaceNormal;
+        Vector3 currentNormal = _surfaceNormal;
+        Vector3 desiredNormal = _desiredSurfaceNormal;
+        Vector3 forward = _surfaceForward;
+        Vector3 right = Right;
+        Vector3 desiredDirection = _desiredDirection;
         Vector3 surfaceColor = HasSurface
             ? new Vector3(0.15f, 1f, 0.25f)
             : new Vector3(1f, 0.2f, 0.15f);
 
         drawer.DrawCapsule(position, Character.Rotation, _body.CapsuleHeight * 0.5f, _body.CapsuleRadius, new Vector3(0.2f, 0.8f, 1f));
-        drawer.PushLine(position, position + up * 1.25f, surfaceColor);
+        drawer.PushLine(position, position + currentNormal * 1.25f, surfaceColor);
+        drawer.PushLine(position, position + desiredNormal * 1.0f, new Vector3(1f, 0.2f, 0.85f));
+        drawer.PushLine(position, position + forward * 1.5f, new Vector3(0.1f, 0.4f, 1f));
+        drawer.PushLine(position, position + right * 1.0f, new Vector3(1f, 0.65f, 0.1f));
+        drawer.PushLine(position, position + desiredDirection * 1.15f, new Vector3(0.1f, 1f, 1f));
         drawer.PushLine(position, position + _requestedVelocity * 0.20f, new Vector3(0.2f, 0.55f, 1f));
         drawer.DrawSphere(_debugPredictedPosition, Quaternion.Identity, 0.08f, IsBlocked ? new Vector3(1f, 0.15f, 0.1f) : new Vector3(0.2f, 1f, 0.8f));
     }

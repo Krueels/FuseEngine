@@ -65,8 +65,13 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        expectedNormal = NormalizeOrFallback(expectedNormal, Vector3.UnitY);
-        BuildTangentBasis(expectedNormal, preferredForward, out Vector3 forward, out Vector3 right);
+        expectedNormal = NormalizeOrZero(expectedNormal);
+        if (expectedNormal.LengthSquared() <= Epsilon * Epsilon ||
+            !BuildTangentBasis(expectedNormal, preferredForward, out Vector3 forward, out Vector3 right))
+        {
+            contact = default;
+            return false;
+        }
 
         float patchRadius = MathF.Min(BodyProbeRadius, MathF.Max(0.18f, clearance * 0.42f));
         Vector3[] offsets =
@@ -128,7 +133,13 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        currentNormal = NormalizeOrFallback(currentNormal, Vector3.UnitY);
+        currentNormal = NormalizeOrZero(currentNormal);
+        if (currentNormal.LengthSquared() <= Epsilon * Epsilon)
+        {
+            contact = default;
+            return false;
+        }
+
         movementDirection -= currentNormal * Vector3.Dot(movementDirection, currentNormal);
         if (movementDirection.LengthSquared() <= Epsilon * Epsilon)
         {
@@ -214,8 +225,13 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        preferredNormal = NormalizeOrFallback(preferredNormal, Vector3.UnitY);
-        BuildTangentBasis(preferredNormal, preferredForward, out Vector3 forward, out Vector3 right);
+        preferredNormal = NormalizeOrZero(preferredNormal);
+        if (preferredNormal.LengthSquared() <= Epsilon * Epsilon ||
+            !BuildTangentBasis(preferredNormal, preferredForward, out Vector3 forward, out Vector3 right))
+        {
+            contact = default;
+            return false;
+        }
 
         Vector3[] directions =
         {
@@ -277,8 +293,13 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         BodyID selfBody,
         out SpiderSurfaceContact contact)
     {
-        expectedNormal = NormalizeOrFallback(expectedNormal, Vector3.UnitY);
-        BuildTangentBasis(expectedNormal, strideDirection, out Vector3 forward, out Vector3 right);
+        expectedNormal = NormalizeOrZero(expectedNormal);
+        if (expectedNormal.LengthSquared() <= Epsilon * Epsilon ||
+            !BuildTangentBasis(expectedNormal, strideDirection, out Vector3 forward, out Vector3 right))
+        {
+            contact = default;
+            return false;
+        }
 
         var hits = new List<ProbeHit>(16);
         Vector3[] offsets =
@@ -361,7 +382,14 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         out SpiderSurfaceContact contact,
         out float hitDistance)
     {
-        direction = NormalizeOrFallback(direction, -Vector3.UnitY);
+        direction = NormalizeOrZero(direction);
+        if (direction.LengthSquared() <= Epsilon * Epsilon)
+        {
+            contact = default;
+            hitDistance = float.MaxValue;
+            return false;
+        }
+
         bool didHit = _scene.Raycast(
             origin,
             direction,
@@ -390,9 +418,15 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
 
     private static bool IsUsableTransition(Vector3 candidateNormal, Vector3 currentNormal)
     {
-        float alignment = Vector3.Dot(
-            NormalizeOrFallback(candidateNormal, currentNormal),
-            NormalizeOrFallback(currentNormal, Vector3.UnitY));
+        candidateNormal = NormalizeOrZero(candidateNormal);
+        currentNormal = NormalizeOrZero(currentNormal);
+        if (candidateNormal.LengthSquared() <= Epsilon * Epsilon ||
+            currentNormal.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return false;
+        }
+
+        float alignment = Vector3.Dot(candidateNormal, currentNormal);
 
         // Ignore the same face and the exact opposite face. Adjacent faces and
         // smooth slopes remain valid, including transitions slightly over 90°.
@@ -408,7 +442,10 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         Vector3 expectedNormal,
         float priority)
     {
-        direction = NormalizeOrFallback(direction, -expectedNormal);
+        direction = NormalizeOrZero(direction);
+        if (direction.LengthSquared() <= Epsilon * Epsilon)
+            return;
+
         bool didHit = _scene.Raycast(
             origin,
             direction,
@@ -435,7 +472,10 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         Vector3? normalOverride = null)
     {
         Vector3 point = pointOverride ?? hit.Position;
-        Vector3 normal = NormalizeOrFallback(normalOverride ?? hit.Normal, Vector3.UnitY);
+        Vector3 normal = NormalizeOrZero(normalOverride ?? hit.Normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return default;
+
         RigidBody? supportBody = hit.RigidBody;
         Vector3 localPoint = point;
         Vector3 localNormal = normal;
@@ -457,27 +497,69 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             confidence);
     }
 
-    private static void BuildTangentBasis(Vector3 normal, Vector3 desiredForward, out Vector3 forward, out Vector3 right)
+    private static bool BuildTangentBasis(Vector3 normal, Vector3 desiredForward, out Vector3 forward, out Vector3 right)
     {
-        normal = NormalizeOrFallback(normal, Vector3.UnitY);
-        forward = desiredForward - normal * Vector3.Dot(desiredForward, normal);
-        if (forward.LengthSquared() <= Epsilon * Epsilon)
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
         {
-            forward = Vector3.UnitZ - normal * Vector3.Dot(Vector3.UnitZ, normal);
-            if (forward.LengthSquared() <= Epsilon * Epsilon)
-                forward = Vector3.UnitX - normal * Vector3.Dot(Vector3.UnitX, normal);
+            forward = Vector3.Zero;
+            right = Vector3.Zero;
+            return false;
         }
 
-        forward = NormalizeOrFallback(forward, Vector3.UnitZ);
-        right = NormalizeOrFallback(Vector3.Cross(normal, forward), Vector3.UnitX);
-        forward = NormalizeOrFallback(Vector3.Cross(right, normal), forward);
+        forward = desiredForward - normal * Vector3.Dot(desiredForward, normal);
+        forward = NormalizeOrZero(forward);
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+            forward = BuildFallbackTangent(normal);
+        if (forward.LengthSquared() <= Epsilon * Epsilon)
+        {
+            right = Vector3.Zero;
+            return false;
+        }
+
+        right = NormalizeOrZero(Vector3.Cross(forward, normal));
+        if (right.LengthSquared() <= Epsilon * Epsilon)
+            return false;
+
+        forward = NormalizeOrZero(Vector3.Cross(normal, right));
+        return forward.LengthSquared() > Epsilon * Epsilon;
+    }
+
+    private static Vector3 BuildFallbackTangent(Vector3 normal)
+    {
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= Epsilon * Epsilon)
+            return Vector3.Zero;
+
+        Vector3 reference = Vector3.UnitX;
+        float smallestAlignment = MathF.Abs(Vector3.Dot(normal, reference));
+        Vector3[] basisCandidates = { Vector3.UnitY, Vector3.UnitZ };
+        foreach (Vector3 candidate in basisCandidates)
+        {
+            float alignment = MathF.Abs(Vector3.Dot(normal, candidate));
+            if (alignment >= smallestAlignment)
+                continue;
+
+            reference = candidate;
+            smallestAlignment = alignment;
+        }
+
+        return NormalizeOrZero(Vector3.Cross(normal, reference));
     }
 
     private static Vector3 NormalizeOrFallback(Vector3 value, Vector3 fallback)
     {
-        if (value.LengthSquared() > Epsilon * Epsilon)
-            return Vector3.Normalize(value);
-        return Vector3.Normalize(fallback);
+        Vector3 normalizedValue = NormalizeOrZero(value);
+        if (normalizedValue.LengthSquared() > Epsilon * Epsilon)
+            return normalizedValue;
+        return NormalizeOrZero(fallback);
+    }
+
+    private static Vector3 NormalizeOrZero(Vector3 value)
+    {
+        return value.LengthSquared() > Epsilon * Epsilon
+            ? Vector3.Normalize(value)
+            : Vector3.Zero;
     }
 
     public void OnDrawGizmos(DebugDrawer drawer)

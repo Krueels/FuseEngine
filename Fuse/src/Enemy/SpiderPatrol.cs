@@ -19,8 +19,10 @@ public sealed class SpiderPatrol : IGizmoDrawable
     private readonly SpiderEnemy _enemy;
     private readonly PhysicsWorld _physics;
     private readonly SpiderSurfaceMotor _motor;
+    private readonly SpiderPathFollower _pathFollower;
+    private SpiderNavigationController? _navigationController;
     private PatrolState _state = PatrolState.Idle;
-    private Vector3 _travelDirection = Vector3.UnitZ;
+    private Vector3 _travelDirection = Vector3.Zero;
     private Vector3 _targetPosition;
     private float _remainingTravel;
     private float _waitTimer;
@@ -30,9 +32,38 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
     public float CurrentSpeed { get; private set; }
     public Vector3 CurrentVelocity { get; private set; }
+    public Vector3 CurrentPosition => _enemy.Body.IsBuilt
+        ? _enemy.Body.Position(_physics)
+        : Vector3.Zero;
     public Vector3 SurfaceNormal => _motor.SurfaceNormal;
     public SpiderSurfaceContact SurfaceContact => _motor.SurfaceContact;
     public bool HasSurface => _motor.HasSurface;
+    public bool IsBlocked => _motor.IsBlocked;
+    public float Clearance => _motor.Clearance;
+    public bool IsMovementReady => !_enemy.IsDead && _enemy.Body.IsBuilt;
+    public SpiderPathFollower PathFollower => _pathFollower;
+    public SpiderNavigationController? NavigationController => _navigationController;
+
+    /// <summary>
+    /// Optional path mode. When false, patrol keeps its existing random
+    /// wandering behavior exactly as before.
+    /// </summary>
+    [Export] public bool PathFollowingEnabled { get; set; }
+
+    /// <summary>
+    /// Optional dynamic navigation integration. It is disabled by default so
+    /// the legacy patrol behavior remains unchanged until explicitly enabled.
+    /// </summary>
+    public bool DynamicNavigationEnabled { get; set; }
+
+    /// <summary>
+    /// Optional runtime-test input. It lets a diagnostic harness drive the
+    /// existing motor through the normal patrol update without changing the
+    /// regular random/path behavior when disabled.
+    /// </summary>
+    public bool RuntimeMovementOverrideEnabled { get; set; }
+    public Vector3 RuntimeMovementDirection { get; set; }
+    public float RuntimeMovementSpeed { get; set; }
 
     [Export] public float PatrolRadius { get; set; } = 20f;
     [Export] public float MoveSpeed { get; set; } = 9.5f;
@@ -50,7 +81,30 @@ public sealed class SpiderPatrol : IGizmoDrawable
         _enemy = enemy;
         _physics = physics;
         _motor = motor;
+        _pathFollower = new SpiderPathFollower();
         DebugDrawer.Register(this);
+    }
+
+    public void SetPath(SpiderPath? path)
+    {
+        Vector3 position = _enemy.Body.IsBuilt
+            ? _enemy.Body.Position(_physics)
+            : Vector3.Zero;
+        _pathFollower.SetPath(path, position, _motor.SurfaceNormal);
+    }
+
+    public void ClearPath() => _pathFollower.ClearPath();
+
+    /// <summary>
+    /// Attaches a dynamic navigation controller. Set enablePathFollowing to
+    /// true to make this patrol consume the controller's follower output.
+    /// </summary>
+    public void AttachNavigationController(
+        SpiderNavigationController? controller,
+        bool enablePathFollowing = false)
+    {
+        _navigationController = controller;
+        DynamicNavigationEnabled = controller != null && enablePathFollowing;
     }
 
     public void Update(float dt)
@@ -60,7 +114,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
         if (!_initialized)
         {
-            _travelDirection = NormalizeOrFallback(_motor.MovementDirection, Vector3.UnitZ);
+            _travelDirection = NormalizeOrFallback(_motor.MovementDirection, _motor.Forward);
             _waitDuration = RandomWaitTime();
             _targetPosition = _enemy.Body.Position(_physics);
             _initialized = true;
@@ -68,6 +122,21 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
         dt = System.Math.Clamp(dt, 0.0001f, 0.05f);
         Vector3 positionBefore = _enemy.Body.Position(_physics);
+
+        if (DynamicNavigationEnabled && _navigationController != null)
+            _navigationController.Update(dt);
+
+        if (RuntimeMovementOverrideEnabled)
+        {
+            UpdateRuntimeMovement(dt, positionBefore);
+            return;
+        }
+
+        if ((PathFollowingEnabled || DynamicNavigationEnabled) && _pathFollower.HasPath)
+        {
+            UpdatePathFollowing(dt, positionBefore);
+            return;
+        }
 
         if (_state == PatrolState.Idle)
         {
@@ -115,6 +184,89 @@ public sealed class SpiderPatrol : IGizmoDrawable
         CurrentSpeed = _state == PatrolState.Walking ? _motor.CurrentSpeed : 0f;
         UpdateAnimationSpeed();
     }
+
+    private void UpdateRuntimeMovement(float dt, Vector3 positionBefore)
+    {
+        if (_pathFollower.HasPath)
+            _pathFollower.Update(positionBefore, _motor.SurfaceNormal);
+
+        float speed = float.IsFinite(RuntimeMovementSpeed)
+            ? MathF.Max(0f, RuntimeMovementSpeed)
+            : 0f;
+        _motor.Update(dt, RuntimeMovementDirection, speed);
+        _travelDirection = NormalizeOrFallback(_motor.MovementDirection, _motor.Forward);
+        Vector3 positionAfter = _enemy.Body.Position(_physics);
+        if (_pathFollower.HasPath)
+            _pathFollower.Update(positionAfter, _motor.SurfaceNormal);
+
+        _targetPosition = positionAfter + _travelDirection * MathF.Max(0.5f, PatrolRadius);
+        _state = speed > 0.05f ? PatrolState.Walking : PatrolState.Idle;
+        CurrentVelocity = _motor.CurrentVelocity;
+        CurrentSpeed = _motor.CurrentSpeed;
+        UpdateAnimationSpeed();
+    }
+
+    private void UpdatePathFollowing(float dt, Vector3 positionBefore)
+    {
+        _pathFollower.Update(positionBefore, _motor.SurfaceNormal);
+        if (!_pathFollower.HasPath)
+        {
+            BeginIdle(0.1f, 0.25f);
+            _motor.Update(dt, _travelDirection, 0f);
+            CurrentVelocity = _motor.CurrentVelocity;
+            CurrentSpeed = 0f;
+            UpdateAnimationSpeed();
+            return;
+        }
+
+        if (_state != PatrolState.Walking)
+        {
+            _state = PatrolState.Walking;
+            _waitTimer = 0f;
+            _blockedTimer = 0f;
+            PlayWalkAnimation();
+        }
+
+        _targetPosition = _pathFollower.CurrentTargetPosition;
+        Vector3 desiredDirection = _pathFollower.DesiredDirection;
+        bool hasDirection = desiredDirection.LengthSquared() > 0.0001f;
+        float targetDistance = Vector3.Distance(positionBefore, _targetPosition);
+        float stoppingDistance = CurrentSpeed * CurrentSpeed /
+                                 MathF.Max(0.01f, 2f * Deceleration);
+
+        if (!hasDirection)
+        {
+            CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
+        }
+        else if (targetDistance <= stoppingDistance + WaypointStoppingMargin)
+        {
+            CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
+            _travelDirection = desiredDirection;
+        }
+        else
+        {
+            CurrentSpeed = MathF.Min(MoveSpeed, CurrentSpeed + Acceleration * dt);
+            _travelDirection = desiredDirection;
+        }
+
+        _motor.Update(dt, _travelDirection, hasDirection ? CurrentSpeed : 0f);
+        Vector3 positionAfter = _enemy.Body.Position(_physics);
+        _pathFollower.Update(positionAfter, _motor.SurfaceNormal);
+
+        if (_motor.IsBlocked)
+            _blockedTimer += dt;
+        else
+            _blockedTimer = MathF.Max(0f, _blockedTimer - dt * 2f);
+
+        if (_pathFollower.ReachedDestination)
+            BeginIdle(0.1f, 0.25f);
+
+        CurrentVelocity = _motor.CurrentVelocity;
+        CurrentSpeed = _state == PatrolState.Walking ? _motor.CurrentSpeed : 0f;
+        UpdateAnimationSpeed();
+    }
+
+    private const float WaypointStoppingMargin = 0.4f;
 
     private void BeginWalking()
     {
@@ -183,18 +335,20 @@ public sealed class SpiderPatrol : IGizmoDrawable
         out Vector3 forward,
         out Vector3 right)
     {
-        normal = NormalizeOrFallback(normal, Vector3.UnitY);
-        forward = ProjectOnPlane(desiredForward, normal);
-        if (forward.LengthSquared() <= 0.0001f)
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= 0.0001f)
         {
-            forward = ProjectOnPlane(Vector3.UnitZ, normal);
-            if (forward.LengthSquared() <= 0.0001f)
-                forward = ProjectOnPlane(Vector3.UnitX, normal);
+            forward = Vector3.Zero;
+            right = Vector3.Zero;
+            return;
         }
 
-        forward = NormalizeOrFallback(forward, Vector3.UnitZ);
-        right = NormalizeOrFallback(Vector3.Cross(normal, forward), Vector3.UnitX);
-        forward = NormalizeOrFallback(Vector3.Cross(right, normal), forward);
+        forward = NormalizeOrZero(ProjectOnPlane(desiredForward, normal));
+        if (forward.LengthSquared() <= 0.0001f)
+            forward = BuildFallbackTangent(normal, desiredForward);
+
+        right = NormalizeOrZero(Vector3.Cross(forward, normal));
+        forward = NormalizeOrZero(Vector3.Cross(normal, right));
     }
 
     private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
@@ -206,7 +360,35 @@ public sealed class SpiderPatrol : IGizmoDrawable
             return Vector3.Normalize(value);
         if (fallback.LengthSquared() > 0.0001f)
             return Vector3.Normalize(fallback);
-        return Vector3.UnitZ;
+        return Vector3.Zero;
+    }
+
+    private static Vector3 NormalizeOrZero(Vector3 value) =>
+        value.LengthSquared() > 0.0001f ? Vector3.Normalize(value) : Vector3.Zero;
+
+    private static Vector3 BuildFallbackTangent(Vector3 normal, Vector3 preferred)
+    {
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= 0.0001f)
+            return Vector3.Zero;
+
+        Vector3 tangent = NormalizeOrZero(ProjectOnPlane(preferred, normal));
+        if (tangent.LengthSquared() > 0.0001f)
+            return tangent;
+
+        Vector3 reference = Vector3.UnitX;
+        float smallestAlignment = MathF.Abs(Vector3.Dot(normal, reference));
+        Vector3[] candidates = { Vector3.UnitY, Vector3.UnitZ };
+        foreach (Vector3 candidate in candidates)
+        {
+            float alignment = MathF.Abs(Vector3.Dot(normal, candidate));
+            if (alignment >= smallestAlignment)
+                continue;
+            reference = candidate;
+            smallestAlignment = alignment;
+        }
+
+        return NormalizeOrZero(Vector3.Cross(normal, reference));
     }
 
     public void OnDrawGizmos(DebugDrawer drawer)

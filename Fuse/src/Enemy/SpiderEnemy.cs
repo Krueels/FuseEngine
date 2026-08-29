@@ -22,6 +22,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     public float Health { get; set; }
     public float MaxHealth { get; }
     public bool IsDead => Health <= 0f;
+    public SpiderSurfaceMotor? SurfaceMotor => _surfaceMotor;
 
     private readonly AssetManager _assets;
     private Scene.SceneManager? _sceneManager;
@@ -59,6 +60,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     };
 
     public EnemyPatrol? Patrol => null;
+    public SpiderPatrol? NavigationPatrol => _spiderPatrol;
 
     public SpiderEnemy(string id, float maxHealth = 100f, AssetManager? assets = null)
     {
@@ -82,29 +84,27 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         _sceneManager = sceneManager;
         _physics = physics;
 
-        Vector3 initialNormal = NormalizeOrFallback(spawnNormal ?? Vector3.UnitY, Vector3.UnitY);
+        Vector3 initialNormal = NormalizeOrZero(spawnNormal ?? Vector3.Zero);
         Vector3 safeSpawn = spawnPos;
         const float initialClearance = 0.83f;
-        if (spawnNormal.HasValue)
+        if (initialNormal.LengthSquared() > 0.0001f)
         {
             // Spawn outside the selected collider. Starting exactly on a face
             // makes rays beginning at fraction zero return ambiguous normals.
             safeSpawn = spawnPos + initialNormal * initialClearance;
         }
-        else if (sceneManager.Raycast(
-                     spawnPos + Vector3.UnitY * 2f,
-                     -Vector3.UnitY,
-                     10f,
-                     out SceneRaycastHit spawnHit))
+        else if (TryFindInitialSurface(sceneManager, spawnPos, out SceneRaycastHit spawnHit))
         {
-            initialNormal = NormalizeOrFallback(spawnHit.Normal, Vector3.UnitY);
+            initialNormal = NormalizeOrZero(spawnHit.Normal);
             safeSpawn = spawnHit.Position + initialNormal * initialClearance;
         }
 
-        Vector3 initialForward = ProjectOnPlane(Vector3.UnitZ, initialNormal);
+        if (initialNormal.LengthSquared() <= 0.0001f)
+            throw new InvalidOperationException($"Spider '{Id}' could not find a valid spawn surface.");
+
+        Vector3 initialForward = BuildTangent(initialNormal, Vector3.Zero);
         if (initialForward.LengthSquared() <= 0.0001f)
-            initialForward = ProjectOnPlane(Vector3.UnitX, initialNormal);
-        initialForward = NormalizeOrFallback(initialForward, Vector3.UnitZ);
+            throw new InvalidOperationException($"Spider '{Id}' could not build a tangent spawn direction.");
 
         // This kinematic body remains the render/hit proxy. Physical movement
         // is solved by SpiderSurfaceMotor's CharacterVirtual and copied here.
@@ -286,7 +286,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             // The visual model uses the exact same surface anchor selected by
             // patrol. It must never perform a competing wall scan, otherwise
             // the body can adhere to one side while the model leans to another.
-            UpdateSurfaceOrientation(dt, bodyRotation, _spiderPatrol?.SurfaceContact ?? default);
+            UpdateSurfaceOrientation(dt, bodyRotation, _spiderPatrol?.SurfaceNormal ?? Vector3.Zero);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
             Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
@@ -309,14 +309,15 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private void UpdateSurfaceOrientation(
         float dt,
         Quaternion bodyRotation,
-        in SpiderSurfaceContact surfaceContact)
+        Vector3 surfaceNormal)
     {
         Quaternion targetRotation = Quaternion.Identity;
 
-        if (surfaceContact.IsValid)
+        surfaceNormal = NormalizeOrZero(surfaceNormal);
+        if (surfaceNormal.LengthSquared() > 0.0001f)
         {
             Vector3 targetLocalUp = Vector3.Transform(
-                Vector3.Normalize(surfaceContact.Normal),
+                surfaceNormal,
                 Quaternion.Inverse(bodyRotation));
             targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
         }
@@ -327,24 +328,100 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
     private static Quaternion RotationBetween(Vector3 from, Vector3 to)
     {
+        from = NormalizeOrZero(from);
+        to = NormalizeOrZero(to);
+        if (from.LengthSquared() <= 0.0001f || to.LengthSquared() <= 0.0001f)
+            return Quaternion.Identity;
+
         float dot = System.Math.Clamp(Vector3.Dot(from, to), -1f, 1f);
         if (dot > 0.99999f)
             return Quaternion.Identity;
         if (dot < -0.99999f)
-            return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+            return Quaternion.CreateFromAxisAngle(BuildTangent(from, Vector3.Zero), MathF.PI);
         return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(from, to)), MathF.Acos(dot));
+    }
+
+    private static bool TryFindInitialSurface(
+        Scene.SceneManager sceneManager,
+        Vector3 position,
+        out SceneRaycastHit bestHit)
+    {
+        Vector3[] probeDirections =
+        {
+            Vector3.UnitX,
+            -Vector3.UnitX,
+            Vector3.UnitY,
+            -Vector3.UnitY,
+            Vector3.UnitZ,
+            -Vector3.UnitZ
+        };
+
+        bestHit = default;
+        float bestDistance = float.MaxValue;
+        bool found = false;
+        foreach (Vector3 direction in probeDirections)
+        {
+            if (!sceneManager.Raycast(
+                    position,
+                    direction,
+                    10f,
+                    out SceneRaycastHit hit,
+                    collideWithBackFaces: true))
+            {
+                continue;
+            }
+
+            Vector3 normal = NormalizeOrZero(hit.Normal);
+            if (normal.LengthSquared() <= 0.0001f ||
+                Vector3.Dot(normal, -direction) < 0.08f)
+            {
+                continue;
+            }
+
+            if (hit.Distance >= bestDistance)
+                continue;
+
+            bestDistance = hit.Distance;
+            bestHit = hit;
+            found = true;
+        }
+
+        return found;
     }
 
     private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
         value - normal * Vector3.Dot(value, normal);
 
-    private static Vector3 NormalizeOrFallback(Vector3 value, Vector3 fallback)
+    private static Vector3 BuildTangent(Vector3 normal, Vector3 desired)
+    {
+        normal = NormalizeOrZero(normal);
+        if (normal.LengthSquared() <= 0.0001f)
+            return Vector3.Zero;
+
+        Vector3 tangent = NormalizeOrZero(ProjectOnPlane(desired, normal));
+        if (tangent.LengthSquared() > 0.0001f)
+            return tangent;
+
+        Vector3 reference = Vector3.UnitX;
+        float smallestAlignment = MathF.Abs(Vector3.Dot(normal, reference));
+        Vector3[] candidates = { Vector3.UnitY, Vector3.UnitZ };
+        foreach (Vector3 candidate in candidates)
+        {
+            float alignment = MathF.Abs(Vector3.Dot(normal, candidate));
+            if (alignment >= smallestAlignment)
+                continue;
+            reference = candidate;
+            smallestAlignment = alignment;
+        }
+
+        return NormalizeOrZero(Vector3.Cross(normal, reference));
+    }
+
+    private static Vector3 NormalizeOrZero(Vector3 value)
     {
         if (value.LengthSquared() > 0.0001f)
             return Vector3.Normalize(value);
-        if (fallback.LengthSquared() > 0.0001f)
-            return Vector3.Normalize(fallback);
-        return Vector3.UnitY;
+        return Vector3.Zero;
     }
 
     public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)
