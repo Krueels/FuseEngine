@@ -315,11 +315,6 @@ public unsafe class Application : IDisposable
                 _deathScreen?.Update(dt, _player.IsDead);
                 _deathScreen?.Render(_renderer.PostPipeline.HdrColorId, _scrWidth, _scrHeight, (float)now);
 
-                if (_screenshotRequested)
-                {
-                    _screenshotRequested = false;
-                    ScreenshotService.Capture(gl, _scrWidth, _scrHeight);
-                }
 
                 // ImGui & Console Frame
                 _imgui.NewFrame(dt, _scrWidth, _scrHeight);
@@ -329,6 +324,12 @@ public unsafe class Application : IDisposable
                 // Debug Drawer (OrientationGizmo uses ImGui foreground draw list, must run before _imgui.Render)
                 if (_debugDrawer.Enabled)
                     RenderDebug(aspect);
+
+                if (_screenshotRequested)
+                {
+                    _screenshotRequested = false;
+                    ScreenshotService.Capture(gl, _scrWidth, _scrHeight);
+                }
 
                 // HUD Draw
                 _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, _player, _player?.Camera, _scrWidth, _scrHeight);

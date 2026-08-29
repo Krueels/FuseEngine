@@ -13,6 +13,9 @@ namespace Fuse.Enemy;
 public sealed class SpiderPatrol : IGizmoDrawable
 {
     public static bool Enabled = true;
+    public static bool PursuitEnabled { get; private set; }
+
+    private static Vector3 s_pursuitTarget;
 
     private enum PatrolState { Idle, Walking }
 
@@ -39,6 +42,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
     public bool IsBlocked => _motor.IsBlocked;
     public float Clearance => _motor.Clearance;
     public bool IsMovementReady => !_enemy.IsDead && _enemy.Body.IsBuilt;
+    public static Vector3 PursuitTarget => s_pursuitTarget;
 
     [Export] public float PatrolRadius { get; set; } = 20f;
     [Export] public float MoveSpeed { get; set; } = 9.5f;
@@ -59,6 +63,10 @@ public sealed class SpiderPatrol : IGizmoDrawable
         DebugDrawer.Register(this);
     }
 
+    public static void SetPursuitEnabled(bool enabled) => PursuitEnabled = enabled;
+
+    public static void SetPursuitTarget(Vector3 target) => s_pursuitTarget = target;
+
     public void Update(float dt)
     {
         if (!Enabled || _enemy.IsDead || !_enemy.Body.IsBuilt)
@@ -75,7 +83,11 @@ public sealed class SpiderPatrol : IGizmoDrawable
         dt = System.Math.Clamp(dt, 0.0001f, 0.05f);
         Vector3 positionBefore = _enemy.Body.Position(_physics);
 
-        if (_state == PatrolState.Idle)
+        if (PursuitEnabled)
+        {
+            UpdatePursuit(dt, positionBefore);
+        }
+        else if (_state == PatrolState.Idle)
         {
             CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
             _motor.Update(dt, _travelDirection, 0f);
@@ -120,6 +132,26 @@ public sealed class SpiderPatrol : IGizmoDrawable
         CurrentVelocity = _motor.CurrentVelocity;
         CurrentSpeed = _state == PatrolState.Walking ? _motor.CurrentSpeed : 0f;
         UpdateAnimationSpeed();
+    }
+
+    private void UpdatePursuit(float dt, Vector3 currentPosition)
+    {
+        Vector3 normal = NormalizeOrZero(_motor.SurfaceNormal);
+        Vector3 directionToTarget = PursuitTarget - currentPosition;
+        Vector3 surfaceDirection = NormalizeOrZero(ProjectOnPlane(directionToTarget, normal));
+
+        if (surfaceDirection.LengthSquared() <= 0.0001f)
+        {
+            _state = PatrolState.Idle;
+            CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
+            _motor.Update(dt, _travelDirection, 0f);
+            return;
+        }
+
+        _travelDirection = surfaceDirection;
+        _state = PatrolState.Walking;
+        CurrentSpeed = MathF.Min(MoveSpeed, CurrentSpeed + Acceleration * dt);
+        _motor.Update(dt, _travelDirection, CurrentSpeed);
     }
 
     private void BeginWalking()

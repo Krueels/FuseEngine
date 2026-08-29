@@ -51,6 +51,9 @@ public sealed class EnemySystem : IDisposable
 
     public void Update(float dt)
     {
+        if (SpiderPatrol.PursuitEnabled && _player != null && !_player.IsDead)
+            SpiderPatrol.SetPursuitTarget(_player.Position);
+
         for (int i = _enemies.Count - 1; i >= 0; i--)
         {
             var e = _enemies[i];

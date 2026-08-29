@@ -280,12 +280,18 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             Vector3 bodyPosition = Body.Position(physics) + Entity.ModelOffset;
             Quaternion bodyRotation = Body.Rotation(physics);
             Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
+            Vector3 movementForward = _surfaceMotor?.MovementDirection ?? forward;
             Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
 
-            // The visual model uses the exact same surface anchor selected by
-            // patrol. It must never perform a competing wall scan, otherwise
-            // the body can adhere to one side while the model leans to another.
-            UpdateSurfaceOrientation(dt, bodyRotation, _spiderPatrol?.SurfaceNormal ?? Vector3.Zero);
+            // Only the visual model is adjusted here. The physical body,
+            // motor and leg solver keep their existing responsibilities.
+            UpdateSurfaceOrientation(
+                dt,
+                bodyRotation,
+                bodyPosition,
+                movementForward,
+                _spiderPatrol?.CurrentVelocity ?? Vector3.Zero,
+                _spiderPatrol?.SurfaceNormal ?? Vector3.Zero);
             Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
 
             Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
@@ -308,21 +314,160 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private void UpdateSurfaceOrientation(
         float dt,
         Quaternion bodyRotation,
+        Vector3 bodyPosition,
+        Vector3 bodyForward,
+        Vector3 bodyVelocity,
         Vector3 surfaceNormal)
     {
-        Quaternion targetRotation = Quaternion.Identity;
-
         surfaceNormal = NormalizeOrZero(surfaceNormal);
-        if (surfaceNormal.LengthSquared() > 0.0001f)
+        if (surfaceNormal.LengthSquared() <= 0.0001f)
         {
-            Vector3 targetLocalUp = Vector3.Transform(
-                surfaceNormal,
-                Quaternion.Inverse(bodyRotation));
-            targetRotation = RotationBetween(Vector3.UnitY, targetLocalUp);
+            float resetBlend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
+            Entity.ModelRotation = Quaternion.Normalize(
+                Quaternion.Slerp(Entity.ModelRotation, Quaternion.Identity, resetBlend));
+            return;
         }
+
+        bodyForward = NormalizeOrZero(bodyForward);
+        Vector3 surfaceForward = NormalizeOrZero(ProjectOnPlane(bodyForward, surfaceNormal));
+        if (surfaceForward.LengthSquared() <= 0.0001f)
+            surfaceForward = NormalizeOrZero(ProjectOnPlane(bodyVelocity, surfaceNormal));
+        if (surfaceForward.LengthSquared() <= 0.0001f)
+            surfaceForward = BuildTangent(surfaceNormal, bodyForward);
+
+        Vector3 targetWorldUp = surfaceNormal;
+        if (TryFindNearbyObstacle(
+                bodyPosition,
+                surfaceForward,
+                surfaceNormal,
+                out SceneRaycastHit obstacle,
+                out Vector3 probeDirection))
+        {
+            Vector3 awayFromObstacle = NormalizeOrZero(ProjectOnPlane(obstacle.Normal, surfaceNormal));
+            if (awayFromObstacle.LengthSquared() <= 0.0001f)
+                awayFromObstacle = NormalizeOrZero(ProjectOnPlane(-probeDirection, surfaceNormal));
+
+            if (awayFromObstacle.LengthSquared() > 0.0001f)
+            {
+                float range = MathF.Max(0.01f, SurfaceLeanStartDistance - SurfaceLeanFullDistance);
+                float proximity = System.Math.Clamp(
+                    (SurfaceLeanStartDistance - obstacle.Distance) / range,
+                    0f,
+                    1f);
+                proximity = proximity * proximity * (3f - 2f * proximity);
+
+                float angle = MaxSurfaceLeanRadians * proximity;
+                targetWorldUp = NormalizeOrZero(
+                    surfaceNormal * MathF.Cos(angle) + awayFromObstacle * MathF.Sin(angle));
+            }
+        }
+
+        // Re-anchor visual forward to locomotion every frame. Reusing the
+        // previous visual rotation here accumulates yaw while the body leans.
+        Vector3 targetWorldForward = NormalizeOrZero(ProjectOnPlane(surfaceForward, targetWorldUp));
+        if (targetWorldForward.LengthSquared() <= 0.0001f)
+            targetWorldForward = NormalizeOrZero(ProjectOnPlane(bodyForward, targetWorldUp));
+        if (targetWorldForward.LengthSquared() <= 0.0001f)
+            targetWorldForward = BuildTangent(targetWorldUp, surfaceForward);
+
+        Quaternion inverseBodyRotation = Quaternion.Inverse(bodyRotation);
+        Vector3 targetLocalUp = Vector3.Transform(targetWorldUp, inverseBodyRotation);
+        Vector3 targetLocalForward = Vector3.Transform(targetWorldForward, inverseBodyRotation);
+        Quaternion targetRotation = BuildSurfaceRotation(targetLocalUp, targetLocalForward);
 
         float blend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
         Entity.ModelRotation = Quaternion.Normalize(Quaternion.Slerp(Entity.ModelRotation, targetRotation, blend));
+    }
+
+    private bool TryFindNearbyObstacle(
+        Vector3 origin,
+        Vector3 surfaceForward,
+        Vector3 surfaceNormal,
+        out SceneRaycastHit bestHit,
+        out Vector3 bestDirection)
+    {
+        bestHit = default;
+        bestDirection = Vector3.Zero;
+
+        if (_sceneManager == null)
+            return false;
+
+        Vector3 surfaceRight = NormalizeOrZero(Vector3.Cross(surfaceForward, surfaceNormal));
+        if (surfaceRight.LengthSquared() <= 0.0001f)
+            return false;
+
+        float bestDistance = float.MaxValue;
+        TryProbeObstacle(origin, surfaceForward, ref bestHit, ref bestDirection, ref bestDistance);
+        TryProbeObstacle(origin, -surfaceForward, ref bestHit, ref bestDirection, ref bestDistance);
+        TryProbeObstacle(origin, surfaceRight, ref bestHit, ref bestDirection, ref bestDistance);
+        TryProbeObstacle(origin, -surfaceRight, ref bestHit, ref bestDirection, ref bestDistance);
+
+        return bestDirection.LengthSquared() > 0.0001f;
+    }
+
+    private void TryProbeObstacle(
+        Vector3 origin,
+        Vector3 direction,
+        ref SceneRaycastHit bestHit,
+        ref Vector3 bestDirection,
+        ref float bestDistance)
+    {
+        if (_sceneManager == null ||
+            !_sceneManager.Raycast(
+                origin,
+                direction,
+                SurfaceProbeDistance,
+                out SceneRaycastHit hit,
+                Body.Native,
+                collideWithBackFaces: true))
+        {
+            return;
+        }
+
+        Vector3 normal = NormalizeOrZero(hit.Normal);
+        if (normal.LengthSquared() <= 0.0001f ||
+            !float.IsFinite(hit.Distance) ||
+            hit.Distance < 0f ||
+            Vector3.Dot(normal, -direction) < 0.08f ||
+            hit.Distance >= bestDistance)
+        {
+            return;
+        }
+
+        bestHit = hit;
+        bestDirection = direction;
+        bestDistance = hit.Distance;
+    }
+
+    private static Quaternion BuildSurfaceRotation(Vector3 up, Vector3 forward)
+    {
+        up = NormalizeOrZero(up);
+        if (up.LengthSquared() <= 0.0001f)
+            return Quaternion.Identity;
+
+        forward = NormalizeOrZero(ProjectOnPlane(forward, up));
+        if (forward.LengthSquared() <= 0.0001f)
+            forward = BuildTangent(up, Vector3.Zero);
+        if (forward.LengthSquared() <= 0.0001f)
+            return Quaternion.Identity;
+
+        Vector3 right = NormalizeOrZero(Vector3.Cross(forward, up));
+        if (right.LengthSquared() <= 0.0001f)
+            return Quaternion.Identity;
+
+        forward = NormalizeOrZero(Vector3.Cross(up, right));
+        if (forward.LengthSquared() <= 0.0001f)
+            return Quaternion.Identity;
+
+        // Keep the same right-handed convention used by the existing
+        // surface motor: local +Y maps to up and local +Z maps to forward.
+        Vector3 matrixRight = -right;
+        Matrix4x4 rotation = new(
+            matrixRight.X, matrixRight.Y, matrixRight.Z, 0f,
+            up.X, up.Y, up.Z, 0f,
+            forward.X, forward.Y, forward.Z, 0f,
+            0f, 0f, 0f, 1f);
+        return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(rotation));
     }
 
     private static Quaternion RotationBetween(Vector3 from, Vector3 to)

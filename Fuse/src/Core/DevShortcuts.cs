@@ -32,6 +32,14 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.F2))
             screenshotRequested = true;
 
+        // F3: make every spider point its movement direction toward the player.
+        if (Input.Input.KeyPressed(KeyCodes.F3))
+        {
+            SpiderPatrol.SetPursuitEnabled(!SpiderPatrol.PursuitEnabled);
+            Logger.Info($"[DevShortcuts] Spider pursuit {(SpiderPatrol.PursuitEnabled ? "ON" : "OFF")}");
+            GameNotify.Info($"Spider pursuit {(SpiderPatrol.PursuitEnabled ? "ON" : "OFF")}");
+        }
+
         if (Input.Input.KeyPressed(KeyCodes.F4))
             renderer.ReloadPostProcessShader();
 
