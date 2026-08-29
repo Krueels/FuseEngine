@@ -624,6 +624,30 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             previousPartId = actualPartId;
         }
 
+        int tailNodeIndex = FindNodeByName("tail");
+        int tailEndNodeIndex = FindNodeByName("tail_end");
+
+        if ((uint)tailNodeIndex < (uint)skeleton.Nodes.Length &&
+            (uint)tailEndNodeIndex < (uint)skeleton.Nodes.Length)
+        {
+            string previousPartId = "Body";
+
+            AddChainSegment(
+                "Tail.tail",
+                tailNodeIndex,
+                tailEndNodeIndex,
+                0.40f,
+                0.20f,
+                0.55f,
+                0.16f,
+                ref previousPartId);
+
+            Logger.Info(
+                $"[SpiderEnemy] Ragdoll tail: " +
+                $"{skeleton.Nodes[tailNodeIndex].Name} -> " +
+                skeleton.Nodes[tailEndNodeIndex].Name);
+        }
+
         for (int leg = 0; leg < _legs.Length; leg++)
         {
             LegData data = _legs[leg];
