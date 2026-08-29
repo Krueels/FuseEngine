@@ -213,7 +213,11 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             safeSpawn,
             initialNormal,
             initialForward);
-        _spiderPatrol = new SpiderPatrol(this, physics, _surfaceMotor);
+        _spiderPatrol = new SpiderPatrol(
+            this,
+            physics,
+            _surfaceMotor,
+            _surfaceSolver!);
         Debug.DebugDrawer.Register(this);
         _initialized = true;
     }

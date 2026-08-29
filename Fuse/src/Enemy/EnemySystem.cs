@@ -18,6 +18,7 @@ public sealed class EnemySystem : IDisposable
     private readonly List<SpiderEnemy> _spiders = new();
     private readonly Dictionary<BodyID, SpiderEnemy> _spiderDamageBodies = new();
     private readonly HashSet<BodyID> _spiderMovementBodiesForRaycast = new();
+    private readonly SpiderTargetSurfaceResolver _spiderTargetSurfaceResolver;
     private Player.Player? _player;
     private float _contactDamageCooldown;
 
@@ -26,6 +27,7 @@ public sealed class EnemySystem : IDisposable
         _physics = physics;
         _sceneManager = sceneManager;
         _assets = assets;
+        _spiderTargetSurfaceResolver = new SpiderTargetSurfaceResolver(sceneManager);
     }
 
     public void SetPlayer(Player.Player player) => _player = player;
@@ -55,7 +57,29 @@ public sealed class EnemySystem : IDisposable
     public void Update(float dt)
     {
         if (SpiderPatrol.PursuitEnabled && _player != null && !_player.IsDead)
+        {
             SpiderPatrol.SetPursuitTarget(_player.Position);
+
+            Vector3 preferredNormal = _player.NativeCharacter.GroundNormal;
+            if (_spiderTargetSurfaceResolver.TryResolve(
+                    _player.Position,
+                    preferredNormal,
+                    8f,
+                    out SpiderTargetSurface targetSurface))
+            {
+                SpiderPatrol.SetPursuitTargetSurface(
+                    targetSurface.Point,
+                    targetSurface.Normal);
+            }
+            else
+            {
+                SpiderPatrol.ClearPursuitTargetSurface();
+            }
+        }
+        else
+        {
+            SpiderPatrol.ClearPursuitTargetSurface();
+        }
 
         for (int i = _enemies.Count - 1; i >= 0; i--)
         {

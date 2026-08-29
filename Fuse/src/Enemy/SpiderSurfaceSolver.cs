@@ -233,6 +233,117 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     }
 
     /// <summary>
+    /// Reconfirms a transition contact from the target face's own normal
+    /// space. The original transition hit can lie exactly on an edge, where a
+    /// probe from the body alternates between two faces. Moving the probe away
+    /// from the face by the body clearance and casting back makes the target
+    /// face deterministic. Small tangent samples provide a stable fallback
+    /// when the original hit is on a sharp mesh edge.
+    /// </summary>
+    public bool TryConfirmTransitionContact(
+        Vector3 bodyCenter,
+        in SpiderSurfaceContact proposedContact,
+        Vector3 currentNormal,
+        Vector3 movementDirection,
+        float clearance,
+        BodyID selfBody,
+        out SpiderSurfaceContact contact)
+    {
+        contact = default;
+        if (!proposedContact.IsValid)
+            return false;
+
+        currentNormal = NormalizeOrZero(currentNormal);
+        Vector3 targetNormal = NormalizeOrZero(proposedContact.Normal);
+        if (currentNormal.LengthSquared() <= Epsilon * Epsilon ||
+            targetNormal.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return false;
+        }
+
+        float surfaceAlignment = Vector3.Dot(currentNormal, targetNormal);
+        if (surfaceAlignment >= 0.82f || surfaceAlignment <= -0.42f)
+            return false;
+
+        SpiderSurfaceContact refreshed = Refresh(proposedContact);
+        if (!refreshed.IsValid)
+            return false;
+
+        targetNormal = NormalizeOrZero(refreshed.Normal);
+        if (targetNormal.LengthSquared() <= Epsilon * Epsilon)
+            return false;
+
+        Vector3 faceForward = NormalizeOrZero(
+            ProjectOnPlane(movementDirection, targetNormal));
+        if (faceForward.LengthSquared() <= Epsilon * Epsilon)
+            faceForward = BuildFallbackTangent(targetNormal);
+        Vector3 faceRight = NormalizeOrZero(
+            Vector3.Cross(faceForward, targetNormal));
+        if (faceForward.LengthSquared() <= Epsilon * Epsilon ||
+            faceRight.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return false;
+        }
+
+        clearance = MathF.Max(0.01f, clearance);
+        float normalOffset = MathF.Max(0.15f, clearance * 0.30f);
+        float tangentSpread = MathF.Max(0.10f, clearance * 0.35f);
+        Vector3[] tangentOffsets =
+        {
+            Vector3.Zero,
+            faceForward * tangentSpread,
+            -faceForward * tangentSpread,
+            faceRight * tangentSpread,
+            -faceRight * tangentSpread
+        };
+
+        float bestScore = float.MaxValue;
+        foreach (Vector3 tangentOffset in tangentOffsets)
+        {
+            Vector3 samplePoint = refreshed.Point + tangentOffset;
+            Vector3 origin = samplePoint +
+                             targetNormal * (clearance + normalOffset);
+            float castDistance = clearance + normalOffset + 0.25f;
+            if (!TryProbeContact(
+                    origin,
+                    -targetNormal,
+                    castDistance,
+                    selfBody,
+                    out SpiderSurfaceContact candidate,
+                    out _))
+            {
+                continue;
+            }
+
+            Vector3 candidateNormal = NormalizeOrZero(candidate.Normal);
+            float alignment = Vector3.Dot(candidateNormal, targetNormal);
+            if (candidateNormal.LengthSquared() <= Epsilon * Epsilon ||
+                alignment < 0.86f)
+            {
+                continue;
+            }
+
+            float pointDeviation = Vector3.DistanceSquared(
+                candidate.Point,
+                refreshed.Point);
+            float score = (1f - alignment) * 8f +
+                          tangentOffset.LengthSquared() * 0.35f +
+                          pointDeviation * 0.05f;
+            if (score >= bestScore)
+                continue;
+
+            bestScore = score;
+            contact = candidate;
+        }
+
+        if (!contact.IsValid)
+            return false;
+
+        _lastBodyContact = contact;
+        return true;
+    }
+
+    /// <summary>
     /// Acquires a nearby surface using a local frame. This is used only for
     /// spawn/recovery; normal walking stays locked to the current support or an
     /// explicitly detected adjacent face.
@@ -583,6 +694,9 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             ? Vector3.Normalize(value)
             : Vector3.Zero;
     }
+
+    private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
+        value - normal * Vector3.Dot(value, normal);
 
     public void OnDrawGizmos(DebugDrawer drawer)
     {

@@ -20,7 +20,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private const float TransitionLookAhead = 0.38f;
     private const float TransitionMinDuration = 0.12f;
     private const float TransitionMaxDuration = 0.75f;
-    private const float TransitionCooldownDuration = 0.20f;
+    private const float TransitionCooldownDuration = 1.00f;
     private const float TransitionSupportAlignment = 0.86f;
     private const float TransitionCompletionAlignment = 0.96f;
     private const int TransitionStableFrameCount = 3;
@@ -54,6 +54,10 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private float _transitionCooldown;
     private int _transitionStableFrames;
     private bool _transitionActive;
+    private Vector3 _transitionConstraintNormal;
+    private bool _hasTransitionConstraint;
+    private SpiderSurfaceContact _transitionGuide;
+    private bool _hasTransitionGuide;
     private bool _disposed;
 
     public CharacterVirtual Character { get; }
@@ -70,7 +74,46 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     public bool HasSurface => _surfaceContact.IsValid && _lostSurfaceTime <= SurfaceLostGrace;
     public bool IsTransitioning => _transitionActive;
     public Vector3 TransitionTargetNormal => _transitionTargetNormal;
+    public float TransitionLockRemaining => _transitionCooldown;
     public float Clearance { get; }
+
+    /// <summary>
+    /// Restricts the next surface transition to the surface selected by the
+    /// pursuit planner. This prevents a corner probe from choosing a different
+    /// adjacent wall than the active waypoint.
+    /// </summary>
+    public void SetTransitionConstraint(Vector3 surfaceNormal)
+    {
+        surfaceNormal = NormalizeOrZero(surfaceNormal);
+        _transitionConstraintNormal = surfaceNormal;
+        _hasTransitionConstraint =
+            surfaceNormal.LengthSquared() > Epsilon * Epsilon;
+    }
+
+    public void ClearTransitionConstraint()
+    {
+        _transitionConstraintNormal = Vector3.Zero;
+        _hasTransitionConstraint = false;
+        ClearTransitionGuide();
+    }
+
+    /// <summary>
+    /// Supplies the contact already validated by the local pursuit planner.
+    /// The motor still uses its own collision sweep for movement, but can use
+    /// this contact when the instantaneous corner probe sees the old face
+    /// instead of rediscovering the same transition every frame.
+    /// </summary>
+    public void SetTransitionGuide(in SpiderSurfaceContact contact)
+    {
+        _transitionGuide = contact;
+        _hasTransitionGuide = contact.IsValid;
+    }
+
+    public void ClearTransitionGuide()
+    {
+        _transitionGuide = default;
+        _hasTransitionGuide = false;
+    }
 
     /// <summary>
     /// Resets only transient locomotion state for a runtime diagnostic. It is
@@ -107,6 +150,10 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _transitionCooldown = 0f;
         _transitionStableFrames = 0;
         _transitionActive = false;
+        _transitionConstraintNormal = Vector3.Zero;
+        _hasTransitionConstraint = false;
+        _transitionGuide = default;
+        _hasTransitionGuide = false;
         _airVelocity = Vector3.Zero;
         _requestedVelocity = Vector3.Zero;
         CurrentVelocity = Vector3.Zero;
@@ -210,6 +257,11 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         dt = System.Math.Clamp(dt, 0.0001f, 0.05f);
         intendedSpeed = MathF.Max(0f, intendedSpeed);
+        // IsBlocked describes the result of this simulation step only. If it
+        // is left latched from a previous collision, pursuit keeps rebuilding
+        // local plans forever even after the body has moved away from the
+        // obstruction.
+        IsBlocked = false;
         _solver.BeginFrame();
 
         _transitionCooldown = MathF.Max(0f, _transitionCooldown - dt);
@@ -273,6 +325,30 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
                     _body.Native,
                     out transitionContact);
 
+            if (hasTransition &&
+                _hasTransitionConstraint &&
+                Vector3.Dot(
+                    NormalizeOrZero(transitionContact.Normal),
+                    _transitionConstraintNormal) < TransitionSupportAlignment)
+            {
+                hasTransition = false;
+            }
+
+            // When the planner has a nearby confirmed guide, prefer it over
+            // the instantaneous probe result. The latter can hit the old
+            // face at the exact corner and make the target normal oscillate.
+            if (_hasTransitionGuide &&
+                !_transitionActive &&
+                _transitionCooldown <= 0f &&
+                TryGetTransitionFromGuide(
+                    startPosition,
+                    up,
+                    tangent,
+                out transitionContact))
+            {
+                hasTransition = true;
+            }
+
             if (hasTransition)
             {
                 BeginSurfaceTransition(transitionContact, up, ref tangent, dt);
@@ -282,6 +358,17 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             {
                 ApplySurfaceContact(aheadContact, up, ref tangent, dt);
                 up = _surfaceNormal;
+            }
+            else if (_transitionActive)
+            {
+                // A convex edge can leave a short physical gap between the
+                // old support and the new face. During an already-started
+                // transition, requiring supportAhead would stop the motor at
+                // that gap and leave it permanently parked on the corner.
+                // Keep the transported tangent and let the transition
+                // correction velocity bring the capsule onto the target
+                // surface. CharacterVirtual still performs the real collision
+                // sweep, and TransitionMaxDuration bounds this free segment.
             }
             else
             {
@@ -470,6 +557,78 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _desiredSurfaceNormal = nextNormal;
         _surfaceNormal = SmoothSurfaceNormal(previousNormal, nextNormal, dt);
         tangent = BuildTangent(_surfaceNormal, tangent, _surfaceForward);
+    }
+
+    private bool TryGetTransitionFromGuide(
+        Vector3 bodyPosition,
+        Vector3 currentNormal,
+        Vector3 movementDirection,
+        out SpiderSurfaceContact contact)
+    {
+        contact = default;
+        if (!_hasTransitionGuide || !_transitionGuide.IsValid)
+            return false;
+
+        currentNormal = NormalizeOrZero(currentNormal);
+        movementDirection = NormalizeOrZero(
+            ProjectOnPlane(movementDirection, currentNormal));
+        Vector3 targetNormal = NormalizeOrZero(_transitionGuide.Normal);
+        if (currentNormal.LengthSquared() <= Epsilon * Epsilon ||
+            movementDirection.LengthSquared() <= Epsilon * Epsilon ||
+            targetNormal.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return false;
+        }
+
+        float normalAlignment = Vector3.Dot(currentNormal, targetNormal);
+        if (normalAlignment >= 0.82f || normalAlignment <= -0.42f)
+            return false;
+
+        SpiderSurfaceContact refreshed = _solver.Refresh(_transitionGuide);
+        if (!refreshed.IsValid)
+            return false;
+
+        contact = refreshed;
+        targetNormal = NormalizeOrZero(contact.Normal);
+
+        Vector3 targetCenter = contact.Point + targetNormal * Clearance;
+        Vector3 toTarget = targetCenter - bodyPosition;
+        float distance = toTarget.Length();
+        const float maxGuideDistance = 2.25f;
+        if (!float.IsFinite(distance) || distance > maxGuideDistance)
+        {
+            contact = default;
+            return false;
+        }
+
+        if (!_solver.TryConfirmTransitionContact(
+                bodyPosition,
+                contact,
+                currentNormal,
+                movementDirection,
+                Clearance,
+                _body.Native,
+                out SpiderSurfaceContact confirmedContact))
+        {
+            contact = default;
+            return false;
+        }
+
+        contact = confirmedContact;
+        targetNormal = NormalizeOrZero(contact.Normal);
+        targetCenter = contact.Point + targetNormal * Clearance;
+        toTarget = targetCenter - bodyPosition;
+
+        Vector3 approachDirection = NormalizeOrZero(
+            ProjectOnPlane(toTarget, currentNormal));
+        if (approachDirection.LengthSquared() <= Epsilon * Epsilon ||
+            Vector3.Dot(approachDirection, movementDirection) < 0.10f)
+        {
+            contact = default;
+            return false;
+        }
+
+        return contact.IsValid;
     }
 
     private void UpdatePostMoveContact(float dt, ref Vector3 position, Vector3 previousUp)

@@ -16,12 +16,16 @@ public sealed class SpiderPatrol : IGizmoDrawable
     public static bool PursuitEnabled { get; private set; }
 
     private static Vector3 s_pursuitTarget;
+    private static Vector3 s_pursuitTargetSurfacePoint;
+    private static Vector3 s_pursuitTargetSurfaceNormal;
+    private static bool s_hasPursuitTargetSurface;
 
     private enum PatrolState { Idle, Walking }
 
     private readonly SpiderEnemy _enemy;
     private readonly PhysicsWorld _physics;
     private readonly SpiderSurfaceMotor _motor;
+    private readonly SpiderSurfacePursuitPlanner _pursuitPlanner;
     private PatrolState _state = PatrolState.Idle;
     private Vector3 _travelDirection = Vector3.Zero;
     private Vector3 _targetPosition;
@@ -29,6 +33,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
     private float _waitTimer;
     private float _waitDuration;
     private float _blockedTimer;
+    private float _pursuitBlockedTimer;
     private bool _initialized;
 
     public float CurrentSpeed { get; private set; }
@@ -43,6 +48,10 @@ public sealed class SpiderPatrol : IGizmoDrawable
     public float Clearance => _motor.Clearance;
     public bool IsMovementReady => !_enemy.IsDead && _enemy.Body.IsBuilt;
     public static Vector3 PursuitTarget => s_pursuitTarget;
+    public static bool HasPursuitTargetSurface => s_hasPursuitTargetSurface;
+    public static Vector3 PursuitTargetSurfacePoint => s_pursuitTargetSurfacePoint;
+    public static Vector3 PursuitTargetSurfaceNormal => s_pursuitTargetSurfaceNormal;
+    public SpiderSurfacePursuitPlanner PursuitPlanner => _pursuitPlanner;
 
     [Export] public float PatrolRadius { get; set; } = 20f;
     [Export] public float MoveSpeed { get; set; } = 9.5f;
@@ -55,17 +64,46 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
     private static readonly Random s_random = new();
 
-    public SpiderPatrol(SpiderEnemy enemy, PhysicsWorld physics, SpiderSurfaceMotor motor)
+    public SpiderPatrol(
+        SpiderEnemy enemy,
+        PhysicsWorld physics,
+        SpiderSurfaceMotor motor,
+        SpiderSurfaceSolver surfaceSolver)
     {
         _enemy = enemy;
         _physics = physics;
         _motor = motor;
+        _pursuitPlanner = new SpiderSurfacePursuitPlanner(surfaceSolver);
         DebugDrawer.Register(this);
     }
 
     public static void SetPursuitEnabled(bool enabled) => PursuitEnabled = enabled;
 
     public static void SetPursuitTarget(Vector3 target) => s_pursuitTarget = target;
+
+    public static void SetPursuitTargetSurface(
+        Vector3 surfacePoint,
+        Vector3 surfaceNormal)
+    {
+        surfaceNormal = NormalizeOrZero(surfaceNormal);
+        if (surfaceNormal.LengthSquared() <= 0.0001f ||
+            !IsFinite(surfacePoint))
+        {
+            ClearPursuitTargetSurface();
+            return;
+        }
+
+        s_pursuitTargetSurfacePoint = surfacePoint;
+        s_pursuitTargetSurfaceNormal = surfaceNormal;
+        s_hasPursuitTargetSurface = true;
+    }
+
+    public static void ClearPursuitTargetSurface()
+    {
+        s_pursuitTargetSurfacePoint = Vector3.Zero;
+        s_pursuitTargetSurfaceNormal = Vector3.Zero;
+        s_hasPursuitTargetSurface = false;
+    }
 
     public void Update(float dt)
     {
@@ -89,6 +127,8 @@ public sealed class SpiderPatrol : IGizmoDrawable
         }
         else if (_state == PatrolState.Idle)
         {
+            _pursuitPlanner.ClearPlan();
+            _motor.ClearTransitionConstraint();
             CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
             _motor.Update(dt, _travelDirection, 0f);
             _waitTimer += dt;
@@ -98,6 +138,8 @@ public sealed class SpiderPatrol : IGizmoDrawable
         }
         else
         {
+            _pursuitPlanner.ClearPlan();
+            _motor.ClearTransitionConstraint();
             float stoppingDistance = CurrentSpeed * CurrentSpeed / MathF.Max(0.01f, 2f * Deceleration);
             if (_remainingTravel <= stoppingDistance + 0.4f)
                 CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
@@ -137,21 +179,263 @@ public sealed class SpiderPatrol : IGizmoDrawable
     private void UpdatePursuit(float dt, Vector3 currentPosition)
     {
         Vector3 normal = NormalizeOrZero(_motor.SurfaceNormal);
-        Vector3 directionToTarget = PursuitTarget - currentPosition;
-        Vector3 surfaceDirection = NormalizeOrZero(ProjectOnPlane(directionToTarget, normal));
+        Vector3 targetSurfaceNormal = NormalizeOrZero(
+            s_pursuitTargetSurfaceNormal);
+        bool hasTargetSurface =
+            s_hasPursuitTargetSurface &&
+            targetSurfaceNormal.LengthSquared() > 0.0001f;
 
-        if (surfaceDirection.LengthSquared() <= 0.0001f)
+        Vector3 navigationTarget = PursuitTarget;
+        if (hasTargetSurface)
         {
-            _state = PatrolState.Idle;
-            CurrentSpeed = MathF.Max(0f, CurrentSpeed - Deceleration * dt);
-            _motor.Update(dt, _travelDirection, 0f);
+            // Project the player position onto the resolved target surface,
+            // then lift it by this spider's clearance. The planner therefore
+            // receives a position where the spider body can actually exist,
+            // rather than a point inside or above the target geometry.
+            Vector3 targetOnSurface = PursuitTarget -
+                targetSurfaceNormal * Vector3.Dot(
+                    PursuitTarget - s_pursuitTargetSurfacePoint,
+                    targetSurfaceNormal);
+            navigationTarget = targetOnSurface +
+                               targetSurfaceNormal * _motor.Clearance;
+        }
+
+        Vector3 directionToTarget = navigationTarget - currentPosition;
+        _targetPosition = navigationTarget;
+
+        Vector3 surfaceDirection = NormalizeOrZero(
+            ProjectOnPlane(directionToTarget, normal));
+
+        // A local plan only guides the spider to the next surface. Once that
+        // surface is active, its old world-space direction is no longer valid.
+        bool reachedPlannedSurface =
+            !_motor.IsTransitioning &&
+            _pursuitPlanner.IsPlannedSurfaceReached(normal);
+        if (reachedPlannedSurface)
+        {
+            _pursuitPlanner.ClearPlan();
+            // Blocking accumulated while crossing the edge belongs to the old
+            // surface. Carrying it onto the new surface immediately creates a
+            // second, unrelated local plan instead of pursuing the player.
+            _pursuitBlockedTimer = 0f;
+        }
+
+        if (_motor.IsTransitioning)
+        {
+            bool hasPlannedWaypoint =
+                _pursuitPlanner.HasPlan &&
+                _pursuitPlanner.PlannedTransition.IsValid;
+            if (_pursuitPlanner.HasPlan && !hasPlannedWaypoint)
+            {
+                // This was only a waypoint used to traverse the old surface.
+                // The motor has already found a physical edge, so let the
+                // motor finish that edge and choose the next waypoint after
+                // the new surface is stable.
+                _pursuitPlanner.ClearPlan();
+            }
+
+            // Once the motor has crossed the edge, its transported direction
+            // is the source of truth. Re-projecting the planner's world-space
+            // point onto the interpolated normal can point sideways/backwards
+            // at a sharp corner and fight the transition. The planner remains
+            // responsible for selecting the target surface; the motor owns
+            // the continuous motion across that surface change.
+            Vector3 transitionDirection = NormalizeOrZero(
+                ProjectOnPlane(_motor.MovementDirection, normal));
+            bool hasTransitionDirection =
+                transitionDirection.LengthSquared() > 0.0001f;
+            float transitionDistance = float.MaxValue;
+
+            if (!hasTransitionDirection && hasPlannedWaypoint)
+            {
+                // Defensive fallback for a degenerate transported tangent.
+                // This is only used when the motor has no valid direction of
+                // its own; it does not normally steer an active transition.
+                hasTransitionDirection =
+                    _pursuitPlanner.TryGetSteeringDirection(
+                        currentPosition,
+                        normal,
+                        out transitionDirection,
+                        out transitionDistance);
+            }
+
+            _state = PatrolState.Walking;
+            float transitionSpeedLimit = hasTransitionDirection
+                ? MoveSpeed
+                : 0f;
+            UpdateSpeedTowardLimit(dt, transitionSpeedLimit);
+
+            if (hasTransitionDirection)
+                _travelDirection = transitionDirection;
+            SyncTransitionConstraint();
+            _motor.Update(dt, _travelDirection, CurrentSpeed);
+            UpdatePursuitBlockedState(dt);
             return;
         }
 
-        _travelDirection = surfaceDirection;
+        float normalSeparation = normal.LengthSquared() > 0.0001f
+            ? MathF.Abs(Vector3.Dot(directionToTarget, normal))
+            : 0f;
+        float targetOutsideSurfaceDistance = MathF.Max(
+            _motor.Clearance * 1.5f,
+            0.75f);
+        bool targetOutsideCurrentSurface =
+            (hasTargetSurface &&
+             Vector3.Dot(normal, targetSurfaceNormal) < 0.90f) ||
+            normalSeparation > targetOutsideSurfaceDistance;
+        bool directDirectionAvailable =
+            surfaceDirection.LengthSquared() > 0.0001f;
+        bool localPlanRequired =
+            !directDirectionAvailable ||
+            targetOutsideCurrentSurface ||
+            _pursuitBlockedTimer > 0.20f ||
+            _motor.IsBlocked;
+
+        bool hasLocalDirection = _pursuitPlanner.TryGetDirection(
+            dt,
+            currentPosition,
+            normal,
+            _motor.MovementDirection,
+            navigationTarget,
+            _motor.Clearance,
+            _enemy.Body.Native,
+            localPlanRequired,
+            out Vector3 localDirection,
+            targetSurfaceNormal);
+
+        bool usingLocalDirection = false;
+
+        if (directDirectionAvailable &&
+            !targetOutsideCurrentSurface &&
+            _pursuitBlockedTimer <= 0.20f &&
+            !_motor.IsBlocked)
+        {
+            _pursuitPlanner.ClearPlan();
+            _travelDirection = surfaceDirection;
+        }
+        else if (hasLocalDirection)
+        {
+            _travelDirection = localDirection;
+            usingLocalDirection = true;
+        }
+
+        bool canUseDirectDirection =
+            directDirectionAvailable &&
+            !targetOutsideCurrentSurface;
+        bool canMove = _pursuitPlanner.HasPlan
+            ? hasLocalDirection
+            : canUseDirectDirection;
+        if (!canMove)
+        {
+            // Do not invent a random direction when the target is outside the
+            // current surface. Stay attached and let the planner retry after
+            // its cooldown.
+            _state = PatrolState.Walking;
+            CurrentSpeed = MathF.Max(
+                0f,
+                CurrentSpeed - Deceleration * dt);
+            SyncTransitionConstraint();
+            _motor.Update(dt, _travelDirection, 0f);
+            UpdatePursuitBlockedState(dt);
+            return;
+        }
+
+        if (!usingLocalDirection)
+            _travelDirection = surfaceDirection;
         _state = PatrolState.Walking;
-        CurrentSpeed = MathF.Min(MoveSpeed, CurrentSpeed + Acceleration * dt);
+
+        float speedLimit = MoveSpeed;
+        if (usingLocalDirection &&
+            _pursuitPlanner.TryGetSteeringDirection(
+                currentPosition,
+                normal,
+                out Vector3 waypointDirection,
+                out float waypointDistance))
+        {
+            _travelDirection = waypointDirection;
+            speedLimit = CalculateWaypointSpeedLimit(dt, waypointDistance);
+            if (speedLimit <= 0.001f &&
+                _motor.TransitionLockRemaining <= 0f &&
+                _pursuitPlanner.IsOnPlannedSourceSurface(normal))
+            {
+                // The spider is parked at the edge. Once the one-second lock
+                // expires, use a controlled creep so the motor can acquire the
+                // already constrained target surface.
+                speedLimit = MathF.Min(MoveSpeed, 0.65f);
+            }
+        }
+
+        UpdateSpeedTowardLimit(dt, speedLimit);
+        SyncTransitionConstraint();
         _motor.Update(dt, _travelDirection, CurrentSpeed);
+        UpdatePursuitBlockedState(dt);
+    }
+
+    private void UpdatePursuitBlockedState(float dt)
+    {
+        if (_motor.IsBlocked)
+            _pursuitBlockedTimer += dt;
+        else
+            _pursuitBlockedTimer = MathF.Max(
+                0f,
+                _pursuitBlockedTimer - dt * 2f);
+
+        if (!_pursuitPlanner.HasPlan ||
+            _motor.IsTransitioning ||
+            _motor.TransitionLockRemaining > 0f ||
+            _pursuitBlockedTimer < 0.90f)
+        {
+            return;
+        }
+
+        _pursuitPlanner.AbandonPlan();
+        _motor.ClearTransitionConstraint();
+        _pursuitBlockedTimer = 0f;
+        CurrentSpeed = 0f;
+    }
+
+    private void SyncTransitionConstraint()
+    {
+        SpiderSurfaceContact transition =
+            _pursuitPlanner.PlannedTransition;
+        if (_pursuitPlanner.HasPlan && transition.IsValid)
+        {
+            _motor.SetTransitionConstraint(transition.Normal);
+            _motor.SetTransitionGuide(transition);
+        }
+        else
+        {
+            _motor.ClearTransitionConstraint();
+            _motor.ClearTransitionGuide();
+        }
+    }
+
+    private float CalculateWaypointSpeedLimit(float dt, float distance)
+    {
+        if (!float.IsFinite(distance))
+            return 0f;
+
+        float reachDistance = MathF.Max(0.12f, _motor.Clearance * 0.22f);
+        float remainingDistance = MathF.Max(0f, distance - reachDistance);
+        if (remainingDistance <= 0.001f)
+            return 0f;
+
+        float stoppingSpeed = MathF.Sqrt(
+            2f * MathF.Max(0.01f, Deceleration) * remainingDistance);
+        float frameSpeed = remainingDistance / MathF.Max(0.0001f, dt);
+        return MathF.Min(MoveSpeed, MathF.Min(stoppingSpeed, frameSpeed));
+    }
+
+    private void UpdateSpeedTowardLimit(float dt, float speedLimit)
+    {
+        speedLimit = System.Math.Clamp(speedLimit, 0f, MoveSpeed);
+        if (CurrentSpeed < speedLimit)
+            CurrentSpeed = MathF.Min(speedLimit, CurrentSpeed + Acceleration * dt);
+        else
+            CurrentSpeed = MathF.Max(speedLimit, CurrentSpeed - Deceleration * dt);
+
+        // Never allow one simulation step to pass beyond the active waypoint.
+        CurrentSpeed = MathF.Min(CurrentSpeed, speedLimit);
     }
 
     private void BeginWalking()
@@ -251,6 +535,11 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
     private static Vector3 NormalizeOrZero(Vector3 value) =>
         value.LengthSquared() > 0.0001f ? Vector3.Normalize(value) : Vector3.Zero;
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
 
     private static Vector3 BuildFallbackTangent(Vector3 normal, Vector3 preferred)
     {
