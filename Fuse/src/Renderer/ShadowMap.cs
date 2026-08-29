@@ -48,12 +48,27 @@ public unsafe class ShadowMap : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
-    public void BindForWriting(int layer)
+    public void BindForWriting(int layer, bool clear = true)
     {
         _gl.Viewport(0, 0, Width, Height);
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, FBO);
         _gl.FramebufferTextureLayer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, DepthTexture, 0, layer);
-        _gl.Clear(ClearBufferMask.DepthBufferBit);
+        if (clear)
+            _gl.Clear(ClearBufferMask.DepthBufferBit);
+    }
+
+    public void CopyLayerTo(ShadowMap destination, int layer)
+    {
+        if (destination.Width != Width || destination.Height != Height)
+            throw new InvalidOperationException("Shadow map layers must have matching dimensions.");
+
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, FBO);
+        _gl.FramebufferTextureLayer(FramebufferTarget.ReadFramebuffer, FramebufferAttachment.DepthAttachment, DepthTexture, 0, layer);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, destination.FBO);
+        _gl.FramebufferTextureLayer(FramebufferTarget.DrawFramebuffer, FramebufferAttachment.DepthAttachment, destination.DepthTexture, 0, layer);
+        _gl.BlitFramebuffer(0, 0, (int)Width, (int)Height, 0, 0, (int)destination.Width, (int)destination.Height,
+            (uint)ClearBufferMask.DepthBufferBit, GLEnum.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
     public void BindForReading(TextureUnit unit)

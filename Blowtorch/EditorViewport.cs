@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
 using Silk.NET.OpenGL;
@@ -26,6 +25,7 @@ public unsafe class EditorViewport : IDisposable
     private readonly ViewportCamera _camera;
     private readonly Mesh _gridMesh;
     private readonly Fuse.Debug.DebugDrawer _debugDrawer;
+    private readonly EditorLightingSystem _lightingSystem;
     private Vector2 _lastMouse;
     private bool _isOrbiting;
     private bool _isPanning;
@@ -39,6 +39,7 @@ public unsafe class EditorViewport : IDisposable
         _camera = new ViewportCamera { ViewType = viewType };
         _gridMesh = CreateGridMesh(_gl, 10000.0f);
         _debugDrawer = new Fuse.Debug.DebugDrawer(_gl) { Enabled = true };
+        _lightingSystem = new EditorLightingSystem(gl, viewType == CameraViewType.Perspective3D);
         CreateFbo(800, 600);
     }
     public bool ShowHitboxes
@@ -51,6 +52,7 @@ public unsafe class EditorViewport : IDisposable
     public int Width => _width;
     public int Height => _height;
     public ViewportCamera Camera => _camera;
+    public bool ShadowsEnabled { get; set; } = true;
 
     public void CreateFbo(int w, int h)
     {
@@ -109,47 +111,34 @@ public unsafe class EditorViewport : IDisposable
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
 
+        _lightingSystem.Prepare(
+            scene,
+            _camera,
+            (float)_width / _height,
+            ShadowsEnabled && !_camera.IsOrthographic,
+            _camera.IsOrthographic,
+            assetService.ShadowShader,
+            assetService.PointShadowShader);
+
+        // Shadow passes render into their own FBOs. Restore this viewport before
+        // drawing its color image.
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        _gl.Viewport(0, 0, (uint)_width, (uint)_height);
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.Enable(EnableCap.CullFace);
+        _gl.CullFace(GLEnum.Back);
+        _gl.DepthMask(true);
+        _gl.DepthFunc(DepthFunction.Less);
+
         shader.Use();
         shader.SetFloat("uIsViewmodel", 1.0f);
-        var dirLight = scene.Lights.FirstOrDefault(l => l.Enabled && l.Type == LightType.Directional);
-        if (dirLight != null)
-        {
-            shader.SetVec3("uLightDir", -Vector3.Normalize(dirLight.Direction));
-            shader.SetVec3("uLightColor", dirLight.Color * dirLight.Intensity);
-        }
-        else
-        {
-            shader.SetVec3("uLightDir", Vector3.Normalize(new Vector3(1, 2, 1)));
-            shader.SetVec3("uLightColor", Vector3.Zero);
-        }
-        shader.SetFloat("uAmbient", 0.2f);
         shader.SetMat4("uView", view);
         shader.SetMat4("uProj", proj);
-        shader.SetVec3("uCameraPos", _camera.Position);
-
-        var pointLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Point).Take(8).ToList();
-        shader.SetInt("uPointLightCount", pointLights.Count);
-        for (int i = 0; i < pointLights.Count; i++)
-        {
-            var l = pointLights[i];
-            shader.SetVec3($"uPointLights[{i}].position", l.Position);
-            shader.SetVec3($"uPointLights[{i}].color", l.Color * l.Intensity);
-            shader.SetFloat($"uPointLights[{i}].radius", l.Radius);
-            shader.SetInt($"uPointLights[{i}].shadowMapIndex", -1);
-        }
-
-        var spotLights = scene.Lights.Where(l => l.Enabled && l.Type == LightType.Spot).Take(4).ToList();
-        shader.SetInt("uSpotLightCount", spotLights.Count);
-        for (int i = 0; i < spotLights.Count; i++)
-        {
-            var l = spotLights[i];
-            shader.SetVec3($"uSpotLights[{i}].position", l.Position);
-            shader.SetVec3($"uSpotLights[{i}].direction", Vector3.Normalize(l.Direction));
-            shader.SetVec3($"uSpotLights[{i}].color", l.Color * l.Intensity);
-            shader.SetFloat($"uSpotLights[{i}].radius", l.Radius);
-            shader.SetFloat($"uSpotLights[{i}].innerCos", l.InnerCos);
-            shader.SetFloat($"uSpotLights[{i}].outerCos", l.OuterCos);
-        }
+        shader.SetInt("uTexture", 0);
+        shader.SetBool("uIsEmissive", false);
+        shader.SetVec3("uEmissiveColor", Vector3.Zero);
+        shader.SetFloat("uEmissiveStrength", 0.0f);
+        _lightingSystem.BindShadowMaps(shader);
 
         // Draw Grid
         var gridShader = assetService.GridShader;
@@ -200,14 +189,12 @@ public unsafe class EditorViewport : IDisposable
             _gl.Disable(EnableCap.DepthTest);
             _gl.LineWidth(2.0f);
             shader.SetBool("uUseTexture", false);
-            shader.SetFloat("uAmbient", 1.0f);
             shader.SetVec3("uColor", new Vector3(0.8f, 0.8f, 0.8f));
         }
         else
         {
             _gl.Enable(EnableCap.DepthTest);
             _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
-            shader.SetFloat("uAmbient", 0.2f);
             shader.SetVec3("uColor", Vector3.One);
         }
 
@@ -515,5 +502,6 @@ public unsafe class EditorViewport : IDisposable
         _gl.DeleteTexture(_colorTex);
         _gl.DeleteRenderbuffer(_depthRbo);
         _gridMesh.Dispose();
+        _lightingSystem.Dispose();
     }
 }

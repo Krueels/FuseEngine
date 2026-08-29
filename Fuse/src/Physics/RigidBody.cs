@@ -329,6 +329,8 @@ public class RigidBody
     public Vector3 GetPosition() => _position;
     public Quaternion GetRotation() => _rotation;
     public float Mass => _mass;
+    public bool IsKinematic => _isKinematic;
+    public bool IsDynamic => _isKinematic || _mass > 0.0f;
     public float Friction => _friction;
     public float Restitution => _restitution;
     public Vector3 BoxHalfExtents => _boxHalfExtents;

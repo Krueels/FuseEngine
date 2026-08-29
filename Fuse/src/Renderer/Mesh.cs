@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Silk.NET.OpenGL;
 using Fuse.Core;
+using Fuse.Math;
 
 namespace Fuse.Renderer;
 
@@ -25,15 +26,25 @@ public unsafe class Mesh : IDisposable
 
     public uint Vao => _vao;
     public uint Vbo => _vbo;
-    public uint Ebo => _vbo;
+    public uint Ebo => _ebo;
     public uint IndexCount => _indexCount;
+    public AABB LocalBounds { get; }
+    public BoundingSphere LocalBoundingSphere { get; }
 
     public bool HasLineBuffer => _lineEbo != 0;
 
-    public Mesh(GL gl, Vertex[] vertices, uint[] indices, uint[] lineIndices = null)
+    public Mesh(GL gl, Vertex[] vertices, uint[] indices, uint[]? lineIndices = null)
     {
         _gl = gl;
         _indexCount = (uint)indices.Length;
+
+        Span<Vector3> positions = vertices.Length <= 512
+            ? stackalloc Vector3[vertices.Length]
+            : new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            positions[i] = vertices[i].Position;
+        LocalBounds = AABB.FromPoints(positions);
+        LocalBoundingSphere = BoundingSphere.FromAABB(LocalBounds);
 
         fixed (Vertex* vPtr = vertices)
         fixed (uint* iPtr = indices)

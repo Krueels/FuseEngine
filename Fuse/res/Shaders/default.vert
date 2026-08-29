@@ -8,7 +8,6 @@ out vec3 vWorldPos;
 out vec3 vWorldNormal;
 out vec3 vViewPos;
 
-uniform vec3 uCameraPos;
 uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProj;

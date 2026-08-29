@@ -175,6 +175,13 @@ public unsafe class Shader : IDisposable
         _gl.Uniform1(GetUniformLoc(name), value);
     }
 
+    public void BindUniformBlock(string name, uint bindingPoint)
+    {
+        uint blockIndex = _gl.GetUniformBlockIndex(_id, name);
+        if (blockIndex != uint.MaxValue)
+            _gl.UniformBlockBinding(_id, blockIndex, bindingPoint);
+    }
+
     private readonly Dictionary<string, int> _uniformCache = new();
     public int GetUniformLoc(string name)
     {

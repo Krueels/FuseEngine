@@ -56,6 +56,9 @@ public class EditorSceneService
                     Radius = mapObj.LightRadius,
                     InnerConeAngle = mapObj.LightInnerCone,
                     OuterConeAngle = mapObj.LightOuterCone,
+                    CastShadows = mapObj.LightCastShadows,
+                    ShadowBias = mapObj.LightShadowBias,
+                    Dynamic = mapObj.LightDynamic,
                     Enabled = mapObj.Visible,
                 };
                 _scene.AddLight(light);

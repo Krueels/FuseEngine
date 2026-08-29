@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
+using Fuse.Math;
 using Fuse.Physics;
 using JoltPhysicsSharp;
 
@@ -14,6 +16,19 @@ public class Transform
         Matrix4x4.CreateScale(Scale) *
         Matrix4x4.CreateFromQuaternion(Rotation) *
         Matrix4x4.CreateTranslation(Position);
+}
+
+public enum ShadowCasterMobility
+{
+    Auto,
+    Static,
+    Dynamic
+}
+
+public enum ShadowCasterFilter
+{
+    Static,
+    Dynamic
 }
 
 public class Entity
@@ -46,9 +61,55 @@ public class Entity
     public System.Text.Json.Nodes.JsonObject? MapData { get; set; }
     public Light? AttachedLight { get; set; }
 
+    public bool CastShadows { get; set; } = true;
+    public ShadowCasterMobility ShadowMobility { get; set; } = ShadowCasterMobility.Auto;
+    /// <summary>Extra local-space padding used mainly by animated meshes.</summary>
+    public float ShadowBoundsPadding { get; set; } = 0.35f;
+
     // Emissive material
     public Vector3 EmissiveColor { get; set; } = Vector3.One;
     public float EmissiveStrength { get; set; } = 1.0f;
+
+    public Matrix4x4 RenderMatrix => SkinnedModel == null
+        ? Transform.Matrix
+        : Matrix4x4.CreateScale(Transform.Scale * ModelScale) *
+          Matrix4x4.CreateFromQuaternion(ModelRotation) *
+          Matrix4x4.CreateFromQuaternion(Transform.Rotation) *
+          Matrix4x4.CreateTranslation(Transform.Position + ModelOffset);
+
+    public bool IsDynamicShadowCaster => ShadowMobility switch
+    {
+        ShadowCasterMobility.Static => false,
+        ShadowCasterMobility.Dynamic => true,
+        _ => SkinnedModel != null || (Body?.IsDynamic ?? false)
+    };
+
+    public AABB GetLocalRenderBounds()
+    {
+        var bounds = new AABB();
+        if (SkinnedModel != null)
+        {
+            foreach (var submesh in SkinnedModel.Submeshes)
+            {
+                if (!SkinnedModel.HiddenSubmeshes.Contains(submesh.Name))
+                    bounds.Grow(submesh.Mesh.LocalBounds);
+            }
+            return bounds;
+        }
+
+        return Mesh?.LocalBounds ?? bounds;
+    }
+
+    public AABB GetWorldRenderBounds()
+    {
+        AABB local = GetLocalRenderBounds();
+        if (SkinnedModel != null && ShadowBoundsPadding > 0.0f)
+            local = local.Inflated(ShadowBoundsPadding);
+        return local.Transformed(RenderMatrix);
+    }
+
+    public Fuse.Math.BoundingSphere GetWorldBoundingSphere() =>
+        Fuse.Math.BoundingSphere.FromAABB(GetWorldRenderBounds());
 }
 
 public class Scene
@@ -56,6 +117,12 @@ public class Scene
     private readonly List<Entity> _entities = [];
     private readonly List<Light> _lights = [];
     private readonly Dictionary<BodyID, Entity> _bodyEntityMap = [];
+    private readonly List<Entity> _staticShadowCasters = [];
+    private readonly List<Entity> _dynamicShadowCasters = [];
+
+    public ulong StaticShadowRevision { get; private set; }
+    public IReadOnlyList<Entity> StaticShadowCasters => _staticShadowCasters;
+    public IReadOnlyList<Entity> DynamicShadowCasters => _dynamicShadowCasters;
 
     public IReadOnlyList<Light> Lights => _lights;
 
@@ -102,9 +169,65 @@ public class Scene
         _bodyEntityMap.Clear();
         _entities.Clear();
         _lights.Clear();
+        _staticShadowCasters.Clear();
+        _dynamicShadowCasters.Clear();
+        StaticShadowRevision = 0;
     }
 
     public IReadOnlyList<Entity> Entities => _entities;
+
+    public void PrepareShadowCasters()
+    {
+        _staticShadowCasters.Clear();
+        _dynamicShadowCasters.Clear();
+
+        ulong hash = 1469598103934665603UL;
+        for (int i = 0; i < _entities.Count; i++)
+        {
+            Entity entity = _entities[i];
+            if (!entity.Visible || !entity.CastShadows || entity.IsViewmodel)
+                continue;
+            if (entity.Mesh == null && entity.SkinnedModel == null)
+                continue;
+
+            if (entity.IsDynamicShadowCaster)
+            {
+                _dynamicShadowCasters.Add(entity);
+                continue;
+            }
+
+            _staticShadowCasters.Add(entity);
+            MixHash(ref hash, (uint)RuntimeHelpers.GetHashCode(entity));
+            object geometry = (object?)entity.SkinnedModel ?? (object?)entity.Mesh ?? entity;
+            MixHash(ref hash, (uint)RuntimeHelpers.GetHashCode(geometry));
+            MixHash(ref hash, entity.RenderMatrix);
+            MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(entity.ShadowBoundsPadding));
+        }
+
+        MixHash(ref hash, (uint)_staticShadowCasters.Count);
+        StaticShadowRevision = hash;
+    }
+
+    public IReadOnlyList<Entity> GetShadowCasters(ShadowCasterFilter filter) =>
+        filter == ShadowCasterFilter.Static ? _staticShadowCasters : _dynamicShadowCasters;
+
+    public void RenderShadowCasters(Shader shader, Matrix4x4 cullMatrix, ShadowCasterFilter filter)
+    {
+        var frustum = new ViewFrustum(cullMatrix);
+        IReadOnlyList<Entity> casters = GetShadowCasters(filter);
+
+        for (int i = 0; i < casters.Count; i++)
+        {
+            Entity entity = casters[i];
+            if (entity.Mesh == null || entity.SkinnedModel != null)
+                continue;
+            if (!frustum.Intersects(entity.GetWorldRenderBounds()))
+                continue;
+
+            shader.SetMat4("uModel", entity.RenderMatrix);
+            entity.Mesh.Draw();
+        }
+    }
 
     public void RegisterBody(Entity entity)
     {
@@ -226,48 +349,16 @@ public class Scene
 
     public void Render(Shader shader, Texture defaultTexture, Matrix4x4? cullMatrix = null)
     {
+        ViewFrustum? frustum = cullMatrix.HasValue ? new ViewFrustum(cullMatrix.Value) : null;
+
         // 3. Render all entities
         foreach (var e in _entities)
         {
             if (!e.Visible || e.Mesh == null) continue;
             if (e.SkinnedModel != null) continue; // rendered by the skinned passes
 
-            if (cullMatrix.HasValue)
-            {
-                Vector3 worldPos = e.Transform.Position;
-                Vector4 ndcPos = Vector4.Transform(new Vector4(worldPos, 1.0f), cullMatrix.Value);
-                
-                if (ndcPos.W != 0)
-                {
-                    ndcPos.X /= ndcPos.W;
-                    ndcPos.Y /= ndcPos.W;
-                    ndcPos.Z /= ndcPos.W;
-                }
-                
-                // Conservatively estimate object radius
-                float radius = MathF.Max(e.Transform.Scale.X, MathF.Max(e.Transform.Scale.Y, e.Transform.Scale.Z)) * 2.0f;
-                
-                // Extremely safe minimum radius since we don't have precise AABBs for meshes
-                // Shadows (Orthographic) need a massive radius because tall objects cast very long shadows from outside the immediate view.
-                bool isOrthographic = cullMatrix.Value.M44 > 0.5f;
-                float safeRadius = isOrthographic ? 250.0f : 40.0f;
-                radius = MathF.Max(radius, safeRadius); 
-                
-                // Convert world radius to NDC padding using the magnitude of the matrix columns
-                // This correctly handles any rotation in the view matrix, preventing pX/pY from vanishing at certain angles!
-                float col1Len = MathF.Sqrt(cullMatrix.Value.M11 * cullMatrix.Value.M11 + cullMatrix.Value.M21 * cullMatrix.Value.M21 + cullMatrix.Value.M31 * cullMatrix.Value.M31);
-                float col2Len = MathF.Sqrt(cullMatrix.Value.M12 * cullMatrix.Value.M12 + cullMatrix.Value.M22 * cullMatrix.Value.M22 + cullMatrix.Value.M32 * cullMatrix.Value.M32);
-                float pX = radius * col1Len;
-                float pY = radius * col2Len;
-
-                // Ignore Z culling entirely! Objects far behind the camera can still cast long shadows into our view.
-                // If fully outside the X and Y bounds of the light's view, ignore it!
-                if (ndcPos.X > 1.0f + pX || ndcPos.X < -1.0f - pX ||
-                    ndcPos.Y > 1.0f + pY || ndcPos.Y < -1.0f - pY)
-                {
-                    continue; // Skip rendering!
-                }
-            }
+            if (frustum.HasValue && !frustum.Value.Intersects(e.GetWorldRenderBounds()))
+                continue;
 
             shader.SetMat4("uModel", e.Transform.Matrix);
             shader.SetVec2("uUvScale", e.UvScale);
@@ -293,13 +384,39 @@ public class Scene
             shader.SetBool("uIsEmissive", isEmissive);
             if (isEmissive)
             {
-                Vector3 dominantColor = tex.GetDominantColor();
+                Vector3 dominantColor = tex!.GetDominantColor();
                 shader.SetVec3("uEmissiveColor", dominantColor);
                 shader.SetFloat("uEmissiveStrength", e.EmissiveStrength);
             }
 
             e.Mesh.Draw();
         }
+    }
+
+    private static void MixHash(ref ulong hash, uint value)
+    {
+        hash ^= value;
+        hash *= 1099511628211UL;
+    }
+
+    private static void MixHash(ref ulong hash, Matrix4x4 matrix)
+    {
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M11));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M12));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M13));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M14));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M21));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M22));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M23));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M24));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M31));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M32));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M33));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M34));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M41));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M42));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M43));
+        MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(matrix.M44));
     }
 
     public void UpdateAnimators(float dt)

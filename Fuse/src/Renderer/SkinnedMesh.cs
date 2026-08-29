@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Silk.NET.OpenGL;
 using Fuse.Core;
+using Fuse.Math;
 
 namespace Fuse.Renderer;
 
@@ -25,10 +26,21 @@ public unsafe class SkinnedMesh : IDisposable
     private readonly uint _ebo;
     private readonly uint _indexCount;
 
+    public AABB LocalBounds { get; }
+    public BoundingSphere LocalBoundingSphere { get; }
+
     public SkinnedMesh(GL gl, SkinnedVertex[] vertices, uint[] indices)
     {
         _gl = gl;
         _indexCount = (uint)indices.Length;
+
+        Span<Vector3> positions = vertices.Length <= 512
+            ? stackalloc Vector3[vertices.Length]
+            : new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            positions[i] = vertices[i].Position;
+        LocalBounds = AABB.FromPoints(positions);
+        LocalBoundingSphere = BoundingSphere.FromAABB(LocalBounds);
 
         fixed (SkinnedVertex* vPtr = vertices)
         fixed (uint* iPtr = indices)

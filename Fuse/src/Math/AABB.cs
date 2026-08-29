@@ -29,6 +29,19 @@ public struct AABB
     public readonly Vector3 GetBoundsMin() => _boundsMin;
     public readonly Vector3 GetBoundsMax() => _boundsMax;
     public readonly Vector3 GetExtents() => _extents;
+    public readonly Vector3 GetHalfExtents() => _extents * 0.5f;
+    public readonly bool IsValid =>
+        _boundsMin.X <= _boundsMax.X &&
+        _boundsMin.Y <= _boundsMax.Y &&
+        _boundsMin.Z <= _boundsMax.Z;
+
+    public static AABB FromPoints(ReadOnlySpan<Vector3> points)
+    {
+        var bounds = new AABB();
+        for (int i = 0; i < points.Length; i++)
+            bounds.Grow(points[i]);
+        return bounds;
+    }
 
     public void Grow(AABB b)
     {
@@ -85,9 +98,74 @@ public struct AABB
     public readonly Vector3 NearestPointTo(Vector3 worldPosition) =>
         Vector3.Clamp(worldPosition, _boundsMin, _boundsMax);
 
+    public readonly AABB Inflated(float amount)
+    {
+        if (!IsValid) return this;
+        Vector3 padding = new(MathF.Max(0.0f, amount));
+        return new AABB(_boundsMin - padding, _boundsMax + padding);
+    }
+
+    public readonly AABB Transformed(Matrix4x4 matrix)
+    {
+        if (!IsValid) return this;
+
+        Span<Vector3> corners = stackalloc Vector3[8];
+        GetCorners(corners);
+
+        var result = new AABB();
+        for (int i = 0; i < corners.Length; i++)
+            result.Grow(Vector3.Transform(corners[i], matrix));
+        return result;
+    }
+
+    public readonly void GetCorners(Span<Vector3> destination)
+    {
+        if (destination.Length < 8)
+            throw new ArgumentException("AABB corner destination must contain at least 8 elements.", nameof(destination));
+
+        destination[0] = new Vector3(_boundsMin.X, _boundsMin.Y, _boundsMin.Z);
+        destination[1] = new Vector3(_boundsMax.X, _boundsMin.Y, _boundsMin.Z);
+        destination[2] = new Vector3(_boundsMin.X, _boundsMax.Y, _boundsMin.Z);
+        destination[3] = new Vector3(_boundsMax.X, _boundsMax.Y, _boundsMin.Z);
+        destination[4] = new Vector3(_boundsMin.X, _boundsMin.Y, _boundsMax.Z);
+        destination[5] = new Vector3(_boundsMax.X, _boundsMin.Y, _boundsMax.Z);
+        destination[6] = new Vector3(_boundsMin.X, _boundsMax.Y, _boundsMax.Z);
+        destination[7] = new Vector3(_boundsMax.X, _boundsMax.Y, _boundsMax.Z);
+    }
+
     private void CalculateCenterAndExtents()
     {
         _center = (_boundsMin + _boundsMax) * 0.5f;
         _extents = _boundsMax - _boundsMin;
+    }
+}
+
+public readonly struct BoundingSphere
+{
+    public BoundingSphere(Vector3 center, float radius)
+    {
+        Center = center;
+        Radius = MathF.Max(0.0f, radius);
+    }
+
+    public Vector3 Center { get; }
+    public float Radius { get; }
+
+    public static BoundingSphere FromAABB(AABB bounds)
+    {
+        if (!bounds.IsValid)
+            return new BoundingSphere(Vector3.Zero, 0.0f);
+
+        Vector3 center = bounds.GetCenter();
+        return new BoundingSphere(center, Vector3.Distance(center, bounds.GetBoundsMax()));
+    }
+
+    public BoundingSphere Transformed(Matrix4x4 matrix)
+    {
+        Vector3 transformedCenter = Vector3.Transform(Center, matrix);
+        float scaleX = new Vector3(matrix.M11, matrix.M12, matrix.M13).Length();
+        float scaleY = new Vector3(matrix.M21, matrix.M22, matrix.M23).Length();
+        float scaleZ = new Vector3(matrix.M31, matrix.M32, matrix.M33).Length();
+        return new BoundingSphere(transformedCenter, Radius * MathF.Max(scaleX, MathF.Max(scaleY, scaleZ)));
     }
 }

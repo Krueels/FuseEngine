@@ -18,6 +18,8 @@ public class EditorAssetService : IDisposable
     private readonly AssetManager _assets;
     private Shader _shader = null!;
     private Shader _gridShader = null!;
+    private Shader _shadowShader = null!;
+    private Shader _pointShadowShader = null!;
     private uint _defaultTex;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, Mesh?> _meshCache = [];
@@ -32,6 +34,8 @@ public class EditorAssetService : IDisposable
     public string FuseResPath => _fuseResPath;
     public Shader DefaultShader => _shader;
     public Shader GridShader => _gridShader;
+    public Shader ShadowShader => _shadowShader;
+    public Shader PointShadowShader => _pointShadowShader;
     public uint DefaultTexture => _defaultTex;
     public AssetManager AssetManager => _assets;
 
@@ -47,6 +51,16 @@ public class EditorAssetService : IDisposable
         _gridShader = _assets.GetShader(
             Path.Combine(_fuseResPath, "Shaders", "grid.vert"),
             Path.Combine(_fuseResPath, "Shaders", "grid.frag"));
+
+        _shadowShader = _assets.GetShader(
+            Path.Combine(_fuseResPath, "Shaders", "shadow.vert"),
+            Path.Combine(_fuseResPath, "Shaders", "shadow.frag"));
+
+        _pointShadowShader = _assets.GetShader(
+            Path.Combine(_fuseResPath, "Shaders", "point_shadow.vert"),
+            Path.Combine(_fuseResPath, "Shaders", "point_shadow.frag"));
+
+        _shader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
 
         string crateTexPath = Path.Combine(_fuseResPath, "Textures", "dev_measurecrate01.bmp");
         if (File.Exists(crateTexPath))

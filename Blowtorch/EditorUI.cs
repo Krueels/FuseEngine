@@ -156,7 +156,7 @@ public unsafe class EditorUI
 
 
 
-        DrawMenuBar(window, sceneService, assetService, history);
+        DrawMenuBar(window, sceneService, assetService, history, viewport3D);
 
         DrawOpenDialog(sceneService, assetService);
         DrawSaveAsDialog(sceneService);
@@ -744,7 +744,12 @@ public unsafe class EditorUI
         }
     }
 
-    private void DrawMenuBar(EditorWindow window, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
+    private void DrawMenuBar(
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport3D)
     {
         if (ImGui.BeginMainMenuBar())
         {
@@ -826,6 +831,9 @@ public unsafe class EditorUI
                 ImGui.MenuItem("Map Objects", "", ref _showMapWindow);
                 ImGui.MenuItem("Raw JSON", "", ref _showJsonWindow);
                 ImGui.MenuItem("Show hitboxes", "", ref _showHitBoxes);
+                ImGui.Separator();
+                if (ImGui.MenuItem("3D Viewport Shadows", "", viewport3D.ShadowsEnabled))
+                    viewport3D.ShadowsEnabled = !viewport3D.ShadowsEnabled;
                 ImGui.EndMenu();
             }
             ImGui.EndMainMenuBar();
