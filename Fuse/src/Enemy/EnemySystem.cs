@@ -16,6 +16,8 @@ public sealed class EnemySystem : IDisposable
     private readonly AssetManager _assets;
     private readonly List<Enemy> _enemies = new();
     private readonly List<SpiderEnemy> _spiders = new();
+    private readonly Dictionary<BodyID, SpiderEnemy> _spiderDamageBodies = new();
+    private readonly HashSet<BodyID> _spiderMovementBodiesForRaycast = new();
     private Player.Player? _player;
     private float _contactDamageCooldown;
 
@@ -46,6 +48,7 @@ public sealed class EnemySystem : IDisposable
         var spider = new SpiderEnemy(id, health, _assets);
         spider.Initialize(_physics, _sceneManager, position, surfaceNormal);
         _spiders.Add(spider);
+        RegisterSpiderDamageBodies(spider);
         return spider;
     }
 
@@ -75,6 +78,7 @@ public sealed class EnemySystem : IDisposable
 
             if (s.IsDead)
             {
+                UnregisterSpiderDamageBodies(s);
                 s.OnDeath(_physics, _sceneManager);
                 s.Update(dt, _physics);
                 
@@ -132,6 +136,22 @@ public sealed class EnemySystem : IDisposable
 
     public bool TryGetEnemy(BodyID bodyId, out IEnemy? enemy)
     {
+        if (_spiderDamageBodies.TryGetValue(
+                bodyId,
+                out SpiderEnemy? damageSpider))
+        {
+            if (!damageSpider.IsDead)
+            {
+                enemy = damageSpider;
+                return true;
+            }
+
+            // A dead spider destroys its live hit proxy on the next update.
+            // Remove stale entries defensively in case a raycast happens in
+            // between those two operations.
+            _spiderDamageBodies.Remove(bodyId);
+        }
+
         var entity = _sceneManager.ActiveScene.GetEntityByBody(bodyId);
         if (entity != null)
         {
@@ -142,6 +162,31 @@ public sealed class EnemySystem : IDisposable
         }
         enemy = null;
         return false;
+    }
+
+    /// <summary>
+    /// A arma deve atingir as cápsulas articuladas do corpo, não a cápsula
+    /// auxiliar do CharacterVirtual. Só exclui a cápsula principal quando a
+    /// aranha realmente possui um proxy de dano ativo.
+    /// </summary>
+    public IReadOnlySet<BodyID> GetSpiderMovementBodiesForDamageRaycast()
+    {
+        _spiderMovementBodiesForRaycast.Clear();
+
+        foreach (SpiderEnemy spider in _spiders)
+        {
+            if (spider.IsDead ||
+                !spider.Body.IsBuilt ||
+                spider.DamageBody == null ||
+                !spider.DamageBody.IsBuilt)
+            {
+                continue;
+            }
+
+            _spiderMovementBodiesForRaycast.Add(spider.Body.Native);
+        }
+
+        return _spiderMovementBodiesForRaycast;
     }
 
     public void DrawDebug(Renderer.MasterRenderer renderer, Camera camera, float aspect)
@@ -197,6 +242,7 @@ public sealed class EnemySystem : IDisposable
         for (int i = _spiders.Count - 1; i >= 0; i--)
         {
             var s = _spiders[i];
+            UnregisterSpiderDamageBodies(s);
 
             if (s.Body.IsBuilt)
             {
@@ -209,6 +255,35 @@ public sealed class EnemySystem : IDisposable
         }
 
         _spiders.Clear();
+        _spiderDamageBodies.Clear();
+    }
+
+    private void RegisterSpiderDamageBodies(SpiderEnemy spider)
+    {
+        SpiderDamageBody? damageBody = spider.DamageBody;
+        if (damageBody == null)
+            return;
+
+        foreach (BodyID bodyId in damageBody.BodyIds)
+        {
+            if (bodyId.IsValid)
+                _spiderDamageBodies[bodyId] = spider;
+        }
+    }
+
+    private void UnregisterSpiderDamageBodies(SpiderEnemy spider)
+    {
+        var staleBodyIds = new List<BodyID>();
+
+        foreach (KeyValuePair<BodyID, SpiderEnemy> entry
+                 in _spiderDamageBodies)
+        {
+            if (ReferenceEquals(entry.Value, spider))
+                staleBodyIds.Add(entry.Key);
+        }
+
+        foreach (BodyID bodyId in staleBodyIds)
+            _spiderDamageBodies.Remove(bodyId);
     }
 
     public void Dispose()

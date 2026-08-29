@@ -272,7 +272,8 @@ private void ClearCurrentMap()
         float maxDistance,
         out SceneRaycastHit hitResult,
         BodyID? excludedBody = null,
-        bool collideWithBackFaces = false)
+        bool collideWithBackFaces = false,
+        IReadOnlySet<BodyID>? excludedBodies = null)
     {
         hitResult = default;
         Vector3 dirNormalized = Vector3.Normalize(direction);
@@ -285,8 +286,12 @@ private void ClearCurrentMap()
         // landing surface. Keeping this optional preserves the normal scene
         // raycast behaviour for every other caller.
         using BodyFilter bodyFilter = excludedBody.HasValue
-            ? new Physics.EnemyBodyFilter(excludedBody.Value)
-            : new Physics.DefaultBodyFilter();
+            ? new Physics.EnemyBodyFilter(
+                excludedBody.Value,
+                excludedBodies)
+            : excludedBodies != null && excludedBodies.Count > 0
+                ? new Physics.EnemyBodyFilter(excludedBodies)
+                : new Physics.DefaultBodyFilter();
 
         RayCastResult hit;
         if (collideWithBackFaces)

@@ -310,7 +310,13 @@ public sealed class AKWeapon : IWeapon
     {
         if (_system?.SceneManager == null) return;
 
-        if (!_system.SceneManager.Raycast(origin, direction, Range, out var hit))
+        if (!_system.SceneManager.Raycast(
+                origin,
+                direction,
+                Range,
+                out var hit,
+                excludedBodies: _system.EnemySystem?
+                    .GetSpiderMovementBodiesForDamageRaycast()))
             return;
 
         // Apply damage to interactable/physics body

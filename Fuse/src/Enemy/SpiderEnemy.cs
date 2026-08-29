@@ -47,6 +47,8 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
     public SpiderSurfaceMotor? SurfaceMotor => _surfaceMotor;
 
+    public SpiderDamageBody? DamageBody => _damageBody;
+
     private readonly AssetManager _assets;
     private Scene.SceneManager? _sceneManager;
     private PhysicsWorld? _physics;
@@ -57,6 +59,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private float _deathRagdollElapsed;
 
     private SpiderDeathBody? _deathBody;
+    private SpiderDamageBody? _damageBody;
 
     private Animation.Animator? _animator;
     // SpiderPatrol owns the ground-safe route and exposes its target/velocity
@@ -167,6 +170,21 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             BuildDeathRagdollDefinition();
 
             _surfaceSolver = new SpiderSurfaceSolver(_sceneManager);
+
+            // Hitboxes articuladas seguem a pose viva, mas são sensores
+            // separados da cápsula usada pelo CharacterVirtual.
+            _damageBody = new SpiderDamageBody(
+                physics,
+                _model.Skeleton,
+                Body.Position(physics) + Entity.ModelOffset,
+                Body.Rotation(physics),
+                Entity.Transform.Scale * Entity.ModelScale,
+                DeathRagdollDefinition);
+
+            // Os probes de chão/parede nunca devem enxergar as próprias
+            // hitboxes como uma superfície navegável.
+            _surfaceSolver.SetIgnoredBodies(_damageBody.BodyIds);
+
             _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver);
             _proceduralWalk.Initialize(_model.Skeleton, _legs);
 
@@ -816,6 +834,25 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
                 Body.Native,
                 _spiderPatrol?.SurfaceContact ?? default);
         }
+
+        if (_damageBody != null &&
+            _model != null &&
+            Body.IsBuilt)
+        {
+            Vector3 proxyOrigin =
+                Body.Position(physics) + Entity.ModelOffset;
+
+            Quaternion proxyRotation =
+                Quaternion.Concatenate(
+                    Entity.ModelRotation,
+                    Body.Rotation(physics));
+
+            _damageBody.SyncFromSkeleton(
+                _model.Skeleton,
+                proxyOrigin,
+                proxyRotation,
+                Entity.Transform.Scale * Entity.ModelScale);
+        }
     }
 
     private void UpdateSurfaceOrientation(
@@ -1118,6 +1155,12 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         _surfaceMotor?.Dispose();
         _surfaceMotor = null;
 
+        // As hitboxes cinemáticas só existem durante a vida. Removê-las antes
+        // de criar o ragdoll evita corpos duplicados no mesmo lugar.
+        _damageBody?.Dispose();
+        _damageBody = null;
+        _surfaceSolver?.SetIgnoredBodies(null);
+
         // EDITAR AQUI — criar o ragdoll articulado usando a pose atual dos ossos.
         if (_model != null &&
             DeathRagdollDefinition.Parts.Count > 0)
@@ -1208,6 +1251,9 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     {
         _surfaceMotor?.Dispose();
         _surfaceMotor = null;
+
+        _damageBody?.Dispose();
+        _damageBody = null;
 
         // destruir o corpo dinâmico da morte.
         _deathBody?.Dispose();

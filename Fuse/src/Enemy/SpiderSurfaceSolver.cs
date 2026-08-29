@@ -23,6 +23,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     private readonly SceneManager _scene;
     private readonly List<DebugProbe> _debugProbes = new();
     private readonly List<SpiderSurfaceContact> _debugCandidates = new();
+    private readonly HashSet<BodyID> _ignoredBodies = new();
     private SpiderSurfaceContact _lastBodyContact;
 
     public SpiderSurfaceContact LastBodyContact => _lastBodyContact;
@@ -31,6 +32,25 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     {
         _scene = scene;
         Debug.DebugDrawer.Register(this);
+    }
+
+    /// <summary>
+    /// Registra corpos auxiliares da própria aranha que não podem ser
+    /// interpretados como superfícies de suporte. As hitboxes articuladas de
+    /// dano são corpos físicos separados da cápsula de locomoção.
+    /// </summary>
+    public void SetIgnoredBodies(IEnumerable<BodyID>? bodyIds)
+    {
+        _ignoredBodies.Clear();
+
+        if (bodyIds == null)
+            return;
+
+        foreach (BodyID bodyId in bodyIds)
+        {
+            if (bodyId.IsValid)
+                _ignoredBodies.Add(bodyId);
+        }
     }
 
     /// <summary>Clears transient probe debug once per animation frame.</summary>
@@ -396,7 +416,8 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             distance,
             out SceneRaycastHit hit,
             selfBody,
-            collideWithBackFaces: true);
+            collideWithBackFaces: true,
+            excludedBodies: _ignoredBodies);
 
         _debugProbes.Add(new DebugProbe(
             origin,
@@ -452,7 +473,8 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             distance,
             out SceneRaycastHit hit,
             selfBody,
-            collideWithBackFaces: true);
+            collideWithBackFaces: true,
+            excludedBodies: _ignoredBodies);
         _debugProbes.Add(new DebugProbe(origin, didHit ? hit.Position : origin + direction * distance, didHit));
         if (!didHit)
             return;

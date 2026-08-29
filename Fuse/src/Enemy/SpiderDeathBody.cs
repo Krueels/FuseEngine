@@ -1004,7 +1004,10 @@ public sealed class SpiderDeathBody : IDisposable
         }
     }
 
-    private static void CalculateBonePose(
+    // Usado também pelo proxy de dano vivo. A mesma conversão de pose deve
+    // alimentar os dois tipos de corpo para que a cápsula de hit permaneça
+    // exatamente sobre a geometria renderizada.
+    internal static void CalculateBonePose(
         AnimationSkeleton skeleton,
         SpiderRagdollPartDefinition part,
         Vector3 modelOrigin,
