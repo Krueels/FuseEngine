@@ -72,11 +72,18 @@ public sealed class EnemySystem : IDisposable
         for (int i = _spiders.Count - 1; i >= 0; i--)
         {
             var s = _spiders[i];
+
             if (s.IsDead)
             {
                 s.OnDeath(_physics, _sceneManager);
-                s.Dispose();
-                _spiders.RemoveAt(i);
+                s.Update(dt, _physics);
+                
+                if (s.CanBeRemoved)
+                {
+                    s.Dispose();
+                    _sceneManager.ActiveScene.Remove(s.Entity);
+                    _spiders.RemoveAt(i);
+                }
             }
             else
             {

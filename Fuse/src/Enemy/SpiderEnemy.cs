@@ -15,13 +15,36 @@ namespace Fuse.Enemy;
 
 public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 {
+    private enum DeathState
+    {
+        Alive,
+        Ragdoll,
+        Cleanup
+    }
+    
     public string Id { get; }
     public Entity Entity { get; private set; } = null!;
     public RigidBody Body { get; private set; } = new();
     public CharacterVirtual? Character => _surfaceMotor?.Character;
     public float Health { get; set; }
     public float MaxHealth { get; }
+
     public bool IsDead => Health <= 0f;
+
+    public bool CanBeRemoved => _deathState == DeathState.Cleanup;
+
+    public bool IsDeathRagdollActive => _deathState == DeathState.Ragdoll;
+
+    // Mostra as cápsulas e pivôs do ragdoll sobre a pose viva para permitir
+    // validar tamanho e alinhamento antes de testar a morte.
+    public bool DebugRagdollPreviewEnabled { get; set; } = true;
+
+    public SpiderRagdollDefinition DeathRagdollDefinition { get; } = new()
+    {
+        Name = "SpiderDeathRagdoll"
+    };
+
+
     public SpiderSurfaceMotor? SurfaceMotor => _surfaceMotor;
 
     private readonly AssetManager _assets;
@@ -29,6 +52,12 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private PhysicsWorld? _physics;
     private bool _initialized;
     private bool _hasDied;
+
+    private DeathState _deathState = DeathState.Alive;
+    private float _deathRagdollElapsed;
+
+    private SpiderDeathBody? _deathBody;
+
     private Animation.Animator? _animator;
     // SpiderPatrol owns the ground-safe route and exposes its target/velocity
     // to the leg solver and debug visualisation.
@@ -133,6 +162,9 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
             LogBoneNames();
             ResolveLegBones();
+
+            // EDITAR AQUI — construir as partes físicas do ragdoll depois de resolver os ossos.
+            BuildDeathRagdollDefinition();
 
             _surfaceSolver = new SpiderSurfaceSolver(_sceneManager);
             _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver);
@@ -240,6 +272,365 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         }
     }
 
+    // EDITAR AQUI — gerar a definição física do ragdoll com base nos ossos encontrados.
+    private void BuildDeathRagdollDefinition()
+    {
+        if (_model == null)
+            return;
+
+        Fuse.Animation.Skeleton skeleton = _model.Skeleton;
+
+        if (skeleton.Nodes.Length == 0)
+            return;
+
+        DeathRagdollDefinition.Parts.Clear();
+        DeathRagdollDefinition.Joints.Clear();
+
+        // A definição física parte da pose de repouso real do arquivo. Assim,
+        // tamanho, centro e orientação das cápsulas acompanham o modelo,
+        // inclusive quando Entity.ModelScale é diferente de 1.
+        skeleton.ComputeGlobalTransforms();
+
+        Vector3 totalModelScale =
+            Entity.Transform.Scale * Entity.ModelScale;
+
+        totalModelScale = new Vector3(
+            MathF.Max(MathF.Abs(totalModelScale.X), 0.0001f),
+            MathF.Max(MathF.Abs(totalModelScale.Y), 0.0001f),
+            MathF.Max(MathF.Abs(totalModelScale.Z), 0.0001f));
+
+        int rootNodeIndex = -1;
+
+        for (int i = 0; i < skeleton.Nodes.Length; i++)
+        {
+            if (skeleton.Nodes[i].Parent < 0)
+            {
+                rootNodeIndex = i;
+                break;
+            }
+        }
+
+        if (rootNodeIndex < 0)
+            return;
+
+        bool IsAncestorOf(int ancestor, int nodeIndex)
+        {
+            int current = nodeIndex;
+
+            while ((uint)current < (uint)skeleton.Nodes.Length)
+            {
+                if (current == ancestor)
+                    return true;
+
+                current = skeleton.Nodes[current].Parent;
+            }
+
+            return false;
+        }
+
+        // O primeiro nó do FBX costuma ser apenas um contêiner de importação.
+        // O ancestral comum mais próximo das coxas representa melhor o torso.
+        var validThighNodes = new List<int>();
+
+        for (int i = 0; i < _legs.Length; i++)
+        {
+            int thighNode = _legs[i].ThighNodeIndex;
+
+            if ((uint)thighNode < (uint)skeleton.Nodes.Length)
+                validThighNodes.Add(thighNode);
+        }
+
+        int bodyNodeIndex = rootNodeIndex;
+
+        if (validThighNodes.Count > 0)
+        {
+            int candidate = validThighNodes[0];
+
+            while ((uint)candidate < (uint)skeleton.Nodes.Length)
+            {
+                bool commonToAll = true;
+
+                for (int i = 1; i < validThighNodes.Count; i++)
+                {
+                    if (!IsAncestorOf(candidate, validThighNodes[i]))
+                    {
+                        commonToAll = false;
+                        break;
+                    }
+                }
+
+                if (commonToAll)
+                {
+                    bodyNodeIndex = candidate;
+                    break;
+                }
+
+                candidate = skeleton.Nodes[candidate].Parent;
+            }
+        }
+
+        var nodeToPart = new Dictionary<int, string>();
+
+        bool TryGetNodePose(
+            int nodeIndex,
+            out Vector3 position,
+            out Quaternion rotation)
+        {
+            position = Vector3.Zero;
+            rotation = Quaternion.Identity;
+
+            if ((uint)nodeIndex >= (uint)skeleton.Nodes.Length)
+                return false;
+
+            Matrix4x4 standard = Matrix4x4.Transpose(
+                skeleton.Nodes[nodeIndex].Global);
+
+            return Matrix4x4.Decompose(
+                       standard,
+                       out _,
+                       out rotation,
+                       out position) &&
+                   float.IsFinite(position.X) &&
+                   float.IsFinite(position.Y) &&
+                   float.IsFinite(position.Z) &&
+                   float.IsFinite(rotation.X) &&
+                   float.IsFinite(rotation.Y) &&
+                   float.IsFinite(rotation.Z) &&
+                   float.IsFinite(rotation.W);
+        }
+
+        float GetWorldLength(Vector3 modelVector) =>
+            (modelVector * totalModelScale).Length();
+
+        void AddBodyPart()
+        {
+            float radius = MathF.Max(
+                0.05f,
+                DeathRagdollDefinition.RootRadius);
+
+            if (TryGetNodePose(
+                    bodyNodeIndex,
+                    out Vector3 bodyPosition,
+                    out _))
+            {
+                float hipExtent = 0f;
+
+                foreach (int thighNode in validThighNodes)
+                {
+                    if (TryGetNodePose(
+                            thighNode,
+                            out Vector3 thighPosition,
+                            out _))
+                    {
+                        hipExtent = MathF.Max(
+                            hipExtent,
+                            GetWorldLength(thighPosition - bodyPosition));
+                    }
+                }
+
+                if (hipExtent > 0.01f)
+                {
+                    radius = System.Math.Clamp(
+                        hipExtent * 0.72f,
+                        0.35f,
+                        1.1f);
+                }
+            }
+
+            nodeToPart.Add(bodyNodeIndex, "Body");
+
+            DeathRagdollDefinition.Parts.Add(
+                new SpiderRagdollPartDefinition
+                {
+                    Id = "Body",
+                    BoneName = skeleton.Nodes[bodyNodeIndex].Name,
+                    ShapeType = SpiderRagdollShapeType.Capsule,
+                    Radius = radius,
+                    Height = MathF.Max(0.08f, radius * 0.45f),
+                    Mass = MathF.Max(
+                        0.01f,
+                        DeathRagdollDefinition.RootMass),
+                    LocalOffset = Vector3.Zero,
+                    LocalRotation = Quaternion.Identity,
+                    CollidesWithWorld = true,
+                    CollidesWithOtherParts = false
+                });
+        }
+
+        void AddSegmentPart(
+            string id,
+            int nodeIndex,
+            int endNodeIndex,
+            float radiusRatio,
+            float minimumRadius,
+            float maximumRadius,
+            float mass)
+        {
+            if ((uint)nodeIndex >= (uint)skeleton.Nodes.Length ||
+                (uint)endNodeIndex >= (uint)skeleton.Nodes.Length)
+                return;
+
+            if (!nodeToPart.TryAdd(nodeIndex, id))
+                return;
+
+            if (!TryGetNodePose(
+                    nodeIndex,
+                    out Vector3 startPosition,
+                    out Quaternion boneRotation) ||
+                !TryGetNodePose(
+                    endNodeIndex,
+                    out Vector3 endPosition,
+                    out _))
+            {
+                nodeToPart.Remove(nodeIndex);
+                return;
+            }
+
+            Vector3 modelSegment = endPosition - startPosition;
+            float segmentLength = GetWorldLength(modelSegment);
+
+            if (!float.IsFinite(segmentLength) || segmentLength <= 0.001f)
+            {
+                nodeToPart.Remove(nodeIndex);
+                return;
+            }
+
+            Quaternion inverseBoneRotation =
+                Quaternion.Inverse(Quaternion.Normalize(boneRotation));
+
+            Vector3 localSegment = Vector3.Transform(
+                modelSegment,
+                inverseBoneRotation);
+
+            Vector3 localDirection = NormalizeOrZero(localSegment);
+
+            if (localDirection.LengthSquared() <= 0.0001f)
+            {
+                nodeToPart.Remove(nodeIndex);
+                return;
+            }
+
+            float radius = System.Math.Clamp(
+                segmentLength * radiusRatio,
+                minimumRadius,
+                maximumRadius);
+
+            // Jolt recebe a distância entre os centros das duas semiesferas,
+            // portanto o comprimento total é Height + 2 * Radius.
+            float capsuleHeight = MathF.Max(
+                0.02f,
+                segmentLength - radius * 2f);
+
+            DeathRagdollDefinition.Parts.Add(
+                new SpiderRagdollPartDefinition
+                {
+                    Id = id,
+                    BoneName = skeleton.Nodes[nodeIndex].Name,
+                    ShapeType = SpiderRagdollShapeType.Capsule,
+                    Radius = radius,
+                    Height = capsuleHeight,
+                    Mass = mass,
+                    LocalOffset = localSegment * 0.5f,
+                    LocalRotation = RotationBetween(
+                        Vector3.UnitY,
+                        localDirection),
+                    CollidesWithWorld = true,
+                    CollidesWithOtherParts = false
+                });
+        }
+
+        AddBodyPart();
+
+        for (int leg = 0; leg < _legs.Length; leg++)
+        {
+            LegData data = _legs[leg];
+
+            AddSegmentPart(
+                $"Leg{leg}.Thigh",
+                data.ThighNodeIndex,
+                data.SegmentNodeIndices[0],
+                0.09f,
+                0.07f,
+                0.22f,
+                0.20f);
+
+            AddSegmentPart(
+                $"Leg{leg}.Leg",
+                data.SegmentNodeIndices[0],
+                data.SegmentNodeIndices[1],
+                0.075f,
+                0.055f,
+                0.18f,
+                0.10f);
+
+            AddSegmentPart(
+                $"Leg{leg}.Foot",
+                data.SegmentNodeIndices[1],
+                data.SegmentNodeIndices[2],
+                0.065f,
+                0.045f,
+                0.15f,
+                0.06f);
+        }
+
+        string FindParentPart(int nodeIndex)
+        {
+            int parent = skeleton.Nodes[nodeIndex].Parent;
+
+            while ((uint)parent < (uint)skeleton.Nodes.Length)
+            {
+                if (nodeToPart.TryGetValue(parent, out string? parentPart))
+                    return parentPart;
+
+                parent = skeleton.Nodes[parent].Parent;
+            }
+
+            return "Body";
+        }
+
+        foreach (KeyValuePair<int, string> entry in nodeToPart)
+        {
+            if (string.Equals(
+                    entry.Value,
+                    "Body",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string parentPart = FindParentPart(entry.Key);
+
+            if (string.Equals(
+                    parentPart,
+                    entry.Value,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            DeathRagdollDefinition.Joints.Add(
+                new SpiderRagdollJointDefinition
+                {
+                    Id = $"{parentPart}->{entry.Value}",
+                    ParentPartId = parentPart,
+                    ChildPartId = entry.Value,
+                    ParentAnchor = Vector3.Zero,
+                    ChildAnchor = Vector3.Zero,
+                    TwistMinRadians = -0.75f,
+                    TwistMaxRadians = 0.75f,
+                    SwingLimitRadians = 0.9f,
+                    DisableCollision = true
+                });
+        }
+
+        DeathRagdollDefinition.Validate();
+
+        Logger.Info(
+            $"[SpiderEnemy] Death ragdoll definition: " +
+            $"parts={DeathRagdollDefinition.Parts.Count}, " +
+            $"joints={DeathRagdollDefinition.Joints.Count}");
+    }
+
     private static int FindNonTwistChild(Animation.Skeleton skeleton, int parentNodeIndex)
     {
         for (int n = 0; n < skeleton.Nodes.Length; n++)
@@ -270,7 +661,36 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
     public void Update(float dt, PhysicsWorld physics)
     {
-        if (IsDead || !_initialized) return;
+        if (!_initialized) return;
+
+        if (_deathState == DeathState.Ragdoll)
+        {
+            _deathBody?.UpdateEntity(Entity);
+
+            // EDITAR AQUI — copiar as poses físicas para o esqueleto neste frame.
+            if (_deathBody != null &&
+                _model != null &&
+                _animator != null)
+            {
+                _deathBody.SyncSkeleton(
+                    _model.Skeleton,
+                    Entity,
+                    _animator.FinalBoneMatrices);
+            }
+            
+            _deathRagdollElapsed += MathF.Max(0f, dt);
+
+            float lifeTime = MathF.Max(
+                0.1f,
+                DeathRagdollDefinition.LifetimeSeconds);
+
+            if (_deathRagdollElapsed >= lifeTime)
+                _deathState = DeathState.Cleanup;
+            return;
+        }
+
+        if (_deathState == DeathState.Cleanup || IsDead)
+            return;
 
         _spiderPatrol?.Update(dt);
 
@@ -568,39 +988,147 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         return Vector3.Zero;
     }
 
-    public void OnDeath(PhysicsWorld physics, Scene.SceneManager? sceneManager = null)
+    public void OnDeath(
+    PhysicsWorld physics,
+    Scene.SceneManager? sceneManager = null)
     {
-        if (_hasDied) return;
+        if (_hasDied)
+            return;
+
         _hasDied = true;
 
+        // inicia o estado persistente de morte.
+        _deathState = DeathState.Ragdoll;
+        _deathRagdollElapsed = 0f;
+
+        _ = sceneManager;
+
         Logger.Info($"[SpiderEnemy] {Id} died!");
-        Entity.Visible = false;
 
+        // manter o modelo visível.
+        Entity.Visible = true;
+
+        // impedir que o animator continue alterando o esqueleto.
+        if (_animator != null)
+            _animator.Playing = false;
+
+        // Remove a inclinação visual da aranha viva.
+        Entity.ModelRotation = Quaternion.Identity;
+
+        Vector3 deathPosition = Entity.Transform.Position;
+        Quaternion deathRotation = Entity.Transform.Rotation;
+        Vector3 deathVelocity = Vector3.Zero;
+
+        // capturar a pose antes de destruir o corpo vivo.
+        if (Body.IsBuilt)
+        {
+            deathPosition = Body.Position(physics);
+            deathRotation = Body.Rotation(physics);
+            deathVelocity = Body.LinearVelocity(physics);
+        }
+
+        // parar CharacterVirtual e locomotion.
         _surfaceMotor?.Dispose();
+        _surfaceMotor = null;
 
+        // EDITAR AQUI — criar o ragdoll articulado usando a pose atual dos ossos.
+        if (_model != null &&
+            DeathRagdollDefinition.Parts.Count > 0)
+        {
+            Vector3 modelOrigin =
+                deathPosition + Entity.ModelOffset;
+
+            Vector3 modelScale =
+                Entity.Transform.Scale * Entity.ModelScale;
+
+            _deathBody = new SpiderDeathBody(
+                physics,
+                _model.Skeleton,
+                modelOrigin,
+                deathRotation,
+                modelScale,
+                DeathRagdollDefinition,
+                deathVelocity);
+        }
+        else
+        {
+            _deathBody = new SpiderDeathBody(
+                physics,
+                deathPosition,
+                deathRotation,
+                DeathRagdollDefinition);
+        }
+
+        // O corpo antigo era apenas o proxy cinemático da locomotion.
         if (Body.IsBuilt)
         {
             physics.DestroyBody(Body.Native);
             Body.Destroy();
         }
 
-        sceneManager?.ActiveScene.Remove(Entity);
+        // IMPORTANTE:
+        // Não remover Entity da cena neste ponto.
+        // O EnemySystem fará isso quando CanBeRemoved for true.
     }
 
     public void OnDrawGizmos(Debug.DebugDrawer drawer)
     {
-        if (IsDead || !Body.IsBuilt || _physics == null) return;
+        if (_physics == null)
+            return;
+
+        // desenhar o corpo físico da morte.
+        if (_deathState == DeathState.Ragdoll &&
+            _deathBody != null &&
+            _deathBody.IsBuilt)
+        {
+            // desenhar todas as partes e conexões do ragdoll.
+            _deathBody.DrawDebug(drawer);
+
+            return;
+        }
+
+        if (IsDead || !Body.IsBuilt)
+            return;
+
+        if (DebugRagdollPreviewEnabled &&
+            _model != null &&
+            DeathRagdollDefinition.Parts.Count > 0)
+        {
+            SpiderDeathBody.DrawDebugPreview(
+                drawer,
+                _model.Skeleton,
+                Entity,
+                Body.Position(_physics) + Entity.ModelOffset,
+                Body.Rotation(_physics),
+                Entity.Transform.Scale * Entity.ModelScale,
+                DeathRagdollDefinition);
+
+            return;
+        }
 
         Vector3 pos = Body.Position(_physics);
         Quaternion rot = Body.Rotation(_physics);
-        drawer.DrawCapsule(pos, rot, 0.3f, 0.6f, new Vector3(1, 0.5f, 0));
+
+        drawer.DrawCapsule(
+            pos,
+            rot,
+            0.3f,
+            0.6f,
+            new Vector3(1f, 0.5f, 0f));
     }
 
     public void Dispose()
     {
         _surfaceMotor?.Dispose();
+        _surfaceMotor = null;
 
-        if (Entity != null && Entity.MeshOwnedByEntity && Entity.Mesh != null)
+        // destruir o corpo dinâmico da morte.
+        _deathBody?.Dispose();
+        _deathBody = null;
+
+        if (Entity != null &&
+            Entity.MeshOwnedByEntity &&
+            Entity.Mesh != null)
         {
             Entity.Mesh.Dispose();
             Entity.Mesh = null;

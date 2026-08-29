@@ -282,26 +282,26 @@ public sealed class SpiderPatrol : IGizmoDrawable
         if (_enemy.IsDead || !_enemy.Body.IsBuilt)
             return;
 
-        Vector3 position = _enemy.Body.Position(_physics);
-        Vector3 normal = _motor.SurfaceNormal;
-        BuildTangentBasis(normal, _travelDirection, out Vector3 forward, out Vector3 right);
+        //Vector3 position = _enemy.Body.Position(_physics);
+        //Vector3 normal = _motor.SurfaceNormal;
+        //BuildTangentBasis(normal, _travelDirection, out Vector3 forward, out Vector3 right);
 
-        Vector3 stateColor = _state == PatrolState.Walking
-            ? new Vector3(0.1f, 1f, 0.25f)
-            : new Vector3(1f, 0.85f, 0.15f);
+        //Vector3 stateColor = _state == PatrolState.Walking
+        //    ? new Vector3(0.1f, 1f, 0.25f)
+        //    : new Vector3(1f, 0.85f, 0.15f);
 
-        drawer.DrawBox(_targetPosition, Quaternion.Identity, new Vector3(0.14f), new Vector3(1f, 0.2f, 0.2f));
-        drawer.PushLine(position, _targetPosition, stateColor);
-        drawer.PushLine(position, position + _travelDirection * 2f, new Vector3(0.1f, 0.55f, 1f));
+        //drawer.DrawBox(_targetPosition, Quaternion.Identity, new Vector3(0.14f), new Vector3(1f, 0.2f, 0.2f));
+        //drawer.PushLine(position, _targetPosition, stateColor);
+        //drawer.PushLine(position, position + _travelDirection * 2f, new Vector3(0.1f, 0.55f, 1f));
 
-        const int segments = 32;
-        Vector3 previous = position + forward * PatrolRadius;
-        for (int i = 1; i <= segments; i++)
-        {
-            float angle = MathF.Tau * i / segments;
-            Vector3 next = position + (forward * MathF.Cos(angle) + right * MathF.Sin(angle)) * PatrolRadius;
-            drawer.PushLine(previous, next, new Vector3(0.35f, 0.35f, 0.1f));
-            previous = next;
-        }
+        //const int segments = 32;
+        //Vector3 previous = position + forward * PatrolRadius;
+        //for (int i = 1; i <= segments; i++)
+        //{
+        //    float angle = MathF.Tau * i / segments;
+        //    Vector3 next = position + (forward * MathF.Cos(angle) + right * MathF.Sin(angle)) * PatrolRadius;
+        //    drawer.PushLine(previous, next, new Vector3(0.35f, 0.35f, 0.1f));
+        //    previous = next;
+        //}
     }
 }

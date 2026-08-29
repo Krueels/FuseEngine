@@ -564,25 +564,25 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
 
     public void OnDrawGizmos(DebugDrawer drawer)
     {
-        foreach (DebugProbe probe in _debugProbes)
-        {
-            Vector3 color = probe.Hit ? new Vector3(0.15f, 0.85f, 1f) : new Vector3(0.9f, 0.15f, 0.15f);
-            drawer.PushLine(probe.Start, probe.End, color);
-        }
+        //foreach (DebugProbe probe in _debugProbes)
+        //{
+        //    Vector3 color = probe.Hit ? new Vector3(0.15f, 0.85f, 1f) : new Vector3(0.9f, 0.15f, 0.15f);
+        //    drawer.PushLine(probe.Start, probe.End, color);
+        //}
 
-        foreach (SpiderSurfaceContact candidate in _debugCandidates)
-        {
-            if (!candidate.IsValid)
-                continue;
-            drawer.DrawSphere(candidate.Point, Quaternion.Identity, 0.05f, new Vector3(1f, 0.85f, 0.1f));
-            drawer.PushLine(candidate.Point, candidate.Point + candidate.Normal * 0.35f, new Vector3(1f, 0.85f, 0.1f));
-        }
+        //foreach (SpiderSurfaceContact candidate in _debugCandidates)
+        //{
+        //    if (!candidate.IsValid)
+        //        continue;
+        //    drawer.DrawSphere(candidate.Point, Quaternion.Identity, 0.05f, new Vector3(1f, 0.85f, 0.1f));
+        //    drawer.PushLine(candidate.Point, candidate.Point + candidate.Normal * 0.35f, new Vector3(1f, 0.85f, 0.1f));
+        //}
 
-        if (_lastBodyContact.IsValid)
-        {
-            drawer.DrawSphere(_lastBodyContact.Point, Quaternion.Identity, 0.10f, new Vector3(0.1f, 1f, 0.3f));
-            drawer.PushLine(_lastBodyContact.Point, _lastBodyContact.Point + _lastBodyContact.Normal * 0.75f, new Vector3(0.1f, 1f, 0.3f));
-        }
+        //if (_lastBodyContact.IsValid)
+        //{
+        //    drawer.DrawSphere(_lastBodyContact.Point, Quaternion.Identity, 0.10f, new Vector3(0.1f, 1f, 0.3f));
+        //    drawer.PushLine(_lastBodyContact.Point, _lastBodyContact.Point + _lastBodyContact.Normal * 0.75f, new Vector3(0.1f, 1f, 0.3f));
+        //}
     }
 
     private readonly struct ProbeHit

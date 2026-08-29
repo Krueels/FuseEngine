@@ -789,76 +789,76 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
     {
         if (!_initialized) return;
 
-        for (int i = 0; i < _legs.Length; i++)
-        {
-            var leg = _legs[i];
-            if (!IsValidLeg(leg)) continue;
+        //for (int i = 0; i < _legs.Length; i++)
+        //{
+        //    var leg = _legs[i];
+        //    if (!IsValidLeg(leg)) continue;
 
-            Vector3 hipPos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global));
-            Vector3 kneePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global));
-            Vector3 anklePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global));
+        //    Vector3 hipPos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Hip].Global));
+        //    Vector3 kneePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global));
+        //    Vector3 anklePos = ModelToWorld(GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global));
 
-            Vector3 footCurrent = leg.CurrentFootWorld;
-            Vector3 footTarget = leg.IsStepping ? leg.TargetFootWorld : leg.CurrentFootWorld;
+        //    Vector3 footCurrent = leg.CurrentFootWorld;
+        //    Vector3 footTarget = leg.IsStepping ? leg.TargetFootWorld : leg.CurrentFootWorld;
 
-            Vector3 groupColor = leg.GaitGroup == 0
-                ? new Vector3(1, 0.5f, 0)
-                : new Vector3(0, 0.5f, 1);
+        //    Vector3 groupColor = leg.GaitGroup == 0
+        //        ? new Vector3(1, 0.5f, 0)
+        //        : new Vector3(0, 0.5f, 1);
 
-            Vector3 rayColor = leg.DebugRaycastHit ? new Vector3(0, 1, 1) : new Vector3(1, 0, 0);
-            drawer.PushLine(leg.DebugRayStart, leg.DebugRayEnd, rayColor);
-            drawer.DrawSphere(leg.DebugRayStart, Quaternion.Identity, 0.04f, new Vector3(1, 1, 1));
+        //    Vector3 rayColor = leg.DebugRaycastHit ? new Vector3(0, 1, 1) : new Vector3(1, 0, 0);
+        //    drawer.PushLine(leg.DebugRayStart, leg.DebugRayEnd, rayColor);
+        //    drawer.DrawSphere(leg.DebugRayStart, Quaternion.Identity, 0.04f, new Vector3(1, 1, 1));
 
-            if (leg.DebugRaycastHit)
-            {
-                drawer.DrawSphere(leg.DebugRayEnd, Quaternion.Identity, 0.06f, new Vector3(0, 1, 1));
-            }
+        //    if (leg.DebugRaycastHit)
+        //    {
+        //        drawer.DrawSphere(leg.DebugRayEnd, Quaternion.Identity, 0.06f, new Vector3(0, 1, 1));
+        //    }
 
-            drawer.DrawSphere(leg.DebugIdealBeforeRaycast, Quaternion.Identity, 0.05f, new Vector3(1, 0.3f, 0.3f));
+        //    drawer.DrawSphere(leg.DebugIdealBeforeRaycast, Quaternion.Identity, 0.05f, new Vector3(1, 0.3f, 0.3f));
 
-            if (leg.DebugRaycastHit)
-            {
-                drawer.PushLine(leg.DebugIdealBeforeRaycast, leg.DebugRayEnd, new Vector3(1, 0.3f, 0.3f));
-            }
+        //    if (leg.DebugRaycastHit)
+        //    {
+        //        drawer.PushLine(leg.DebugIdealBeforeRaycast, leg.DebugRayEnd, new Vector3(1, 0.3f, 0.3f));
+        //    }
 
-            drawer.PushLine(hipPos, kneePos, groupColor);
-            drawer.PushLine(kneePos, anklePos, groupColor);
-            drawer.PushLine(anklePos, footCurrent, groupColor);
+        //    drawer.PushLine(hipPos, kneePos, groupColor);
+        //    drawer.PushLine(kneePos, anklePos, groupColor);
+        //    drawer.PushLine(anklePos, footCurrent, groupColor);
 
-            drawer.DrawSphere(footCurrent, Quaternion.Identity, 0.05f, new Vector3(0, 1, 0));
-            Vector3 contactNormal = leg.IsStepping
-                ? NormalizeOrFallback(leg.TargetFootNormalWorld, Vector3.UnitY)
-                : NormalizeOrFallback(leg.CurrentFootNormalWorld, Vector3.UnitY);
-            Vector3 contactColor = leg.IsStepping
-                ? new Vector3(1f, 0f, 1f)
-                : leg.PlantedContact.IsValid ? new Vector3(0.1f, 1f, 0.25f) : new Vector3(1f, 0.1f, 0.1f);
-            drawer.PushLine(footCurrent, footCurrent + contactNormal * 0.22f, contactColor);
+        //    drawer.DrawSphere(footCurrent, Quaternion.Identity, 0.05f, new Vector3(0, 1, 0));
+        //    Vector3 contactNormal = leg.IsStepping
+        //        ? NormalizeOrFallback(leg.TargetFootNormalWorld, Vector3.UnitY)
+        //        : NormalizeOrFallback(leg.CurrentFootNormalWorld, Vector3.UnitY);
+        //    Vector3 contactColor = leg.IsStepping
+        //        ? new Vector3(1f, 0f, 1f)
+        //        : leg.PlantedContact.IsValid ? new Vector3(0.1f, 1f, 0.25f) : new Vector3(1f, 0.1f, 0.1f);
+        //    drawer.PushLine(footCurrent, footCurrent + contactNormal * 0.22f, contactColor);
 
-            drawer.DrawSphere(footTarget, Quaternion.Identity, 0.08f,
-                leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(0, 1, 0));
+        //    drawer.DrawSphere(footTarget, Quaternion.Identity, 0.08f,
+        //        leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(0, 1, 0));
 
-            drawer.PushLine(hipPos, footTarget, leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(1, 1, 1));
+        //    drawer.PushLine(hipPos, footTarget, leg.IsStepping ? new Vector3(1, 0, 1) : new Vector3(1, 1, 1));
 
-            if (leg.IsStepping)
-            {
-                drawer.DrawSphere(leg.DebugLandingPoint, Quaternion.Identity, 0.07f, new Vector3(1, 1, 0));
-                drawer.PushLine(footTarget, leg.DebugLandingPoint, new Vector3(1, 1, 0));
+        //    if (leg.IsStepping)
+        //    {
+        //        drawer.DrawSphere(leg.DebugLandingPoint, Quaternion.Identity, 0.07f, new Vector3(1, 1, 0));
+        //        drawer.PushLine(footTarget, leg.DebugLandingPoint, new Vector3(1, 1, 0));
 
-                Vector3 arcStart = leg.StepStartWorld;
-                Vector3 arcEnd = leg.TargetFootWorld;
-                int segments = 10;
-                for (int s = 0; s < segments; s++)
-                {
-                    float t0 = (float)s / segments;
-                    float t1 = (float)(s + 1) / segments;
-                    Vector3 n0 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t0), leg.TargetFootNormalWorld);
-                    Vector3 n1 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t1), leg.TargetFootNormalWorld);
-                    float stepHeight = GetStepLiftHeight(leg);
-                    Vector3 p0 = Vector3.Lerp(arcStart, arcEnd, t0) + n0 * MathF.Sin(t0 * MathF.PI) * stepHeight;
-                    Vector3 p1 = Vector3.Lerp(arcStart, arcEnd, t1) + n1 * MathF.Sin(t1 * MathF.PI) * stepHeight;
-                    drawer.PushLine(p0, p1, new Vector3(1, 0, 1));
-                }
-            }
-        }
+        //        Vector3 arcStart = leg.StepStartWorld;
+        //        Vector3 arcEnd = leg.TargetFootWorld;
+        //        int segments = 10;
+        //        for (int s = 0; s < segments; s++)
+        //        {
+        //            float t0 = (float)s / segments;
+        //            float t1 = (float)(s + 1) / segments;
+        //            Vector3 n0 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t0), leg.TargetFootNormalWorld);
+        //            Vector3 n1 = NormalizeOrFallback(Vector3.Lerp(leg.StepStartNormalWorld, leg.TargetFootNormalWorld, t1), leg.TargetFootNormalWorld);
+        //            float stepHeight = GetStepLiftHeight(leg);
+        //            Vector3 p0 = Vector3.Lerp(arcStart, arcEnd, t0) + n0 * MathF.Sin(t0 * MathF.PI) * stepHeight;
+        //            Vector3 p1 = Vector3.Lerp(arcStart, arcEnd, t1) + n1 * MathF.Sin(t1 * MathF.PI) * stepHeight;
+        //            drawer.PushLine(p0, p1, new Vector3(1, 0, 1));
+        //        }
+        //    }
+        //}
     }
 }

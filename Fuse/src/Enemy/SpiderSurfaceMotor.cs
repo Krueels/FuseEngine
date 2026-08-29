@@ -609,24 +609,24 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         if (_disposed)
             return;
 
-        Vector3 position = Character.Position;
-        Vector3 currentNormal = _surfaceNormal;
-        Vector3 desiredNormal = _desiredSurfaceNormal;
-        Vector3 forward = _surfaceForward;
-        Vector3 right = Right;
-        Vector3 desiredDirection = _desiredDirection;
-        Vector3 surfaceColor = HasSurface
-            ? new Vector3(0.15f, 1f, 0.25f)
-            : new Vector3(1f, 0.2f, 0.15f);
+        //Vector3 position = Character.Position;
+        //Vector3 currentNormal = _surfaceNormal;
+        //Vector3 desiredNormal = _desiredSurfaceNormal;
+        //Vector3 forward = _surfaceForward;
+        //Vector3 right = Right;
+        //Vector3 desiredDirection = _desiredDirection;
+        //Vector3 surfaceColor = HasSurface
+        //    ? new Vector3(0.15f, 1f, 0.25f)
+        //    : new Vector3(1f, 0.2f, 0.15f);
 
-        drawer.DrawCapsule(position, Character.Rotation, _body.CapsuleHeight * 0.5f, _body.CapsuleRadius, new Vector3(0.2f, 0.8f, 1f));
-        drawer.PushLine(position, position + currentNormal * 1.25f, surfaceColor);
-        drawer.PushLine(position, position + desiredNormal * 1.0f, new Vector3(1f, 0.2f, 0.85f));
-        drawer.PushLine(position, position + forward * 1.5f, new Vector3(0.1f, 0.4f, 1f));
-        drawer.PushLine(position, position + right * 1.0f, new Vector3(1f, 0.65f, 0.1f));
-        drawer.PushLine(position, position + desiredDirection * 1.15f, new Vector3(0.1f, 1f, 1f));
-        drawer.PushLine(position, position + _requestedVelocity * 0.20f, new Vector3(0.2f, 0.55f, 1f));
-        drawer.DrawSphere(_debugPredictedPosition, Quaternion.Identity, 0.08f, IsBlocked ? new Vector3(1f, 0.15f, 0.1f) : new Vector3(0.2f, 1f, 0.8f));
+        //drawer.DrawCapsule(position, Character.Rotation, _body.CapsuleHeight * 0.5f, _body.CapsuleRadius, new Vector3(0.2f, 0.8f, 1f));
+        //drawer.PushLine(position, position + currentNormal * 1.25f, surfaceColor);
+        //drawer.PushLine(position, position + desiredNormal * 1.0f, new Vector3(1f, 0.2f, 0.85f));
+        //drawer.PushLine(position, position + forward * 1.5f, new Vector3(0.1f, 0.4f, 1f));
+        //drawer.PushLine(position, position + right * 1.0f, new Vector3(1f, 0.65f, 0.1f));
+        //drawer.PushLine(position, position + desiredDirection * 1.15f, new Vector3(0.1f, 1f, 1f));
+        //drawer.PushLine(position, position + _requestedVelocity * 0.20f, new Vector3(0.2f, 0.55f, 1f));
+        //drawer.DrawSphere(_debugPredictedPosition, Quaternion.Identity, 0.08f, IsBlocked ? new Vector3(1f, 0.15f, 0.1f) : new Vector3(0.2f, 1f, 0.8f));
     }
 
     public void Dispose()
