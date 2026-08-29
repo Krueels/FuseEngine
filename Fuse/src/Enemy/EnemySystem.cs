@@ -69,7 +69,8 @@ public sealed class EnemySystem : IDisposable
             {
                 SpiderPatrol.SetPursuitTargetSurface(
                     targetSurface.Point,
-                    targetSurface.Normal);
+                    targetSurface.Normal,
+                    targetSurface.BodyId);
             }
             else
             {

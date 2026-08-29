@@ -3,6 +3,7 @@ using System.Numerics;
 using Fuse.Behaviours;
 using Fuse.Debug;
 using Fuse.Physics;
+using JoltPhysicsSharp;
 
 namespace Fuse.Enemy;
 
@@ -18,6 +19,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
     private static Vector3 s_pursuitTarget;
     private static Vector3 s_pursuitTargetSurfacePoint;
     private static Vector3 s_pursuitTargetSurfaceNormal;
+    private static BodyID s_pursuitTargetSurfaceBodyId = BodyID.Invalid;
     private static bool s_hasPursuitTargetSurface;
 
     private enum PatrolState { Idle, Walking }
@@ -51,6 +53,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
     public static bool HasPursuitTargetSurface => s_hasPursuitTargetSurface;
     public static Vector3 PursuitTargetSurfacePoint => s_pursuitTargetSurfacePoint;
     public static Vector3 PursuitTargetSurfaceNormal => s_pursuitTargetSurfaceNormal;
+    public static BodyID PursuitTargetSurfaceBodyId => s_pursuitTargetSurfaceBodyId;
     public SpiderSurfacePursuitPlanner PursuitPlanner => _pursuitPlanner;
 
     [Export] public float PatrolRadius { get; set; } = 20f;
@@ -83,7 +86,8 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
     public static void SetPursuitTargetSurface(
         Vector3 surfacePoint,
-        Vector3 surfaceNormal)
+        Vector3 surfaceNormal,
+        BodyID surfaceBodyId = default)
     {
         surfaceNormal = NormalizeOrZero(surfaceNormal);
         if (surfaceNormal.LengthSquared() <= 0.0001f ||
@@ -95,6 +99,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
         s_pursuitTargetSurfacePoint = surfacePoint;
         s_pursuitTargetSurfaceNormal = surfaceNormal;
+        s_pursuitTargetSurfaceBodyId = surfaceBodyId;
         s_hasPursuitTargetSurface = true;
     }
 
@@ -102,6 +107,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
     {
         s_pursuitTargetSurfacePoint = Vector3.Zero;
         s_pursuitTargetSurfaceNormal = Vector3.Zero;
+        s_pursuitTargetSurfaceBodyId = BodyID.Invalid;
         s_hasPursuitTargetSurface = false;
     }
 
@@ -206,6 +212,19 @@ public sealed class SpiderPatrol : IGizmoDrawable
         Vector3 surfaceDirection = NormalizeOrZero(
             ProjectOnPlane(directionToTarget, normal));
 
+        // A normal alone does not identify a navigable surface. The lower
+        // floor and an elevated floor can both have +Y as their normal. In
+        // that case the spider must first commit to an intermediate face
+        // instead of treating the elevated target as a direct ground target.
+        bool targetSurfaceDifferent = hasTargetSurface &&
+            IsDifferentSurface(
+                _motor.SurfaceContact,
+                normal,
+                s_pursuitTargetSurfacePoint,
+                targetSurfaceNormal,
+                s_pursuitTargetSurfaceBodyId,
+                _motor.Clearance);
+
         // A local plan only guides the spider to the next surface. Once that
         // surface is active, its old world-space direction is no longer valid.
         bool reachedPlannedSurface =
@@ -280,16 +299,36 @@ public sealed class SpiderPatrol : IGizmoDrawable
             _motor.Clearance * 1.5f,
             0.75f);
         bool targetOutsideCurrentSurface =
+            targetSurfaceDifferent ||
             (hasTargetSurface &&
              Vector3.Dot(normal, targetSurfaceNormal) < 0.90f) ||
             normalSeparation > targetOutsideSurfaceDistance;
         bool directDirectionAvailable =
             surfaceDirection.LengthSquared() > 0.0001f;
+
+        // The motor has a one-second transition lock to prevent oscillation at
+        // corners. During that same interval the planner must not keep using a
+        // stale route from the previous face. If the final target already has
+        // a valid tangent on the new face, commit to that tangent: it points
+        // upward for an elevated target and downward for a lower target.
+        bool transitionExitLocked =
+            _motor.TransitionLockRemaining > 0f &&
+            targetOutsideCurrentSurface &&
+            directDirectionAvailable;
+        if (transitionExitLocked)
+        {
+            _pursuitPlanner.ClearPlan();
+            _motor.ClearTransitionConstraint();
+            _travelDirection = surfaceDirection;
+        }
+
         bool localPlanRequired =
             !directDirectionAvailable ||
             targetOutsideCurrentSurface ||
             _pursuitBlockedTimer > 0.20f ||
             _motor.IsBlocked;
+        if (transitionExitLocked)
+            localPlanRequired = false;
 
         bool hasLocalDirection = _pursuitPlanner.TryGetDirection(
             dt,
@@ -306,7 +345,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
         bool usingLocalDirection = false;
 
         if (directDirectionAvailable &&
-            !targetOutsideCurrentSurface &&
+            (!targetOutsideCurrentSurface || transitionExitLocked) &&
             _pursuitBlockedTimer <= 0.20f &&
             !_motor.IsBlocked)
         {
@@ -321,7 +360,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
 
         bool canUseDirectDirection =
             directDirectionAvailable &&
-            !targetOutsideCurrentSurface;
+            (!targetOutsideCurrentSurface || transitionExitLocked);
         bool canMove = _pursuitPlanner.HasPlan
             ? hasLocalDirection
             : canUseDirectDirection;
@@ -334,7 +373,13 @@ public sealed class SpiderPatrol : IGizmoDrawable
             CurrentSpeed = MathF.Max(
                 0f,
                 CurrentSpeed - Deceleration * dt);
-            SyncTransitionConstraint();
+            SyncTransitionConstraint(
+                currentPosition,
+                normal,
+                hasTargetSurface,
+                s_pursuitTargetSurfacePoint,
+                targetSurfaceNormal,
+                s_pursuitTargetSurfaceBodyId);
             _motor.Update(dt, _travelDirection, 0f);
             UpdatePursuitBlockedState(dt);
             return;
@@ -366,7 +411,16 @@ public sealed class SpiderPatrol : IGizmoDrawable
         }
 
         UpdateSpeedTowardLimit(dt, speedLimit);
-        SyncTransitionConstraint();
+        if (!transitionExitLocked)
+        {
+            SyncTransitionConstraint(
+                currentPosition,
+                normal,
+                hasTargetSurface,
+                s_pursuitTargetSurfacePoint,
+                targetSurfaceNormal,
+                s_pursuitTargetSurfaceBodyId);
+        }
         _motor.Update(dt, _travelDirection, CurrentSpeed);
         UpdatePursuitBlockedState(dt);
     }
@@ -394,8 +448,32 @@ public sealed class SpiderPatrol : IGizmoDrawable
         CurrentSpeed = 0f;
     }
 
-    private void SyncTransitionConstraint()
+    private void SyncTransitionConstraint(
+        Vector3 currentPosition = default,
+        Vector3 currentNormal = default,
+        bool hasTargetSurface = false,
+        Vector3 targetSurfacePoint = default,
+        Vector3 targetSurfaceNormal = default,
+        BodyID targetSurfaceBodyId = default)
     {
+        // Near the final surface, use the resolved target contact itself as a
+        // deterministic guide. This is especially important for an elevated
+        // floor: the wall transition should finish on that floor rather than
+        // repeatedly selecting the underside or the opposite side of its edge.
+        if (hasTargetSurface &&
+            TryBuildTargetSurfaceGuide(
+                currentPosition,
+                currentNormal,
+                targetSurfacePoint,
+                targetSurfaceNormal,
+                targetSurfaceBodyId,
+                out SpiderSurfaceContact targetGuide))
+        {
+            _motor.SetTransitionConstraint(targetGuide.Normal);
+            _motor.SetTransitionGuide(targetGuide);
+            return;
+        }
+
         SpiderSurfaceContact transition =
             _pursuitPlanner.PlannedTransition;
         if (_pursuitPlanner.HasPlan && transition.IsValid)
@@ -408,6 +486,57 @@ public sealed class SpiderPatrol : IGizmoDrawable
             _motor.ClearTransitionConstraint();
             _motor.ClearTransitionGuide();
         }
+    }
+
+    private bool TryBuildTargetSurfaceGuide(
+        Vector3 currentPosition,
+        Vector3 currentNormal,
+        Vector3 targetSurfacePoint,
+        Vector3 targetSurfaceNormal,
+        BodyID targetSurfaceBodyId,
+        out SpiderSurfaceContact guide)
+    {
+        guide = default;
+        currentNormal = NormalizeOrZero(currentNormal);
+        targetSurfaceNormal = NormalizeOrZero(targetSurfaceNormal);
+        if (currentNormal.LengthSquared() <= 0.0001f ||
+            targetSurfaceNormal.LengthSquared() <= 0.0001f ||
+            !IsFinite(currentPosition) ||
+            !IsFinite(targetSurfacePoint) ||
+            targetSurfaceBodyId.IsValid == false)
+        {
+            return false;
+        }
+
+        // A target with the same normal is not a transition by itself. The
+        // plane/body test above still keeps the spider from using a direct
+        // ground vector, while this guide is reserved for the wall -> floor
+        // handoff where the normals actually change.
+        float normalAlignment = Vector3.Dot(
+            currentNormal,
+            targetSurfaceNormal);
+        if (normalAlignment >= 0.82f || normalAlignment <= -0.42f)
+            return false;
+
+        Vector3 targetCenter = targetSurfacePoint +
+                               targetSurfaceNormal * _motor.Clearance;
+        float distance = Vector3.Distance(currentPosition, targetCenter);
+        if (!float.IsFinite(distance) || distance > 2.25f)
+            return false;
+
+        // SpiderSurfaceMotor/SpiderSurfaceSolver revalidate this contact with
+        // a cast from the target surface. The guide only supplies the known
+        // body, point and normal; it never bypasses collision validation.
+        guide = new SpiderSurfaceContact(
+            true,
+            targetSurfacePoint,
+            targetSurfaceNormal,
+            targetSurfaceBodyId,
+            null,
+            targetSurfacePoint,
+            targetSurfaceNormal,
+            1f);
+        return true;
     }
 
     private float CalculateWaypointSpeedLimit(float dt, float distance)
@@ -541,6 +670,49 @@ public sealed class SpiderPatrol : IGizmoDrawable
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z);
 
+    private static bool IsDifferentSurface(
+        in SpiderSurfaceContact currentContact,
+        Vector3 currentNormal,
+        Vector3 targetPoint,
+        Vector3 targetNormal,
+        BodyID targetBodyId,
+        float clearance)
+    {
+        currentNormal = NormalizeOrZero(currentNormal);
+        targetNormal = NormalizeOrZero(targetNormal);
+        if (!currentContact.IsValid ||
+            currentNormal.LengthSquared() <= 0.0001f ||
+            targetNormal.LengthSquared() <= 0.0001f ||
+            !IsFinite(currentContact.Point) ||
+            !IsFinite(targetPoint))
+        {
+            return true;
+        }
+
+        if (Vector3.Dot(currentNormal, targetNormal) < 0.90f)
+            return true;
+
+        // A single mesh/body can contain several parallel floors. Compare the
+        // signed distance between their support planes so an upper floor is
+        // not mistaken for the floor under the spider.
+        float planeSeparation = MathF.Abs(Vector3.Dot(
+            targetPoint - currentContact.Point,
+            currentNormal));
+        float planeTolerance = MathF.Max(0.85f, clearance * 2.25f);
+        if (!float.IsFinite(planeSeparation) ||
+            planeSeparation > planeTolerance)
+        {
+            return true;
+        }
+
+        // BodyID is intentionally only a supporting identity signal. A level
+        // floor is often made of several collision bodies, and those pieces
+        // must remain one continuous surface when they share the same plane.
+        // The motor/planner will still validate the actual crossing.
+        _ = targetBodyId;
+        return false;
+    }
+
     private static Vector3 BuildFallbackTangent(Vector3 normal, Vector3 preferred)
     {
         normal = NormalizeOrZero(normal);
@@ -582,6 +754,32 @@ public sealed class SpiderPatrol : IGizmoDrawable
         drawer.DrawBox(_targetPosition, Quaternion.Identity, new Vector3(0.14f), new Vector3(1f, 0.2f, 0.2f));
         drawer.PushLine(position, _targetPosition, stateColor);
         drawer.PushLine(position, position + _travelDirection * 2f, new Vector3(0.1f, 0.55f, 1f));
+
+        if (PursuitEnabled && s_hasPursuitTargetSurface &&
+            IsFinite(s_pursuitTargetSurfacePoint) &&
+            s_pursuitTargetSurfaceNormal.LengthSquared() > 0.0001f)
+        {
+            Vector3 targetNormal = NormalizeOrZero(
+                s_pursuitTargetSurfaceNormal);
+            Vector3 targetCenter = s_pursuitTargetSurfacePoint +
+                                   targetNormal * _motor.Clearance;
+            if (IsFinite(targetCenter))
+            {
+                // Magenta marks the actual resolved surface under/around the
+                // player. The red box above is the body-centre navigation
+                // target, while this point identifies the plane that must be
+                // reached before direct pursuit is allowed.
+                drawer.DrawSphere(
+                    s_pursuitTargetSurfacePoint,
+                    Quaternion.Identity,
+                    0.16f,
+                    new Vector3(1f, 0.1f, 0.85f));
+                drawer.PushLine(
+                    s_pursuitTargetSurfacePoint,
+                    s_pursuitTargetSurfacePoint + targetNormal * 0.9f,
+                    new Vector3(1f, 0.1f, 0.85f));
+            }
+        }
 
         const int segments = 32;
         Vector3 previous = position + forward * PatrolRadius;
