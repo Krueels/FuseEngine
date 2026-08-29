@@ -7,11 +7,14 @@ using Fuse.Renderer;
 using Fuse.Physics;
 using Fuse.Audio;
 using Fuse.AssetManagement;
+using System.Security.Cryptography;
 
 namespace Fuse.Core;
 
 public static class DevShortcuts
 {
+    private static bool _enableAI = true;
+
     public static void HandleInput(
         SceneManager sceneManager,
         Player.Player player,
@@ -34,9 +37,12 @@ public static class DevShortcuts
 
         if (Input.Input.KeyPressed(KeyCodes.F6))
         {
-            EnemyPatrol.Enabled = !EnemyPatrol.Enabled;
-            SpiderPatrol.Enabled = !SpiderPatrol.Enabled;
-            Logger.Info($"[DevShortcuts] Patrol {(EnemyPatrol.Enabled ? "ON" : "OFF")}");
+
+            _enableAI = !_enableAI;
+            EnemyPatrol.Enabled = _enableAI;
+            SpiderPatrol.Enabled = _enableAI;
+            Logger.Info($"[DevShortcuts] Patrol {(_enableAI ? "ON" : "OFF")}");
+            GameNotify.Info($"PatrolAI {(_enableAI ? "ON" : "OFF")}");
         }
     
         // Map reload
@@ -49,11 +55,17 @@ public static class DevShortcuts
 
         // Post-processing toggle
         if (Input.Input.KeyPressed(KeyCodes.F10))
+        {
             renderer.PostPipeline.Settings.Enabled = !renderer.PostPipeline.Settings.Enabled;
+            GameNotify.Info($"PostProcessing {(renderer.PostPipeline.Settings.Enabled ? "ON" : "OFF")}");
+        }
 
         // Shadow toggle
         if (Input.Input.KeyPressed(KeyCodes.F12))
+        {
             renderer.ShadowsEnabled = !renderer.ShadowsEnabled;
+            GameNotify.Info($"Shadow {(renderer.ShadowsEnabled ? "ON" : "OFF")}");
+        }
 
         // G: Spawn explosion at raycast hit
         if (Input.Input.KeyPressed(KeyCodes.G))

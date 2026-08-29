@@ -60,6 +60,10 @@ public unsafe class ImGuiBackEnd : IDisposable
         bool surfMode = player.SurfMode;
         if (ImGui.Checkbox("Surf Mode", ref surfMode))
             player.SurfMode = surfMode;
+        bool bhopMode = player.EnableBhop;
+        if (ImGui.Checkbox("Bhop Mode", ref bhopMode))
+            player.EnableBhop = bhopMode;
+
         if (ImGuiNET.ImGui.CollapsingHeader("Post-Process"))
         {
             var pp = renderer.PostPipeline.Settings; // precisamos expor property pública no MasterRenderer

@@ -331,7 +331,8 @@ public unsafe class Application : IDisposable
                     RenderDebug(aspect);
 
                 // HUD Draw
-                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, _player?.Camera, _scrWidth, _scrHeight);
+                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, _player, _player?.Camera, _scrWidth, _scrHeight);
+                GameNotify.Update(dt);
                 _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
 
                 _console.Draw();

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.Intrinsics.X86;
+using System.Security.Cryptography;
 using System.Threading.Tasks.Dataflow;
 using Accessibility;
 using Fuse.Core;
@@ -59,7 +60,9 @@ public class Player : IDisposable
 
     public bool SurfMode { get; set; } = false;
     public void ToggleSurfMode() => SurfMode = !SurfMode;
+    public bool EnableBhop { get; set; } = false;
 
+    private bool _jumpWasPressed;
     private bool _noclip;
     private Vector3 _noclipPosition;
     private float _noclipSpeed = 10.0f;
@@ -308,10 +311,15 @@ public class Player : IDisposable
 
         if (onGround)
         {
-            bool wantsJump = Input.Input.KeyDown(Input.KeyCodes.Space);
+            bool jumpHeld = Input.Input.KeyDown(Input.KeyCodes.Space);
+
+            bool jumpEdge = jumpHeld && !_jumpWasPressed;
+            _jumpWasPressed = jumpHeld;
+
+            bool wantsJump = jumpHeld;
 
             Vector2 horiz = new(velocity.X, velocity.Z);
-            if (!wantsJump)
+            if (!wantsJump || !EnableBhop)
                 horiz = ApplyFriction(horiz, dt);
             float groundSpeed = _maxSpeedGround;
             if (_isSprinting)
@@ -362,12 +370,12 @@ public class Player : IDisposable
                 }
             }
 
-            if (Input.Input.KeyDown(Input.KeyCodes.Space))
+            if (EnableBhop ? jumpHeld : jumpEdge)
             {
                 velocity.Y = _jumpForce;
 
                 float currentSpeed = horiz.Length();
-                if (currentSpeed > 0.1f)
+                if (currentSpeed > 0.1f && EnableBhop)
                 {
                     horiz *= boostFactor;
                     velocity.X = horiz.X;

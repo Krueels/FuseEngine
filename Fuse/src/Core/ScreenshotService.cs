@@ -41,5 +41,6 @@ public static class ScreenshotService
         }
 
         Logger.Info($"Screenshot saved: {Path.GetFullPath(filename)}");
+        GameNotify.Info($"Screenshot saved: {filename}");
     }
 }

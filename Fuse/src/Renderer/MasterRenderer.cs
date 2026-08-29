@@ -125,6 +125,7 @@ public unsafe class MasterRenderer
     public void ReloadPostProcessShader()
     {
         _postPipeline.ReloadShader();
+        GameNotify.Info("PP Shaders Reload");
     }
 
     /// <summary>
