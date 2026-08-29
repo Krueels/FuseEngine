@@ -370,6 +370,35 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         }
 
         var nodeToPart = new Dictionary<int, string>();
+        var ragdollParentByPartId = new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        int FindNodeByName(string name)
+        {
+            for (int i = 0; i < skeleton.Nodes.Length; i++)
+            {
+                if (string.Equals(
+                        skeleton.Nodes[i].Name,
+                        name,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        void AddUniqueNode(List<int> chain, int nodeIndex)
+        {
+            if ((uint)nodeIndex >= (uint)skeleton.Nodes.Length ||
+                chain.Contains(nodeIndex))
+            {
+                return;
+            }
+
+            chain.Add(nodeIndex);
+        }
 
         bool TryGetNodePose(
             int nodeIndex,
@@ -541,67 +570,125 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         AddBodyPart();
 
+        void AddChainSegment(
+            string id,
+            int startNodeIndex,
+            int endNodeIndex,
+            float radiusRatio,
+            float minimumRadius,
+            float maximumRadius,
+            float mass,
+            ref string previousPartId)
+        {
+            int partsBefore = DeathRagdollDefinition.Parts.Count;
+
+            AddSegmentPart(
+                id,
+                startNodeIndex,
+                endNodeIndex,
+                radiusRatio,
+                minimumRadius,
+                maximumRadius,
+                mass);
+
+            // AddSegmentPart pode rejeitar nós inválidos ou segmentos de
+            // comprimento zero. Só criamos a junta se a cápsula realmente
+            // tiver sido adicionada.
+            if (DeathRagdollDefinition.Parts.Count <= partsBefore ||
+                !nodeToPart.TryGetValue(
+                    startNodeIndex,
+                    out string? actualPartId))
+            {
+                return;
+            }
+
+            ragdollParentByPartId[actualPartId] = previousPartId;
+            previousPartId = actualPartId;
+        }
+
         for (int leg = 0; leg < _legs.Length; leg++)
         {
             LegData data = _legs[leg];
+            string thighName = LegNames[leg];
+            int separator = thighName.LastIndexOf('.');
+            string suffix = separator >= 0
+                ? thighName[separator..]
+                : string.Empty;
+            string side = thighName.StartsWith(
+                "L.",
+                StringComparison.OrdinalIgnoreCase)
+                ? "L."
+                : "R.";
 
-            AddSegmentPart(
-                $"Leg{leg}.Thigh",
-                data.ThighNodeIndex,
-                data.SegmentNodeIndices[0],
-                0.09f,
-                0.07f,
-                0.22f,
-                0.20f);
+            // A cadeia de locomoção usa apenas thigh/Leg/foot/toes. O
+            // esqueleto, porém, também possui ossos intermediários de twist.
+            // Eles precisam ser nós físicos explícitos mesmo quando são
+            // irmãos na hierarquia importada, pois representam uma dobra
+            // visível da pata.
+            var chain = new List<int>(6);
+            AddUniqueNode(chain, data.ThighNodeIndex);
+            AddUniqueNode(
+                chain,
+                FindNodeByName($"{side}thigh.twist{suffix}"));
+            AddUniqueNode(
+                chain,
+                data.SegmentNodeIndices[0]);
+            AddUniqueNode(
+                chain,
+                FindNodeByName($"{side}Leg.twist{suffix}"));
+            AddUniqueNode(
+                chain,
+                data.SegmentNodeIndices[1]);
+            AddUniqueNode(
+                chain,
+                data.SegmentNodeIndices[2]);
 
-            AddSegmentPart(
-                $"Leg{leg}.Leg",
-                data.SegmentNodeIndices[0],
-                data.SegmentNodeIndices[1],
-                0.075f,
-                0.055f,
-                0.18f,
-                0.10f);
-
-            AddSegmentPart(
-                $"Leg{leg}.Foot",
-                data.SegmentNodeIndices[1],
-                data.SegmentNodeIndices[2],
-                0.065f,
-                0.045f,
-                0.15f,
-                0.06f);
-        }
-
-        string FindParentPart(int nodeIndex)
-        {
-            int parent = skeleton.Nodes[nodeIndex].Parent;
-
-            while ((uint)parent < (uint)skeleton.Nodes.Length)
-            {
-                if (nodeToPart.TryGetValue(parent, out string? parentPart))
-                    return parentPart;
-
-                parent = skeleton.Nodes[parent].Parent;
-            }
-
-            return "Body";
-        }
-
-        foreach (KeyValuePair<int, string> entry in nodeToPart)
-        {
-            if (string.Equals(
-                    entry.Value,
-                    "Body",
-                    StringComparison.OrdinalIgnoreCase))
-            {
+            if (chain.Count < 2)
                 continue;
+
+            Logger.Info(
+                $"[SpiderEnemy] Ragdoll leg {leg}: " +
+                string.Join(
+                    " -> ",
+                    chain.ConvertAll(node => skeleton.Nodes[node].Name)));
+
+            string previousPartId = "Body";
+            int segmentCount = chain.Count - 1;
+
+            for (int segment = 0; segment < segmentCount; segment++)
+            {
+                float t = segmentCount > 1
+                    ? segment / (float)(segmentCount - 1)
+                    : 0f;
+
+                float radiusRatio = 0.09f + (0.065f - 0.09f) * t;
+                float minimumRadius = 0.07f + (0.045f - 0.07f) * t;
+                float maximumRadius = 0.22f + (0.15f - 0.22f) * t;
+                float mass = MathF.Max(
+                    0.025f,
+                    0.36f / segmentCount);
+
+                int startNodeIndex = chain[segment];
+                int endNodeIndex = chain[segment + 1];
+                string boneName = skeleton.Nodes[startNodeIndex].Name;
+
+                AddChainSegment(
+                    $"Leg{leg}.Segment{segment}.{boneName}",
+                    startNodeIndex,
+                    endNodeIndex,
+                    radiusRatio,
+                    minimumRadius,
+                    maximumRadius,
+                    mass,
+                    ref previousPartId);
             }
+        }
 
-            string parentPart = FindParentPart(entry.Key);
-
+        foreach (KeyValuePair<string, string> entry
+                 in ragdollParentByPartId)
+        {
             if (string.Equals(
-                    parentPart,
+                    entry.Key,
                     entry.Value,
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -611,9 +698,9 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             DeathRagdollDefinition.Joints.Add(
                 new SpiderRagdollJointDefinition
                 {
-                    Id = $"{parentPart}->{entry.Value}",
-                    ParentPartId = parentPart,
-                    ChildPartId = entry.Value,
+                    Id = $"{entry.Value}->{entry.Key}",
+                    ParentPartId = entry.Value,
+                    ChildPartId = entry.Key,
                     ParentAnchor = Vector3.Zero,
                     ChildAnchor = Vector3.Zero,
                     TwistMinRadians = -0.75f,
