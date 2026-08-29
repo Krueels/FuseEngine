@@ -60,7 +60,6 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     };
 
     public EnemyPatrol? Patrol => null;
-    public SpiderPatrol? NavigationPatrol => _spiderPatrol;
 
     public SpiderEnemy(string id, float maxHealth = 100f, AssetManager? assets = null)
     {
