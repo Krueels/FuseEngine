@@ -102,6 +102,40 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         _assets = assets!;
     }
 
+    private static readonly string[] SpiderFootstepSounds = Enumerable.Range(1, 15).Select(i => $"{Bible.SpiderFootStep}{i:00}.wav").ToArray();
+    private int _lastFootstepSound = -1;
+
+    private void OnSpiderFootLanded(
+    int legIndex,
+    Vector3 position,
+    Vector3 normal)
+    {
+        Audio.AudioSystem? audio = Audio.AudioSystem.Instance;
+        if (audio == null)
+            return;
+
+        int soundIndex;
+        do
+        {
+            soundIndex = Random.Shared.Next(SpiderFootstepSounds.Length);
+        }
+        while (SpiderFootstepSounds.Length > 1 &&
+               soundIndex == _lastFootstepSound);
+
+        _lastFootstepSound = soundIndex;
+
+        float volume = 1.0f;
+        float pitch = 0.92f + Random.Shared.NextSingle() * 0.16f;
+
+        audio.Play3D(
+            SpiderFootstepSounds[soundIndex],
+            position + normal * 0.02f,
+            volume,
+            minDist: 1.0f,
+            maxDist: 35.0f,
+            pitch: pitch);
+    }
+
     public void Initialize(PhysicsWorld physics, Scene.SceneManager sceneManager, Vector3 spawnPos) =>
         Initialize(physics, sceneManager, spawnPos, null);
 
@@ -187,6 +221,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             _surfaceSolver.SetIgnoredBodies(_damageBody.BodyIds);
 
             _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver);
+            _proceduralWalk.FootLanded += OnSpiderFootLanded;
             _proceduralWalk.Initialize(_model.Skeleton, _legs);
 
             // 2. Conecta o buffer de matrizes do Animator ao ProceduralSpiderWalk
@@ -1326,6 +1361,11 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         {
             Entity.Mesh.Dispose();
             Entity.Mesh = null;
+        }
+
+        if (_proceduralWalk != null)
+        {
+            _proceduralWalk.FootLanded -= OnSpiderFootLanded;
         }
     }
 

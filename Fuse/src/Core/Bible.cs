@@ -6,41 +6,44 @@ namespace Fuse.Core;
 
 public static class Bible
 {
-    // UI
+    //Font
+    public const string DefaultFont = "Fonts/Obelisk-Demo.ttf";
+
+    // Textures - UI
     public const string Crosshair = "UI/crosshair.png";
     public const string CrosshairInteract = "UI/crosshair_interact.png";
     public const string EnemyIcon = "UI/enemy_icon.png";
 
-    //Font
-    public const string DefaultFont = "Fonts/Obelisk-Demo.ttf";
-
-    // Weapons
+    // Textures - Weapons
     public const string GlockAlbedo = "weapons/glock/Glock_ALB.png";
     public const string MuzzleFlash = "FX/muzzle_flash_{0}.png";
 
-    // Viewmodel
+    // Textures - Viewmodel
     public const string ArmsMale = "ArmsMale_ALB.png";
 
-    // Environment
+    // Textures - Environment
     public const string Skybox = "skybox_1.png";
     public const string Crate = "dev_measurecrate01.bmp";
+
+    // Textures - Decals
+    public const string DecalBulletHoleAlbedo = "decals/decal_bullet_hole.png";
+
+    // Textures - UnisexGuy
+    public const string UniSexBody = "UniSexGuyBody_ALB.png";
+    public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
 
     // Models
     public const string GlockModel = "skinned_models/Glock.fbx";
     public const string AKModel = "skinned_models/AKS47U.fbx";
 
-    // UnisexGuy
+    // Models - UnisexGuy
     public const string UniSexGuy = "skinned_models/UniSexGuyScaled.fbx";
     public const string UniSexGuyIdle = "Animations/UnisexGuy_AKS74U_Idle.fbx";
     public const string UniSexGuyWalk = "Animations/UnisexGuy_AKS74U_Walk.fbx";
-    public const string UniSexBody = "UniSexGuyBody_ALB.png";
-    public const string UniSexEyes = "UniSexGuyEyes_ALB.png";
-
-    // Spider
+    
+    // Models - Spider
     public const string SpiderModel = "skinned_models/spider.fbx";
 
-    // Decals
-    public const string DecalBulletHoleAlbedo = "decals/decal_bullet_hole.png";
 
     // Shaders
     public const string ShaderDefaultVert = "Shaders/default.vert";
@@ -71,16 +74,26 @@ public static class Bible
     public const string DeathScreenGlsl = "Shaders/death_screen.glsl";
     public const string DeathScreenVert = "Shaders/death_screen.vert";
 
+
     // Audio
     public const string BulletImpact = "Audio/weapons/Bullet_Impact_Flesh_";
+
+    // Audio - Glock
     public const string GlockDrawFirst = "Audio/weapons/glock/Glock_DrawFirst.wav";
     public const string GlockReload = "Audio/weapons/glock/Glock_Reload.wav";
     public const string GlockReloadEmpty = "Audio/weapons/glock/Glock_ReloadEmpty.wav";
     public const string GlockFire = "Audio/weapons/glock/Glock_Fire";
+
+    // Audio - AK
     public const string AKFire = "Audio/weapons/ak/AKS74U_Fire";
     public const string AKReload = "Audio/weapons/ak/AKS74U_Reload.wav";
     public const string AKReloadEmpty = "Audio/weapons/ak/AKS74U_ReloadEmpty.wav";
+
+    // Audio - Player
     public const string DeathSound = "Audio/DeathSound.mp3";
+
+    // Audio - Spider
+    public const string SpiderFootStep = "Audio/spider_footstep_";
 
     // Helpers
     public static string Tex(string name) => $"{ResPath.Path}/Textures/{name}";
@@ -137,6 +150,10 @@ public static class Bible
             // Impactos
             for (int i = 0; i < 3; i++)
                 audio.PreloadSound(Audio($"{BulletImpact}{i:D2}.mp3"));
+
+            // SpiderFootStep
+            for (int i = 1; i <= 15; i++)
+                audio.PreloadSound($"{SpiderFootStep}{i:00}.wav");
         }
     }
 

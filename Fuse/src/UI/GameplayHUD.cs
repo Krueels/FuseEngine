@@ -34,8 +34,8 @@ public class GameplayHUD
 
         _weaponDebugText = _hud.AddText("Weapon Debug", HUDAnchor.TopLeft, new Vector2(20, 50), 1.0f, new Vector4(0, 1, 0, 1));
         
-        _ammoText = _hud.AddText("0", HUDAnchor.BottomRight, new Vector2(-320, -120), 2.5f, new Vector4(1, 1, 1, 1));
-        _reserveAmmoText = _hud.AddText("0", HUDAnchor.BottomRight, new Vector2(-320, -100), 1.5f, new Vector4(0.7f, 0.7f, 0.7f, 1));
+        _ammoText = _hud.AddTextOutlined("0", HUDAnchor.BottomRight, new Vector2(-320, -125), 2.5f, new Vector4(1, 0.784f, 0, 1), 2f, new Vector4(0, 0, 0, 1));
+        _reserveAmmoText = _hud.AddTextOutlined("0", HUDAnchor.BottomRight, new Vector2(-320, -100), 1.5f, Vector4.One, 2f, new Vector4(0, 0, 0, 1));
 
         _enemyDebugHUD = new EnemyDebugHUD();
         _enemyDebugSelectionMode = _hud.AddText("DEBUG: ENEMY SELECTION MODE ON", HUDAnchor.TopLeft, new Vector2(20, 80), 2.0f, new Vector4(0, 1, 0, 1));
@@ -47,7 +47,7 @@ public class GameplayHUD
                 1.8f, Vector4.One, 2f, new Vector4(0,0,0,1));
         }
 
-        _playerHealth = _hud.AddText("0", HUDAnchor.BottomLeft, new Vector2(50, -100), 2f, new Vector4(1, 1, 1, 1));
+        _playerHealth = _hud.AddTextOutlined("0", HUDAnchor.BottomLeft, new Vector2(50, -100), 2f, Vector4.One, 2f, new Vector4(0, 0, 0, 1));
     }
 
     public void Update(WeaponSystem? weaponSystem, EnemySystem? enemySystem, bool enemySelectionMode, Player.Player player, Camera? camera, int width, int height)

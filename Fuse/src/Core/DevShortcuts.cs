@@ -75,38 +75,43 @@ public static class DevShortcuts
             GameNotify.Info($"Shadow {(renderer.ShadowsEnabled ? "ON" : "OFF")}");
         }
 
-        // G: Spawn explosion at raycast hit
-        if (Input.Input.KeyPressed(KeyCodes.G))
+        if (InputManager.CurrentContext == InputContext.Gameplay || InputManager.CurrentContext == InputContext.Weapon)
         {
-            if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+
+            // G: Spawn explosion at raycast hit
+            if (Input.Input.KeyPressed(KeyCodes.G))
             {
-                Explosion.Apply(physics, hit.Position, 105f, 10000.0f, audio);
+                if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+                {
+                    Explosion.Apply(physics, hit.Position, 105f, 10000.0f, audio);
+                }
             }
-        }
 
-        // J: Spawn enemy at raycast hit
-        if (Input.Input.KeyPressed(KeyCodes.J))
-        {
-            if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
-                enemySystem?.SpawnEnemy(hit.Position, 50f);
-        }
-
-        // J: Spawn spider at raycast hit
-        if (Input.Input.KeyPressed(KeyCodes.V))
-        {
-            if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
-                enemySystem?.SpawnSpider(hit.Position, 50f, hit.Normal);
-        }
-
-        // T: Spray decal
-        if (Input.Input.KeyPressed(KeyCodes.T))
-        {
-            if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+            // J: Spawn enemy at raycast hit
+            if (Input.Input.KeyPressed(KeyCodes.J))
             {
-                uint sprayTexId = assets.GetTexture(Bible.Tex("decals/afx.png")).ID;
-                sceneManager.Renderer.SpawnDecal(hit.Position, hit.Normal, sprayTexId, 1.0f, parentBody: hit.RigidBody, physics: physics);
-                audio?.Play3D(Bible.Audio("Audio/Spray.wav"), hit.Position);
+                if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+                    enemySystem?.SpawnEnemy(hit.Position, 50f);
             }
+
+            // V: Spawn spider at raycast hit
+            if (Input.Input.KeyPressed(KeyCodes.V))
+            {
+                if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+                    enemySystem?.SpawnSpider(hit.Position, 50f, hit.Normal);
+            }
+
+            // T: Spray decal
+            if (Input.Input.KeyPressed(KeyCodes.T))
+            {
+                if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
+                {
+                    uint sprayTexId = assets.GetTexture(Bible.Tex("decals/afx.png")).ID;
+                    sceneManager.Renderer.SpawnDecal(hit.Position, hit.Normal, sprayTexId, 1.0f, parentBody: hit.RigidBody, physics: physics);
+                    audio?.Play3D(Bible.Audio("Audio/Spray.wav"), hit.Position);
+                }
+            }
+
         }
 
         if (Input.Input.KeyPressed(KeyCodes.Z))

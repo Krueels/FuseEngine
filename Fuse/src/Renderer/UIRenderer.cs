@@ -1,6 +1,7 @@
 using System.Numerics;
 using Silk.NET.OpenGL;
 using Fuse.Core;
+using Fuse.Math;
 
 namespace Fuse.Renderer;
 
@@ -55,20 +56,11 @@ public unsafe class UIRenderer : IDisposable
             uniform vec2 uTexelSize;
             uniform float uOutlineWidth;
             uniform vec4 uOutlineColor;
+
+            // EDITAR AQUI: garantir que main tenha a chave {.
             void main() {
-                float center = texture(uTexture, vTexCoord).r;
-                if (uOutlineWidth > 0.0) {
-                    float outline = 0.0;
-                    for (int x = -1; x <= 1; x++)
-                        for (int y = -1; y <= 1; y++)
-                            outline = max(outline, texture(uTexture, vTexCoord + vec2(float(x), float(y)) * uTexelSize * uOutlineWidth).r);
-                    if (center < 0.01)
-                        fragColor = vec4(uOutlineColor.rgb, uOutlineColor.a * outline);
-                    else
-                        fragColor = vec4(vColor.rgb, vColor.a * center);
-                } else {
-                    fragColor = vec4(vColor.rgb, vColor.a * center);
-                }
+                float alpha = texture(uTexture, vTexCoord).r;
+                fragColor = vec4(vColor.rgb, vColor.a * alpha);
             }
             """;
         _textShader = LinkShader(gl, CompileShader(gl, ShaderType.VertexShader, textVS), CompileShader(gl, ShaderType.FragmentShader, textFS));
@@ -174,7 +166,45 @@ public unsafe class UIRenderer : IDisposable
         => DrawTextInternal(x, y, text, color, 0f, default, scale);
 
     public void DrawTextOutlined(float x, float y, ReadOnlySpan<char> text, Vector4 fillColor, float outlineWidth, Vector4 outlineColor, float scale = 1.0f)
-        => DrawTextInternal(x, y, text, fillColor, outlineWidth, outlineColor, scale);
+    {
+        // EDITAR AQUI: substituir o método antigo por esta versão.
+        if (text.Length == 0)
+            return;
+
+        int radius = System.Math.Clamp(
+            (int)MathF.Ceiling(outlineWidth),
+            1,
+            4);
+
+        // Desenha uma camada preta em blocos ao redor do texto.
+        for (int offsetY = -radius; offsetY <= radius; offsetY++)
+        {
+            for (int offsetX = -radius; offsetX <= radius; offsetX++)
+            {
+                if (offsetX == 0 && offsetY == 0)
+                    continue;
+
+                DrawTextInternal(
+                    x + offsetX,
+                    y + offsetY,
+                    text,
+                    outlineColor,
+                    0.0f,
+                    default,
+                    scale);
+            }
+        }
+
+        // Desenha o texto original por cima.
+        DrawTextInternal(
+            x,
+            y,
+            text,
+            fillColor,
+            0.0f,
+            default,
+            scale);
+    }
 
     private void DrawTextInternal(float x, float y, ReadOnlySpan<char> text, Vector4 color, float outlineWidth, Vector4 outlineColor, float scale)
     {

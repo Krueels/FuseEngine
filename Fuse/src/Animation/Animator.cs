@@ -1,4 +1,6 @@
+using System;
 using System.Numerics;
+using System.Reflection;
 using Fuse.Core;
 
 namespace Fuse.Animation;

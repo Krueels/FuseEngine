@@ -33,6 +33,9 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
     public Matrix4x4[]? FinalBoneMatrices { get; private set; }
 
+    public event Action<int, Vector3, Vector3>? FootLanded;
+
+
     private struct LegState
     {
         public int Hip;
@@ -356,7 +359,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                     else group1IsStepping = true;
                 }
 
-                UpdateFootStep(ref leg, dt, speed);
+                UpdateFootStep(ref leg, i, dt, speed);
             }
 
             Vector3 targetInModel = WorldToModel(leg.CurrentFootWorld, bodyPosition, modelWorldRotation, modelScale);
@@ -410,7 +413,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
             : _nextGaitPair[leg.GaitGroup] == leg.GaitPair;
     }
 
-    private void UpdateFootStep(ref LegState leg, float dt, float movementSpeed)
+    private void UpdateFootStep(ref LegState leg, int legIndex, float dt, float movementSpeed)
     {
         if (!leg.IsStepping)
             return;
@@ -436,8 +439,15 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         {
             leg.CurrentFootWorld = leg.TargetFootWorld;
             leg.CurrentFootNormalWorld = leg.TargetFootNormalWorld;
-            if (leg.TargetContact.IsValid)
+
+            bool landedOnRealSurface = leg.TargetContact.IsValid && leg.TargetContact.BodyId.IsValid;
+
+            if (landedOnRealSurface)
+            {
                 leg.PlantedContact = leg.TargetContact;
+
+                FootLanded?.Invoke(legIndex, leg.CurrentFootWorld, leg.CurrentFootNormalWorld);
+            }
             leg.IsStepping = false;
         }
     }
