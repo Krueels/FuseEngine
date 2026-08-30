@@ -52,10 +52,10 @@ public unsafe class EditorApplication : IDisposable
         _sceneService.LoadMap(_assetService.FuseResPath);
         _sceneService.PopulateScene(_assetService);
 
-        _viewport3D = new EditorViewport(gl, CameraViewType.Perspective3D);
-        _viewportTop = new EditorViewport(gl, CameraViewType.Top);
-        _viewportFront = new EditorViewport(gl, CameraViewType.Front);
-        _viewportSide = new EditorViewport(gl, CameraViewType.Side);
+        _viewport3D = new EditorViewport(gl, CameraViewType.Perspective3D, _assetService.ImageBasedLighting);
+        _viewportTop = new EditorViewport(gl, CameraViewType.Top, _assetService.ImageBasedLighting);
+        _viewportFront = new EditorViewport(gl, CameraViewType.Front, _assetService.ImageBasedLighting);
+        _viewportSide = new EditorViewport(gl, CameraViewType.Side, _assetService.ImageBasedLighting);
         _ui = new EditorUI();
         _history = new CommandHistory();
 

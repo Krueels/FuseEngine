@@ -4,6 +4,8 @@
 in vec2 vTexCoord;
 in vec3 vWorldPos;
 in vec3 vWorldNormal;
+in vec3 vWorldTangent;
+in vec3 vWorldBitangent;
 in vec3 vViewPos;
 
 out vec4 fragColor;
@@ -17,6 +19,12 @@ uniform samplerCube uPointShadowMap2;
 uniform samplerCube uPointShadowMap3;
 uniform bool uUseTexture;
 uniform vec3 uColor;
+uniform samplerCube uDiffuseIrradianceMap;
+uniform samplerCube uPrefilteredEnvMap;
+uniform sampler2D uBrdfLut;
+uniform bool uUseIbl;
+uniform float uIblIntensity;
+uniform bool uOutputSrgb;
 
 struct MaterialSurface {
     vec3 baseColor;
@@ -25,6 +33,7 @@ struct MaterialSurface {
     float metallic;
     vec3 emission;
     float alpha;
+    float ao;
     float hasNormalMap;
     float legacyLighting;
 };
@@ -44,6 +53,7 @@ MaterialSurface EvaluateMaterial(vec2 materialUv)
     surface.metallic = 0.0;
     surface.emission = vec3(0.0);
     surface.alpha = texel.a;
+    surface.ao = 1.0;
     surface.hasNormalMap = 0.0;
     surface.legacyLighting = 1.0;
     return surface;
@@ -200,6 +210,81 @@ float SpotShadow(int lightIndex, SpotLightData light, vec3 worldPos, vec3 normal
     return shadow * 0.25;
 }
 
+const float FUSE_PI = 3.14159265359;
+const float FUSE_MAX_PREFILTER_MIP = 4.0;
+
+float DistributionGGX(vec3 normal, vec3 halfVector, float roughness)
+{
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float nDotH = max(dot(normal, halfVector), 0.0);
+    float denominator = nDotH * nDotH * (alphaSquared - 1.0) + 1.0;
+    return alphaSquared / max(FUSE_PI * denominator * denominator, 0.000001);
+}
+
+float GeometrySchlickGGX(float nDot, float roughness)
+{
+    float k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
+    return nDot / max(nDot * (1.0 - k) + k, 0.000001);
+}
+
+float GeometrySmith(vec3 normal, vec3 viewDirection, vec3 lightDirection, float roughness)
+{
+    return GeometrySchlickGGX(max(dot(normal, viewDirection), 0.0), roughness) *
+           GeometrySchlickGGX(max(dot(normal, lightDirection), 0.0), roughness);
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 f0)
+{
+    return f0 + (1.0 - f0) * pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 f0, float roughness)
+{
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) *
+           pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 EvaluateCookTorrance(vec3 normal, vec3 viewDirection, vec3 lightDirection,
+                          vec3 radiance, vec3 albedo, float metallic, float roughness)
+{
+    float nDotV = max(dot(normal, viewDirection), 0.0);
+    float nDotL = max(dot(normal, lightDirection), 0.0);
+    if (nDotV <= 0.0 || nDotL <= 0.0)
+        return vec3(0.0);
+
+    vec3 halfVector = normalize(viewDirection + lightDirection);
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    vec3 fresnel = FresnelSchlick(max(dot(halfVector, viewDirection), 0.0), f0);
+    float distribution = DistributionGGX(normal, halfVector, roughness);
+    float geometry = GeometrySmith(normal, viewDirection, lightDirection, roughness);
+    vec3 specular = (distribution * geometry * fresnel) /
+                    max(4.0 * nDotV * nDotL, 0.0001);
+    vec3 diffuse = (1.0 - fresnel) * (1.0 - metallic) * albedo / FUSE_PI;
+    return (diffuse + specular) * radiance * nDotL;
+}
+
+vec3 EvaluateIbl(vec3 normal, vec3 viewDirection, vec3 albedo,
+                float metallic, float roughness, float ao)
+{
+    if (!uUseIbl)
+        return uDirectionalDirectionAmbient.w * uDirectionalColorCascadeBlend.rgb * albedo * ao;
+
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    float nDotV = max(dot(normal, viewDirection), 0.0);
+    vec3 fresnel = FresnelSchlickRoughness(nDotV, f0, roughness);
+    vec3 kS = fresnel;
+    vec3 kD = (1.0 - kS) * (1.0 - metallic);
+    vec3 irradiance = texture(uDiffuseIrradianceMap, normal).rgb;
+    vec3 diffuse = irradiance * albedo;
+    vec3 reflection = reflect(-viewDirection, normal);
+    vec3 prefiltered = textureLod(uPrefilteredEnvMap, reflection,
+                                   roughness * FUSE_MAX_PREFILTER_MIP).rgb;
+    vec2 brdf = texture(uBrdfLut, vec2(nDotV, roughness)).rg;
+    vec3 specular = prefiltered * (fresnel * brdf.x + brdf.y);
+    return (kD * diffuse + specular) * ao * uIblIntensity;
+}
+
 void main()
 {
     MaterialSurface material = EvaluateMaterial(vTexCoord);
@@ -209,16 +294,23 @@ void main()
     vec3 color = material.baseColor;
     vec3 normal = normalize(vWorldNormal);
     if (material.hasNormalMap > 0.5) {
-        vec3 dp1 = dFdx(vWorldPos);
-        vec3 dp2 = dFdy(vWorldPos);
-        vec2 duv1 = dFdx(vTexCoord);
-        vec2 duv2 = dFdy(vTexCoord);
-        vec3 dp2perp = cross(dp2, normal);
-        vec3 dp1perp = cross(normal, dp1);
-        vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
-        vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
-        float invMax = inversesqrt(max(max(dot(tangent, tangent), dot(bitangent, bitangent)), 0.000001));
-        mat3 tangentFrame = mat3(tangent * invMax, bitangent * invMax, normal);
+        vec3 tangent = vWorldTangent;
+        vec3 bitangent = vWorldBitangent;
+        if (dot(tangent, tangent) < 0.000001 || dot(bitangent, bitangent) < 0.000001) {
+            vec3 dp1 = dFdx(vWorldPos);
+            vec3 dp2 = dFdy(vWorldPos);
+            vec2 duv1 = dFdx(vTexCoord);
+            vec2 duv2 = dFdy(vTexCoord);
+            vec3 dp2perp = cross(dp2, normal);
+            vec3 dp1perp = cross(normal, dp1);
+            tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+            bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+        }
+        tangent = normalize(tangent - normal * dot(normal, tangent));
+        bitangent = normalize(bitangent - normal * dot(normal, bitangent));
+        if (dot(cross(normal, tangent), bitangent) < 0.0)
+            bitangent = -bitangent;
+        mat3 tangentFrame = mat3(tangent, bitangent, normal);
         normal = normalize(tangentFrame * material.tangentNormal);
     }
 
@@ -227,25 +319,21 @@ void main()
     vec3 directionalColor = uDirectionalColorCascadeBlend.rgb;
     float roughness = clamp(material.roughness, 0.02, 1.0);
     float metallic = clamp(material.metallic, 0.0, 1.0);
-    float shininess = mix(128.0, 4.0, roughness * roughness);
-    float diffuseWeight = 1.0 - metallic;
-    vec3 specularColor = mix(vec3(0.04), color, metallic);
-
-    vec3 ambient = uDirectionalDirectionAmbient.w * directionalColor;
+    float ambient = uDirectionalDirectionAmbient.w;
     float diffuseAmount = max(dot(normal, lightDir), 0.0);
     vec3 halfDir = normalize(lightDir + viewDir);
-    float specularAmount = pow(max(dot(normal, halfDir), 0.0), shininess);
     float legacySpecularAmount = pow(max(dot(normal, halfDir), 0.0), 32.0);
 
     float directionalShadow = 0.0;
     if (uMaterialReceiveShadows && DirectionalShadowsEnabled() && length(directionalColor) > 0.0001)
         directionalShadow = DirectionalShadow(vWorldPos, normal, lightDir);
 
-    vec3 materialDirectional = ambient * color + (1.0 - directionalShadow) * directionalColor *
-        (diffuseAmount * color * diffuseWeight + specularAmount * specularColor);
+    vec3 materialDirectional = (1.0 - directionalShadow) *
+        EvaluateCookTorrance(normal, viewDir, lightDir, directionalColor, color, metallic, roughness);
     vec3 legacyDirectional = (ambient + (1.0 - directionalShadow) *
         (diffuseAmount + legacySpecularAmount * 0.5) * directionalColor) * color;
-    vec3 result = mix(materialDirectional, legacyDirectional, material.legacyLighting);
+    vec3 result = mix(EvaluateIbl(normal, viewDir, color, metallic, roughness, material.ao) + materialDirectional,
+                      legacyDirectional, material.legacyLighting);
 
     for (int i = 0; i < PointLightCount(); i++) {
         PointLightData light = uPointLights[i];
@@ -255,15 +343,15 @@ void main()
         if (distanceToLight > radius || distanceToLight <= 0.0001) continue;
 
         vec3 localLightDir = lightVector / distanceToLight;
-        float falloff = clamp(1.0 - (distanceToLight * distanceToLight) / (radius * radius), 0.0, 1.0);
-        float attenuation = falloff * falloff;
+        float rangeFade = clamp(1.0 - distanceToLight / max(radius, 0.0001), 0.0, 1.0);
+        float attenuation = rangeFade * rangeFade / max(distanceToLight * distanceToLight, 0.01);
         float diffuse = max(dot(normal, localLightDir), 0.0);
         vec3 localHalf = normalize(localLightDir + viewDir);
-        float specular = pow(max(dot(normal, localHalf), 0.0), shininess);
         float legacySpecular = pow(max(dot(normal, localHalf), 0.0), 32.0);
         float shadow = uMaterialReceiveShadows ? PointShadow(light, vWorldPos) : 0.0;
-        vec3 materialContribution = (1.0 - shadow) * light.colorShadowIndex.rgb * attenuation *
-            (diffuse * color * diffuseWeight + specular * specularColor);
+        vec3 materialContribution = (1.0 - shadow) * EvaluateCookTorrance(
+            normal, viewDir, localLightDir, light.colorShadowIndex.rgb * attenuation,
+            color, metallic, roughness);
         vec3 legacyContribution = (1.0 - shadow) * (diffuse + legacySpecular * 0.5) *
             light.colorShadowIndex.rgb * attenuation * color;
         result += mix(materialContribution, legacyContribution, material.legacyLighting);
@@ -282,15 +370,15 @@ void main()
         float spotFactor = clamp((theta - light.colorOuterCos.w) / epsilon, 0.0, 1.0);
         if (spotFactor < 0.001) continue;
 
-        float falloff = clamp(1.0 - (distanceToLight * distanceToLight) / (radius * radius), 0.0, 1.0);
-        float attenuation = falloff * falloff;
+        float rangeFade = clamp(1.0 - distanceToLight / max(radius, 0.0001), 0.0, 1.0);
+        float attenuation = rangeFade * rangeFade / max(distanceToLight * distanceToLight, 0.01);
         float diffuse = max(dot(normal, localLightDir), 0.0);
         vec3 localHalf = normalize(localLightDir + viewDir);
-        float specular = pow(max(dot(normal, localHalf), 0.0), shininess);
         float legacySpecular = pow(max(dot(normal, localHalf), 0.0), 32.0);
         float shadow = uMaterialReceiveShadows ? SpotShadow(i, light, vWorldPos, normal, localLightDir) : 0.0;
-        vec3 materialContribution = (1.0 - shadow) * light.colorOuterCos.rgb * attenuation * spotFactor *
-            (diffuse * color * diffuseWeight + specular * specularColor);
+        vec3 materialContribution = (1.0 - shadow) * EvaluateCookTorrance(
+            normal, viewDir, localLightDir, light.colorOuterCos.rgb * attenuation * spotFactor,
+            color, metallic, roughness);
         vec3 legacyContribution = (1.0 - shadow) * (diffuse + legacySpecular * 0.5) *
             light.colorOuterCos.rgb * attenuation * spotFactor * color;
         result += mix(materialContribution, legacyContribution, material.legacyLighting);
@@ -306,5 +394,8 @@ void main()
     // away as transparent, which looked like an unlit/black preview.
     float outputAlpha = uMaterialAlphaMode == 2 ? material.alpha : 1.0;
     outputAlpha = max(uIsViewmodel, outputAlpha);
-    fragColor = vec4(result, outputAlpha);
+    vec3 outputColor = uOutputSrgb
+        ? pow(max(result, vec3(0.0)), vec3(1.0 / 2.2))
+        : result;
+    fragColor = vec4(outputColor, outputAlpha);
 }

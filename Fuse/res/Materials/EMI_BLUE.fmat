@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "name": "EMI_BLUE",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "f4541d801efe4090a313728fae1f04eb",
+        "type": "Color",
+        "name": "Color",
+        "position": [
+          111,
+          247
+        ],
+        "properties": {
+          "value": [
+            0.7058824,
+            0,
+            1
+          ]
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "f4541d801efe4090a313728fae1f04eb",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Emission"
+      },
+      {
+        "from_node": "f4541d801efe4090a313728fae1f04eb",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      }
+    ]
+  }
+}

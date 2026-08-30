@@ -9,6 +9,7 @@
         100,
         100
       ],
+      "material": "Materials/GRASS.fmat",
       "texture": "Textures/grassfloor002a.bmp",
       "body": {
         "shape": "box",
@@ -69,6 +70,7 @@
       "id": "ramp",
       "visible": true,
       "model": "Models/prototype.obj",
+      "material": "Materials/DevMeasureCrate.fmat",
       "body": {
         "shape": "trimesh",
         "position": [
@@ -92,6 +94,7 @@
       "id": "block",
       "visible": true,
       "model": "Models/block.obj",
+      "material": "Materials/DevMeasureCrate.fmat",
       "interactable": "ButtonInteract",
       "body": {
         "shape": "trimesh",
@@ -116,6 +119,7 @@
       "id": "new_box",
       "visible": true,
       "mesh": "cube",
+      "material": "Materials/DevMeasureCrate.fmat",
       "body": {
         "shape": "box",
         "position": [
@@ -144,6 +148,7 @@
       "id": "new_box02",
       "visible": true,
       "mesh": "cube",
+      "material": "Materials/REFLECT.fmat",
       "body": {
         "shape": "box",
         "position": [
@@ -319,6 +324,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -495,6 +501,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -671,6 +678,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -847,6 +855,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -1023,6 +1032,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -1199,6 +1209,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -1399,6 +1410,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1575,6 +1587,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1709,10 +1722,10 @@
         0,
         1
       ],
-      "light_intensity": 6.3,
-      "light_radius": 13.1,
-      "light_inner_cone": 0.4101524,
-      "light_outer_cone": 0.76794493,
+      "light_intensity": 80,
+      "light_radius": 14.4,
+      "light_inner_cone": 0.57595867,
+      "light_outer_cone": 0.79412484,
       "light_cast_shadows": true,
       "light_shadow_bias": 0.001,
       "light_dynamic": false,
@@ -1767,7 +1780,7 @@
         0.125,
         0
       ],
-      "light_intensity": 8.7,
+      "light_intensity": 50,
       "light_radius": 7.1,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -1777,7 +1790,7 @@
       "body": {
         "shape": "none",
         "position": [
-          -0.92328644,
+          -1.4326644,
           3.4481769,
           4.890121
         ],
@@ -1943,6 +1956,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "behaviours": [
         {
@@ -2127,6 +2141,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "behaviours": [
         {
@@ -2165,6 +2180,7 @@
       "id": "stairs",
       "visible": true,
       "model": "Models/stairs.obj",
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "trimesh",
@@ -2336,6 +2352,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2372,8 +2389,8 @@
         1,
         0
       ],
-      "light_intensity": 3.55,
-      "light_radius": 6.8,
+      "light_intensity": 30,
+      "light_radius": 11.2,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
       "light_cast_shadows": true,
@@ -2548,7 +2565,7 @@
     },
     {
       "id": "new_directional_light",
-      "visible": true,
+      "visible": false,
       "light_type": "directional",
       "light_color": [
         1,
@@ -2731,6 +2748,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/brickwall001a.bmp",
       "body": {
         "shape": "box",
@@ -2906,6 +2924,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/EMI_BLUE.fmat",
       "texture": "Textures/emi_blue.png",
       "body": {
         "shape": "box",
@@ -3256,6 +3275,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3431,6 +3451,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3606,6 +3627,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",

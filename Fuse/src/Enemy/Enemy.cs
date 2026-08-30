@@ -99,8 +99,8 @@ namespace Fuse.Enemy
                 model.HiddenSubmeshes.Add("Shotgun_Mesh");
                 model.HiddenSubmeshes.Add("SM_Knife_01");
 
-                var bodyTex = _assets.GetTexture(Bible.Tex(Bible.UniSexBody));
-                var eyesTex = _assets.GetTexture(Bible.Tex(Bible.UniSexEyes));
+            var bodyTex = _assets.GetTexture(Bible.Tex(Bible.UniSexBody), TextureColorSpace.Srgb);
+            var eyesTex = _assets.GetTexture(Bible.Tex(Bible.UniSexEyes), TextureColorSpace.Srgb);
 
                 foreach (var sub in model.Submeshes)
                 {

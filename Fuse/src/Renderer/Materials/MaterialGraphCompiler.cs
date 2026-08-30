@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Fuse.Renderer.Materials;
 
-public sealed record MaterialTextureSlot(string NodeId, string UniformName, string AssetPath, int Slot);
+public sealed record MaterialTextureSlot(string NodeId, string UniformName, string AssetPath, int Slot, TextureColorSpace ColorSpace);
 public sealed record MaterialUniformSlot(string NodeId, string UniformName, MaterialValueType Type);
 
 public sealed class MaterialGraphCompilation
@@ -76,6 +76,7 @@ public static class MaterialGraphCompiler
             Expression metallic = ResolveInput(output, "Metallic", new Expression("uMaterialMetallic", MaterialValueType.Float));
             Expression emission = ResolveInput(output, "Emission", new Expression("uMaterialEmission", MaterialValueType.Vector3));
             Expression alpha = ResolveInput(output, "Alpha", new Expression("uMaterialAlpha", MaterialValueType.Float));
+            Expression ao = ResolveInput(output, "AO", new Expression("uMaterialAO", MaterialValueType.Float));
             bool hasNormalMap = _graph.Links.Any(link => link.ToNode == output.Id && link.ToSocket == "Normal");
 
             var source = new StringBuilder();
@@ -84,6 +85,7 @@ public static class MaterialGraphCompiler
             source.AppendLine("uniform float uMaterialMetallic;");
             source.AppendLine("uniform vec3 uMaterialEmission;");
             source.AppendLine("uniform float uMaterialAlpha;");
+            source.AppendLine("uniform float uMaterialAO;");
 
             foreach (MaterialTextureSlot texture in Textures)
                 source.AppendLine($"uniform sampler2D {texture.UniformName};");
@@ -107,6 +109,7 @@ public static class MaterialGraphCompiler
             source.AppendLine($"    surface.metallic = clamp({AsType(metallic, MaterialValueType.Float).Code}, 0.0, 1.0);");
             source.AppendLine($"    surface.emission = {AsType(emission, MaterialValueType.Vector3).Code};");
             source.AppendLine($"    surface.alpha = clamp({AsType(alpha, MaterialValueType.Float).Code}, 0.0, 1.0);");
+            source.AppendLine($"    surface.ao = clamp({AsType(ao, MaterialValueType.Float).Code}, 0.0, 1.0);");
             source.AppendLine($"    surface.hasNormalMap = {(hasNormalMap ? "1.0" : "0.0")};");
             source.AppendLine("    surface.legacyLighting = 0.0;");
             source.AppendLine("    return surface;");
@@ -136,6 +139,8 @@ public static class MaterialGraphCompiler
             Expression result = node.Type switch
             {
                 "Texture2D" => ResolveTexture(node, socket),
+                "ScalarTexture" => ResolveScalarTexture(node),
+                "PackedMetallicRoughness" => ResolvePackedMetallicRoughness(node, socket),
                 "Color" => ResolveUniform(node, MaterialValueType.Vector3, "uMatColor"),
                 "Float" => ResolveUniform(node, MaterialValueType.Float, "uMatFloat"),
                 "Vector3" => ResolveUniform(node, MaterialValueType.Vector3, "uMatVector"),
@@ -163,7 +168,8 @@ public static class MaterialGraphCompiler
                     node.Id,
                     $"uMaterialTexture{slot}",
                     MaterialAsset.GetString(node.Properties, "path", ""),
-                    slot);
+                    slot,
+                    ParseColorSpace(MaterialAsset.GetString(node.Properties, "color_space", "sRGB")));
                 Textures.Add(texture);
                 _textureByNode[node.Id] = texture;
             }
@@ -174,6 +180,47 @@ public static class MaterialGraphCompiler
                 ? new Expression(sample + ".a", MaterialValueType.Float)
                 : new Expression(sample + ".rgb", MaterialValueType.Vector3);
         }
+
+        private Expression ResolveScalarTexture(MaterialGraphNode node)
+        {
+            return new Expression(ResolveTextureSample(node) + ".r", MaterialValueType.Float);
+        }
+
+        private Expression ResolvePackedMetallicRoughness(MaterialGraphNode node, string socket)
+        {
+            string sample = ResolveTextureSample(node);
+            return socket.Equals("Metallic", StringComparison.OrdinalIgnoreCase)
+                ? new Expression(sample + ".b", MaterialValueType.Float)
+                : new Expression(sample + ".g", MaterialValueType.Float);
+        }
+
+        private string ResolveTextureSample(MaterialGraphNode node)
+        {
+            if (!_textureByNode.TryGetValue(node.Id, out MaterialTextureSlot? texture))
+            {
+                int slot = Textures.Count;
+                if (slot >= MaterialRuntime.MaxTextureSlots)
+                    throw new InvalidDataException($"Material graph exceeds the limit of {MaterialRuntime.MaxTextureSlots} textures.");
+                texture = new MaterialTextureSlot(
+                    node.Id,
+                    $"uMaterialTexture{slot}",
+                    MaterialAsset.GetString(node.Properties, "path", ""),
+                    slot,
+                    ParseColorSpace(MaterialAsset.GetString(node.Properties, "color_space", "linear")));
+                Textures.Add(texture);
+                _textureByNode[node.Id] = texture;
+            }
+
+            Expression uv = ResolveInput(node, "UV", new Expression("materialUv", MaterialValueType.Vector2));
+            return $"texture({texture.UniformName}, {AsType(uv, MaterialValueType.Vector2).Code})";
+        }
+
+        private static TextureColorSpace ParseColorSpace(string value) => value.Trim().ToLowerInvariant() switch
+        {
+            "srgb" or "s-rgb" or "color" => TextureColorSpace.Srgb,
+            "data" or "linear" => TextureColorSpace.Linear,
+            _ => TextureColorSpace.Srgb
+        };
 
         private Expression ResolveUniform(MaterialGraphNode node, MaterialValueType type, string prefix)
         {

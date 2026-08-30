@@ -51,7 +51,8 @@ public static unsafe class ModelLoader
         }
 
         var scene = Api.ImportFile(cleanPath,
-            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords));
+            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals |
+                   PostProcessSteps.TransformUVCoords | (PostProcessSteps)0x1u));
 
         if (scene == null || scene->MRootNode == null || scene->MNumMeshes == 0)
         {
@@ -94,7 +95,13 @@ public static unsafe class ModelLoader
                 if (mesh->MNormals != null)
                     normal = new Vector3(mesh->MNormals[i].X, mesh->MNormals[i].Y, mesh->MNormals[i].Z);
 
-                vertices.Add(new Vertex { Position = pos, TexCoord = uv, Normal = normal });
+                var tangent = mesh->MTangents != null
+                    ? new Vector3(mesh->MTangents[i].X, mesh->MTangents[i].Y, mesh->MTangents[i].Z)
+                    : Vector3.Zero;
+                var bitangent = mesh->MBitangents != null
+                    ? new Vector3(mesh->MBitangents[i].X, mesh->MBitangents[i].Y, mesh->MBitangents[i].Z)
+                    : Vector3.Zero;
+                vertices.Add(new Vertex { Position = pos, TexCoord = uv, Normal = normal, Tangent = tangent, Bitangent = bitangent });
                 collVerts.Add(pos);
             }
 
@@ -155,7 +162,8 @@ public static unsafe class ModelLoader
         }
 
         var scene = Api.ImportFile(cleanPath,
-            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords));
+            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals |
+                   PostProcessSteps.TransformUVCoords | (PostProcessSteps)0x1u));
 
         if (scene == null || scene->MRootNode == null || scene->MNumMeshes == 0)
         {
@@ -189,7 +197,13 @@ public static unsafe class ModelLoader
                 if (mesh->MNormals != null)
                     normal = new Vector3(mesh->MNormals[i].X, mesh->MNormals[i].Y, mesh->MNormals[i].Z);
 
-                vertices.Add(new Vertex { Position = pos, TexCoord = uv, Normal = normal });
+                var tangent = mesh->MTangents != null
+                    ? new Vector3(mesh->MTangents[i].X, mesh->MTangents[i].Y, mesh->MTangents[i].Z)
+                    : Vector3.Zero;
+                var bitangent = mesh->MBitangents != null
+                    ? new Vector3(mesh->MBitangents[i].X, mesh->MBitangents[i].Y, mesh->MBitangents[i].Z)
+                    : Vector3.Zero;
+                vertices.Add(new Vertex { Position = pos, TexCoord = uv, Normal = normal, Tangent = tangent, Bitangent = bitangent });
                 collVerts.Add(pos);
             }
 

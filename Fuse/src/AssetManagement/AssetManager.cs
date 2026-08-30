@@ -32,12 +32,13 @@ public class AssetManager
 
     public GL Gl => _gl;
 
-    public Renderer.Texture GetTexture(string path)
+    public Renderer.Texture GetTexture(string path, Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear)
     {
-        string key = Path.GetFullPath(path).Replace('\\', '/');
+        string key = $"{Path.GetFullPath(path).Replace('\\', '/')}|{colorSpace}";
         if (_textures.TryGetValue(key, out var tex))
             return tex;
-        tex = new Renderer.Texture(_gl, key);
+        string filePath = key[..key.LastIndexOf('|')];
+        tex = new Renderer.Texture(_gl, filePath, colorSpace);
         _textures[key] = tex;
         return tex;
     }
@@ -219,7 +220,8 @@ public class AssetManager
         if (_skinnedModels.TryGetValue(path, out var cached))
             return cached;
 
-        var loaded = Renderer.SkinnedModelLoader.Load(_gl, path, texPath => GetTexture(texPath));
+        var loaded = Renderer.SkinnedModelLoader.Load(_gl, path,
+            texPath => GetTexture(texPath, Renderer.TextureColorSpace.Srgb));
         if (loaded == null)
             return null;
 

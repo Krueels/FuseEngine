@@ -21,5 +21,6 @@ vec4 TonemapOnly(vec2 uv) {
     if (uTonemapEnabled == 1) {
         col = ToneMapACES(col);
     }
+    col = pow(max(col, vec3(0.0)), vec3(1.0 / max(uGamma, 0.001)));
     return vec4(col, 1.0);
 }

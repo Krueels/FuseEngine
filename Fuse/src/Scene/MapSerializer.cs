@@ -500,7 +500,7 @@ public static class MapSerializer
                 {
                     try
                     {
-                        entity.Texture = assets.GetTexture(texPath);
+                        entity.Texture = assets.GetTexture(texPath, Fuse.Renderer.TextureColorSpace.Srgb);
                     }
                     catch (Exception ex)
                     {

@@ -87,7 +87,8 @@ public sealed class MaterialAsset
                 ["roughness"] = 0.5f,
                 ["metallic"] = 0.0f,
                 ["emission"] = Vec3ToJson(Vector3.Zero),
-                ["alpha"] = 1.0f
+                ["alpha"] = 1.0f,
+                ["ao"] = 1.0f
             }
         };
 

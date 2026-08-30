@@ -21,6 +21,10 @@ public static class MaterialNodeCatalog
     [
         new("Texture2D", "Texture", [new("UV", MaterialValueType.Vector2)],
             [new("Color", MaterialValueType.Vector3), new("Alpha", MaterialValueType.Float)]),
+        new("ScalarTexture", "Scalar Texture", [new("UV", MaterialValueType.Vector2)],
+            [new("Value", MaterialValueType.Float)]),
+        new("PackedMetallicRoughness", "Metallic/Roughness", [new("UV", MaterialValueType.Vector2)],
+            [new("Metallic", MaterialValueType.Float), new("Roughness", MaterialValueType.Float)]),
         new("Color", "Color", [], [new("Color", MaterialValueType.Vector3)]),
         new("Float", "Float", [], [new("Value", MaterialValueType.Float)]),
         new("Vector3", "Vector", [], [new("Vector", MaterialValueType.Vector3)]),
@@ -40,7 +44,8 @@ public static class MaterialNodeCatalog
                 new("Roughness", MaterialValueType.Float),
                 new("Metallic", MaterialValueType.Float),
                 new("Emission", MaterialValueType.Vector3),
-                new("Alpha", MaterialValueType.Float)
+                new("Alpha", MaterialValueType.Float),
+                new("AO", MaterialValueType.Float)
             ], [])
     ];
 
@@ -64,6 +69,14 @@ public static class MaterialNodeCatalog
                 node.Properties["path"] = "";
                 node.Properties["color_space"] = "sRGB";
                 break;
+            case "ScalarTexture":
+                node.Properties["path"] = "";
+                node.Properties["color_space"] = "linear";
+                break;
+            case "PackedMetallicRoughness":
+                node.Properties["path"] = "";
+                node.Properties["color_space"] = "linear";
+                break;
             case "Color":
                 node.Properties["value"] = MaterialAsset.Vec3ToJson(System.Numerics.Vector3.One);
                 break;
@@ -82,6 +95,7 @@ public static class MaterialNodeCatalog
                 node.Properties["metallic"] = 0.0f;
                 node.Properties["emission"] = MaterialAsset.Vec3ToJson(System.Numerics.Vector3.Zero);
                 node.Properties["alpha"] = 1.0f;
+                node.Properties["ao"] = 1.0f;
                 break;
         }
         return node;

@@ -5,6 +5,13 @@ using Fuse.Core;
 
 namespace Fuse.Renderer;
 
+public enum TextureColorSpace
+{
+    Linear,
+    Srgb,
+    Data
+}
+
 public unsafe class Texture : IDisposable
 {
     private readonly GL _gl;
@@ -13,10 +20,12 @@ public unsafe class Texture : IDisposable
     private readonly int _height;
     private readonly byte[]? _pixelData;
     private readonly int _channels;
+    public TextureColorSpace ColorSpace { get; }
 
-    public Texture(GL gl, string filepath)
+    public Texture(GL gl, string filepath, TextureColorSpace colorSpace = TextureColorSpace.Srgb)
     {
         _gl = gl;
+        ColorSpace = colorSpace;
 
         if (!File.Exists(filepath))
         {
@@ -42,7 +51,11 @@ public unsafe class Texture : IDisposable
 
         _channels = 4;
         var format = PixelFormat.Rgba;
-        var internalFormat = InternalFormat.Rgba;
+        // Color textures are decoded from sRGB to linear by the sampler. Normal,
+        // metallic/roughness and AO maps must remain linear data textures.
+        var internalFormat = colorSpace == TextureColorSpace.Srgb
+            ? InternalFormat.SrgbAlpha
+            : InternalFormat.Rgba;
 
         // Keep original pixels for color analysis (before flip)
         _pixelData = image.Data;

@@ -1,8 +1,8 @@
 #version 430 core
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aTexCoord;
-layout(location = 3) in ivec4 aBoneIds;
-layout(location = 4) in vec4 aWeights;
+layout(location = 5) in ivec4 aBoneIds;
+layout(location = 6) in vec4 aWeights;
 
 const int MAX_BONES = 192;
 layout(std430, binding = 0) buffer BonesBuffer {

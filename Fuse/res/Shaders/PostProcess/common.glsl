@@ -30,6 +30,7 @@ uniform float uSsaoIntensity;
 
 // Tonemap
 uniform int uTonemapEnabled;
+uniform float uGamma;
 
 in vec2 vTexCoord;
 

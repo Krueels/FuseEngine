@@ -27,7 +27,8 @@ public static unsafe class SkinnedModelLoader
         // entre nós, canais de animação e offsets. Sem isso, canais e nós ficam em escalas diferentes.
         const uint GlobalScale = 0x8000000u;
         var scene = Api.ImportFile(path,
-            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords) | GlobalScale);
+            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals |
+                   PostProcessSteps.TransformUVCoords | (PostProcessSteps)0x1u) | GlobalScale);
 
         if (scene == null || scene->MRootNode == null || scene->MNumMeshes == 0)
         {
@@ -197,11 +198,19 @@ public static unsafe class SkinnedModelLoader
             var normal = new Vector3(0, 1, 0);
             if (mesh->MNormals != null)
                 normal = new Vector3(mesh->MNormals[i].X, mesh->MNormals[i].Y, mesh->MNormals[i].Z);
+            var tangent = mesh->MTangents != null
+                ? new Vector3(mesh->MTangents[i].X, mesh->MTangents[i].Y, mesh->MTangents[i].Z)
+                : Vector3.Zero;
+            var bitangent = mesh->MBitangents != null
+                ? new Vector3(mesh->MBitangents[i].X, mesh->MBitangents[i].Y, mesh->MBitangents[i].Z)
+                : Vector3.Zero;
 
             ref var v = ref vertices[i];
             v.Position = new Vector3(pos.X, pos.Y, pos.Z);
             v.TexCoord = uv;
             v.Normal = normal;
+            v.Tangent = tangent;
+            v.Bitangent = bitangent;
 
             // Top-4 weights, renormalized. Unweighted vertices bind to root (bone 0).
             if (weights.TryGetValue((uint)i, out var list) && list.Count > 0)
@@ -373,7 +382,8 @@ public static unsafe class SkinnedModelLoader
             return;
 
         var scene = Api.ImportFile(animFbxPath,
-            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.TransformUVCoords) | 0x8000000u);
+            (uint)(PostProcessSteps.Triangulate | PostProcessSteps.GenerateSmoothNormals |
+                   PostProcessSteps.TransformUVCoords | (PostProcessSteps)0x1u) | 0x8000000u);
 
         if (scene == null || scene->MRootNode == null)
         {

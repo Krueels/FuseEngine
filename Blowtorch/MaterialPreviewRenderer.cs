@@ -23,6 +23,7 @@ public unsafe sealed class MaterialPreviewRenderer : IDisposable
     private readonly Mesh _cube;
     private readonly Mesh _sphere;
     private readonly Light[] _pointLights;
+    private readonly ImageBasedLighting? _imageBasedLighting;
 
     private uint _framebuffer;
     private uint _colorTexture;
@@ -32,9 +33,10 @@ public unsafe sealed class MaterialPreviewRenderer : IDisposable
 
     public uint ColorTexture => _colorTexture;
 
-    public MaterialPreviewRenderer(GL gl, AssetManager assets)
+    public MaterialPreviewRenderer(GL gl, AssetManager assets, ImageBasedLighting? imageBasedLighting = null)
     {
         _gl = gl;
+        _imageBasedLighting = imageBasedLighting;
         _lighting = new LightingBuffer(gl);
         _cube = assets.GetMesh("cube")!;
         _sphere = CreateSphere(gl);
@@ -109,6 +111,14 @@ public unsafe sealed class MaterialPreviewRenderer : IDisposable
         shader.SetVec3("uEmissiveColor", Vector3.Zero);
         shader.SetFloat("uEmissiveStrength", 0.0f);
         shader.SetFloat("uIsViewmodel", 0.0f);
+        shader.SetBool("uOutputSrgb", true);
+        if (_imageBasedLighting != null)
+            _imageBasedLighting.Bind(shader);
+        else
+        {
+            shader.SetBool("uUseIbl", false);
+            shader.SetFloat("uIblIntensity", 1.0f);
+        }
         material.Bind(shader);
 
         bool blend = material.Asset.AlphaMode == MaterialAlphaMode.Blend;

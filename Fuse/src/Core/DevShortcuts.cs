@@ -106,7 +106,7 @@ public static class DevShortcuts
             {
                 if (sceneManager.Raycast(player.Camera.Position, player.Camera.Front, 20f, out var hit))
                 {
-                    uint sprayTexId = assets.GetTexture(Bible.Tex("decals/afx.png")).ID;
+                    uint sprayTexId = assets.GetTexture(Bible.Tex("decals/afx.png"), Renderer.TextureColorSpace.Srgb).ID;
                     sceneManager.Renderer.SpawnDecal(hit.Position, hit.Normal, sprayTexId, 1.0f, parentBody: hit.RigidBody, physics: physics);
                     audio?.Play3D(Bible.Audio("Audio/Spray.wav"), hit.Position);
                 }

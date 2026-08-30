@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "NewMaterial",
+  "name": "Concrete003",
   "alpha_mode": "opaque",
   "alpha_cutoff": 0.5,
   "two_sided": false,
@@ -29,65 +29,66 @@
             0,
             0
           ],
-          "alpha": 1
+          "alpha": 1,
+          "ao": 1
         }
       },
       {
-        "id": "bc5d918544664893aa56cffb4ba5fcac",
+        "id": "44c9feb2f3584b1dbda8e96e82929853",
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          118,
-          161
+          131,
+          152
         ],
         "properties": {
-          "path": "Textures/hl2/concrete/concretefloor005a.bmp",
+          "path": "Textures/hl2/concrete/concretewall004a.bmp",
           "color_space": "sRGB"
         }
       },
       {
-        "id": "e6c1068db57c46f8bc48f566b558ded5",
-        "type": "Texture2D",
-        "name": "Texture",
-        "position": [
-          -33,
-          287
-        ],
-        "properties": {
-          "path": "Textures/NormalMap.png",
-          "color_space": "linear"
-        }
-      },
-      {
-        "id": "4b7a3cb536bc4de6a8ecad0668ecf894",
+        "id": "609435a13dee49658de4864885ff30d9",
         "type": "NormalMap",
         "name": "Normal Map",
         "position": [
-          233,
-          280
+          265,
+          286
         ],
         "properties": {
-          "strength": 2
+          "strength": 1.006
+        }
+      },
+      {
+        "id": "deb9179384074366839b938593a7ac90",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          4,
+          316
+        ],
+        "properties": {
+          "path": "Textures/hl2/concrete/concretewall004a_normal.bmp",
+          "color_space": "linear"
         }
       }
     ],
     "links": [
       {
-        "from_node": "bc5d918544664893aa56cffb4ba5fcac",
+        "from_node": "44c9feb2f3584b1dbda8e96e82929853",
         "from_socket": "Color",
         "to_node": "output",
         "to_socket": "BaseColor"
       },
       {
-        "from_node": "4b7a3cb536bc4de6a8ecad0668ecf894",
+        "from_node": "609435a13dee49658de4864885ff30d9",
         "from_socket": "Normal",
         "to_node": "output",
         "to_socket": "Normal"
       },
       {
-        "from_node": "e6c1068db57c46f8bc48f566b558ded5",
+        "from_node": "deb9179384074366839b938593a7ac90",
         "from_socket": "Color",
-        "to_node": "4b7a3cb536bc4de6a8ecad0668ecf894",
+        "to_node": "609435a13dee49658de4864885ff30d9",
         "to_socket": "Color"
       }
     ]

@@ -2,10 +2,14 @@
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aTexCoord;
 layout(location = 2) in vec3 aNormal;
+layout(location = 3) in vec3 aTangent;
+layout(location = 4) in vec3 aBitangent;
 
 out vec2 vTexCoord;
 out vec3 vWorldPos;
 out vec3 vWorldNormal;
+out vec3 vWorldTangent;
+out vec3 vWorldBitangent;
 out vec3 vViewPos;
 
 uniform mat4 uModel;
@@ -24,7 +28,10 @@ void main() {
     vTexCoord = uv;
     vec4 worldPos = uModel * vec4(aPos, 1.0);
     vWorldPos = worldPos.xyz;
-    vWorldNormal = mat3(transpose(inverse(uModel))) * aNormal;
+    mat3 normalMatrix = mat3(transpose(inverse(uModel)));
+    vWorldNormal = normalMatrix * aNormal;
+    vWorldTangent = normalMatrix * aTangent;
+    vWorldBitangent = normalMatrix * aBitangent;
     vViewPos = (uView * worldPos).xyz;
     gl_Position = uProj * uView * worldPos;
 }

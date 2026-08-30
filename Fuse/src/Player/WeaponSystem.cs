@@ -113,7 +113,7 @@ public class WeaponSystem : IDisposable
         //Texuta padrão para ArmsMale
         if (_viewmodelModel != null)
         {
-            var armsTex = _assets.GetTexture(Bible.Tex(Bible.ArmsMale));
+            var armsTex = _assets.GetTexture(Bible.Tex(Bible.ArmsMale), TextureColorSpace.Srgb);
             foreach (var sub in _viewmodelModel.Submeshes)
             {
                 if (sub.Name == "ArmsMale" && armsTex != null)
@@ -128,7 +128,7 @@ public class WeaponSystem : IDisposable
             {
                 if (weapon.ViewmodelTextures.TryGetValue(sub.Name, out string? texPath))
                 {
-                    var tex = _assets.GetTexture(texPath);
+                    var tex = _assets.GetTexture(texPath, TextureColorSpace.Srgb);
                     if (tex != null)
                         sub.Texture = tex;
                 }
@@ -360,7 +360,7 @@ public class WeaponSystem : IDisposable
 
         if (_currentWeapon != null)
         {
-            _muzzleFlashTexture = _assets.GetTexture(_currentWeapon.MuzzleFlashTexturePath);
+            _muzzleFlashTexture = _assets.GetTexture(_currentWeapon.MuzzleFlashTexturePath, TextureColorSpace.Srgb);
         }
 
         if (_sceneManager?.ActiveScene != null)
@@ -372,7 +372,7 @@ public class WeaponSystem : IDisposable
                 Position = MuzzleFlashPosition,
                 Color = Vector3.One,
                 Radius = 15.0f,
-                Intensity = 1.0f,
+                Intensity = 50.0f,
                 CastShadows = false,
                 Dynamic = true,
                 Enabled = true,
@@ -387,7 +387,7 @@ public class WeaponSystem : IDisposable
     public void SpawnImpactDecal(Vector3 position, Vector3 normal, string decalType = "bullet_hole", Physics.RigidBody? parentBody = null)
     {
         if (_sceneManager?.Renderer == null) return;
-        uint textureId = _assets.GetTexture(Bible.Tex(Bible.DecalBulletHoleAlbedo)).ID;
+        uint textureId = _assets.GetTexture(Bible.Tex(Bible.DecalBulletHoleAlbedo), TextureColorSpace.Srgb).ID;
         _sceneManager.Renderer.SpawnDecal(position, normal, textureId, size: 0.10f, lifeTime: 30f, fadeStart: 0.7f, parentBody: parentBody, physics: _physics);
     }
 

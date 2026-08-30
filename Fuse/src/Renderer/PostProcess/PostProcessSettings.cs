@@ -12,6 +12,7 @@ public sealed class PostProcessSettings
     // Exposure / Tonemap
     public float Exposure = 0.58f;
     public bool TonemapEnabled = true;
+    public float Gamma = 2.2f;
 
     // Bloom
     public bool BloomEnabled = true;

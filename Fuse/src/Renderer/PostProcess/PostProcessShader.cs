@@ -44,6 +44,7 @@ public sealed class PostProcessShader : IDisposable
 
     // Tonemap
     public int UTonemapEnabled { get; private set; }
+    public int UGamma { get; private set; }
 
     public PostProcessShader(GL gl, AssetManager assets)
     {
@@ -108,6 +109,7 @@ public sealed class PostProcessShader : IDisposable
 
         // Tonemap
         UTonemapEnabled = _gl.GetUniformLocation(_shader.ID, "uTonemapEnabled");
+        UGamma = _gl.GetUniformLocation(_shader.ID, "uGamma");
     }
 
     public void Use()
@@ -144,6 +146,7 @@ public sealed class PostProcessShader : IDisposable
         _gl.Uniform1(UMotionBlurIntensity, settings.MotionBlurIntensity);
         _gl.Uniform1(UMotionBlurSamples, settings.MotionBlurSamples);
         _gl.Uniform1(UTonemapEnabled, settings.TonemapEnabled ? 1 : 0);
+        _gl.Uniform1(UGamma, settings.Gamma);
     }
 
     public void Dispose()

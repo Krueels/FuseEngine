@@ -121,7 +121,7 @@ public unsafe class Application : IDisposable
         _console.OnLoadMap = RequestMapLoad;
         _console.OnLoadSky = (fileName) =>
         {
-            var tex = _assets.GetTexture($"{ResPath.Path}/Textures/{fileName}");
+            var tex = _assets.GetTexture($"{ResPath.Path}/Textures/{fileName}", Renderer.TextureColorSpace.Srgb);
             if (tex.ID == 0) Logger.Error($"Failed to load skybox: {fileName}");
             else _renderer.SetSkyboxTexture(tex);
         };
@@ -157,7 +157,7 @@ public unsafe class Application : IDisposable
         Direction = _player.Camera.Front,
         Color = new Vector3(1.0f, 0.95f, 0.8f),
         Radius = 25.0f,
-        Intensity = 1.0f,
+        Intensity = 10.0f,
         InnerConeAngle = float.DegreesToRadians(15),
         OuterConeAngle = float.DegreesToRadians(35),
         CastShadows = true,

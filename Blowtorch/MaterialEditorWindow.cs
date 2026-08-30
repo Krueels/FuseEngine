@@ -411,6 +411,8 @@ public sealed class MaterialEditorWindow : IDisposable
         switch (node.Type)
         {
             case "Texture2D":
+            case "ScalarTexture":
+            case "PackedMetallicRoughness":
             {
                 string path = MaterialAsset.GetString(node.Properties, "path", "");
                 if (ImGui.InputText("Texture", ref path, 512))
@@ -425,6 +427,20 @@ public sealed class MaterialEditorWindow : IDisposable
                         if (ImGui.Selectable(texture, texture.Equals(path, StringComparison.OrdinalIgnoreCase)))
                         {
                             node.Properties["path"] = texture;
+                            _dirty = true;
+                        }
+                    }
+                    ImGui.EndCombo();
+                }
+                string defaultSpace = node.Type == "Texture2D" ? "sRGB" : "linear";
+                string colorSpace = MaterialAsset.GetString(node.Properties, "color_space", defaultSpace);
+                if (ImGui.BeginCombo("Color Space", colorSpace))
+                {
+                    foreach (string option in new[] { "sRGB", "linear" })
+                    {
+                        if (ImGui.Selectable(option, option.Equals(colorSpace, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            node.Properties["color_space"] = option;
                             _dirty = true;
                         }
                     }
@@ -484,6 +500,8 @@ public sealed class MaterialEditorWindow : IDisposable
         if (ImGui.ColorEdit3("Emission", ref emission)) { node.Properties["emission"] = MaterialAsset.Vec3ToJson(emission); _dirty = true; }
         float alpha = MaterialAsset.GetFloat(node.Properties, "alpha", 1);
         if (ImGui.SliderFloat("Alpha", ref alpha, 0, 1)) { node.Properties["alpha"] = alpha; _dirty = true; }
+        float ao = MaterialAsset.GetFloat(node.Properties, "ao", 1);
+        if (ImGui.SliderFloat("AO", ref ao, 0, 1)) { node.Properties["ao"] = ao; _dirty = true; }
     }
 
     private void DrawPreview(EditorAssetService assetService)
@@ -499,7 +517,7 @@ public sealed class MaterialEditorWindow : IDisposable
             EnsurePreviewMaterial(assetService);
             if (_previewMaterial != null)
             {
-                _previewRenderer ??= new MaterialPreviewRenderer(assetService.AssetManager.Gl, assetService.AssetManager);
+                _previewRenderer ??= new MaterialPreviewRenderer(assetService.AssetManager.Gl, assetService.AssetManager, assetService.ImageBasedLighting);
                 _previewRenderer.Render(
                     _previewMaterial,
                     _previewShape,

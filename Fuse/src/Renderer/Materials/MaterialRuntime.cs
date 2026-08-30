@@ -97,8 +97,8 @@ public sealed class MaterialRuntime : IDisposable
             [],
             true);
         string resolved = ResolveAssetPath(texturePath);
-        Texture? texture = File.Exists(resolved) ? assets.GetTexture(resolved) : null;
-        material._textures.Add((new MaterialTextureSlot("legacy", "uTexture", texturePath, 0), texture));
+        Texture? texture = File.Exists(resolved) ? assets.GetTexture(resolved, TextureColorSpace.Srgb) : null;
+        material._textures.Add((new MaterialTextureSlot("legacy", "uTexture", texturePath, 0, TextureColorSpace.Srgb), texture));
         return material;
     }
 
@@ -114,12 +114,14 @@ public sealed class MaterialRuntime : IDisposable
         float roughness = output == null ? 0.5f : MaterialAsset.GetFloat(output.Properties, "roughness", 0.5f);
         float metallic = output == null ? 0.0f : MaterialAsset.GetFloat(output.Properties, "metallic", 0.0f);
         float alpha = output == null ? 1.0f : MaterialAsset.GetFloat(output.Properties, "alpha", 1.0f);
+        float ao = output == null ? 1.0f : MaterialAsset.GetFloat(output.Properties, "ao", 1.0f);
 
         shader.SetVec3("uMaterialBaseColor", baseColor);
         shader.SetVec3("uMaterialEmission", emission);
         shader.SetFloat("uMaterialRoughness", roughness);
         shader.SetFloat("uMaterialMetallic", metallic);
         shader.SetFloat("uMaterialAlpha", alpha);
+        shader.SetFloat("uMaterialAO", ao);
         shader.SetInt("uMaterialAlphaMode", Asset.AlphaMode switch
         {
             MaterialAlphaMode.Mask => 1,
@@ -205,13 +207,13 @@ public sealed class MaterialRuntime : IDisposable
     private void ResolveTextures(AssetManager assets, IReadOnlyList<MaterialTextureSlot> slots)
     {
         string fallbackPath = Path.Combine(ResPath.Path, "Textures", "white.png");
-        Texture? fallback = File.Exists(fallbackPath) ? assets.GetTexture(fallbackPath) : null;
+        Texture? fallback = File.Exists(fallbackPath) ? assets.GetTexture(fallbackPath, TextureColorSpace.Srgb) : null;
         foreach (MaterialTextureSlot slot in slots)
         {
             string fullPath = ResolveAssetPath(slot.AssetPath);
             Texture? texture = null;
             if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
-                texture = assets.GetTexture(fullPath);
+                texture = assets.GetTexture(fullPath, slot.ColorSpace);
             else
                 Logger.Warn($"Material '{Asset.Name}': texture not found '{slot.AssetPath}'.");
             _textures.Add((slot, texture ?? fallback));

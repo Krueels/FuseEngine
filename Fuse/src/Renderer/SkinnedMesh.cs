@@ -12,9 +12,11 @@ public struct SkinnedVertex
     public Vector3 Position;      // offset 0
     public Vector2 TexCoord;      // offset 12
     public Vector3 Normal;        // offset 20
-    public int BoneIdX, BoneIdY, BoneIdZ, BoneIdW; // offset 32
-    public Vector4 Weights;       // offset 48
-}                                 // total 64
+    public Vector3 Tangent;       // offset 32
+    public Vector3 Bitangent;     // offset 44
+    public int BoneIdX, BoneIdY, BoneIdZ, BoneIdW; // offset 56
+    public Vector4 Weights;       // offset 72
+}                                 // total 88
 
 public unsafe class SkinnedMesh : IDisposable
 {
@@ -69,10 +71,16 @@ public unsafe class SkinnedMesh : IDisposable
             gl.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, false, stride, (void*)(sizeof(Vector3) + sizeof(Vector2)));
 
             gl.EnableVertexAttribArray(3);
-            gl.VertexAttribIPointer(3, 4, VertexAttribIType.Int, stride, (void*)32);
+            gl.VertexAttribPointer(3, 3, VertexAttribPointerType.Float, false, stride, (void*)32);
 
             gl.EnableVertexAttribArray(4);
-            gl.VertexAttribPointer(4, 4, VertexAttribPointerType.Float, false, stride, (void*)48);
+            gl.VertexAttribPointer(4, 3, VertexAttribPointerType.Float, false, stride, (void*)44);
+
+            gl.EnableVertexAttribArray(5);
+            gl.VertexAttribIPointer(5, 4, VertexAttribIType.Int, stride, (void*)56);
+
+            gl.EnableVertexAttribArray(6);
+            gl.VertexAttribPointer(6, 4, VertexAttribPointerType.Float, false, stride, (void*)72);
 
             gl.BindVertexArray(0);
         }

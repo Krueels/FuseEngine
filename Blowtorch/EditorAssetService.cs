@@ -22,6 +22,7 @@ public class EditorAssetService : IDisposable
     private Shader _shadowShader = null!;
     private Shader _pointShadowShader = null!;
     private uint _defaultTex;
+    private ImageBasedLighting? _imageBasedLighting;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, Mesh?> _meshCache = [];
     private string _fuseResPath = "";
@@ -39,6 +40,7 @@ public class EditorAssetService : IDisposable
     public Shader PointShadowShader => _pointShadowShader;
     public uint DefaultTexture => _defaultTex;
     public AssetManager AssetManager => _assets;
+    public ImageBasedLighting? ImageBasedLighting => _imageBasedLighting;
 
     public MaterialRuntime? GetOrCreateMaterial(string? materialRelPath) =>
         _assets.TryGetMaterial(materialRelPath);
@@ -92,6 +94,20 @@ public class EditorAssetService : IDisposable
             Path.Combine(_fuseResPath, "Shaders", "point_shadow.frag"));
 
         _shader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
+
+        string skyboxPath = Path.Combine(_fuseResPath, "Textures", "skybox_1.png");
+        if (File.Exists(skyboxPath))
+        {
+            try
+            {
+                _imageBasedLighting = new ImageBasedLighting(_gl,
+                    _assets.GetTexture(skyboxPath, TextureColorSpace.Srgb));
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Blowtorch IBL disabled: {ex.Message}");
+            }
+        }
 
         string crateTexPath = Path.Combine(_fuseResPath, "Textures", "dev_measurecrate01.bmp");
         if (File.Exists(crateTexPath))
@@ -194,6 +210,7 @@ public class EditorAssetService : IDisposable
             if (texId != 0) _gl.DeleteTexture(texId);
         }
         if (_defaultTex != 0) _gl.DeleteTexture(_defaultTex);
+        _imageBasedLighting?.Dispose();
         _assets.Clear();
     }
 }

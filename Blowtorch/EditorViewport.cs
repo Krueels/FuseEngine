@@ -32,14 +32,14 @@ public unsafe class EditorViewport : IDisposable
     private bool _firstMove;
     public static EditorViewport? ActiveViewport;
 
-    public EditorViewport(GL gl, CameraViewType viewType)
+    public EditorViewport(GL gl, CameraViewType viewType, ImageBasedLighting? imageBasedLighting = null)
     {
         _gl = gl;
         _fbo = _gl.GenFramebuffer();
         _camera = new ViewportCamera { ViewType = viewType };
         _gridMesh = CreateGridMesh(_gl, 10000.0f);
         _debugDrawer = new Fuse.Debug.DebugDrawer(_gl) { Enabled = true };
-        _lightingSystem = new EditorLightingSystem(gl, viewType == CameraViewType.Perspective3D);
+        _lightingSystem = new EditorLightingSystem(gl, viewType == CameraViewType.Perspective3D, imageBasedLighting);
         CreateFbo(800, 600);
     }
     public bool ShowHitboxes
@@ -134,6 +134,7 @@ public unsafe class EditorViewport : IDisposable
         {
             target.Use();
             target.SetFloat("uIsViewmodel", 1.0f);
+            target.SetBool("uOutputSrgb", true);
             target.SetMat4("uView", view);
             target.SetMat4("uProj", proj);
             target.SetInt("uTexture", 0);
@@ -144,6 +145,7 @@ public unsafe class EditorViewport : IDisposable
             target.SetVec3("uEmissiveColor", Vector3.Zero);
             target.SetFloat("uEmissiveStrength", 0.0f);
             _lightingSystem.BindShadowMaps(target);
+            _lightingSystem.BindImageBasedLighting(target);
         }
 
         PrepareMaterialShader(shader);

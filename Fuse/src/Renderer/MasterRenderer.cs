@@ -62,6 +62,7 @@ public unsafe class MasterRenderer
     private PointShadowMap[] _pointShadowMaps = null!;
     private PointShadowMap[] _staticPointShadowMaps = null!;
     private LightingBuffer _lightingBuffer = null!;
+    private ImageBasedLighting? _imageBasedLighting;
 
     private const int CascadeCount = 3;
     private const int MaxShadowedPointLightSlots = 4;
@@ -305,12 +306,22 @@ public unsafe class MasterRenderer
     public void SetSkyboxTexture(Texture tex)
     {
         _skyboxTexture = tex;
+        _imageBasedLighting?.Dispose();
+        _imageBasedLighting = null;
         if (_skyboxTexture.ID != 0)
         {
             _skyboxDominantColor = _skyboxTexture.GetDominantColor();
             _gl.BindTexture(TextureTarget.Texture2D, _skyboxTexture.ID);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+            try
+            {
+                _imageBasedLighting = new ImageBasedLighting(_gl, _skyboxTexture);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"IBL disabled after skybox change: {ex.Message}");
+            }
         }
     }
 
@@ -367,8 +378,8 @@ public unsafe class MasterRenderer
         
         _skyBoxCubeMesh = assets.GetMesh("cube")!;
         
-        _crateTexture = assets.GetTexture(Bible.Tex(Bible.Crate));
-        _skyboxTexture = assets.GetTexture(Bible.Tex(Bible.Skybox));
+        _crateTexture = assets.GetTexture(Bible.Tex(Bible.Crate), TextureColorSpace.Srgb);
+        _skyboxTexture = assets.GetTexture(Bible.Tex(Bible.Skybox), TextureColorSpace.Srgb);
         
         if (_skyboxTexture.ID != 0)
         {
@@ -376,6 +387,16 @@ public unsafe class MasterRenderer
             _gl.BindTexture(TextureTarget.Texture2D, _skyboxTexture.ID);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
             _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        }
+
+        try
+        {
+            _imageBasedLighting = new ImageBasedLighting(_gl, _skyboxTexture);
+        }
+        catch (Exception ex)
+        {
+            _imageBasedLighting = null;
+            Logger.Warn($"IBL disabled: {ex.Message}");
         }
 
         // Billboard shader (muzzle flash) - carregar de arquivos
@@ -596,6 +617,7 @@ public unsafe class MasterRenderer
             var skyView = Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromRotationMatrix(view));
             _skyboxShader.SetMat4("uView", skyView);
             _skyboxShader.SetMat4("uProj", proj);
+            _skyboxShader.SetBool("uOutputSrgb", !_postPipeline.Settings.Enabled);
             _skyboxShader.SetInt("uSkyTexture", 0);
             _skyboxTexture.Bind(0);
             _skyBoxCubeMesh.Draw();
@@ -1099,6 +1121,7 @@ public unsafe class MasterRenderer
         shader.SetFloat("uMaterialAlphaCutoff", 0.5f);
         shader.SetBool("uMaterialReceiveShadows", true);
         shader.SetFloat("uIsViewmodel", 0.0f);
+        shader.SetBool("uOutputSrgb", !_postPipeline.Settings.Enabled);
 
         shader.SetInt("uTexture", 0);
         shader.SetInt("uShadowMap", 1);
@@ -1113,6 +1136,13 @@ public unsafe class MasterRenderer
         _pointShadowMaps[1].BindForReading(TextureUnit.Texture4);
         _pointShadowMaps[2].BindForReading(TextureUnit.Texture5);
         _pointShadowMaps[3].BindForReading(TextureUnit.Texture6);
+        if (_imageBasedLighting != null)
+            _imageBasedLighting.Bind(shader);
+        else
+        {
+            shader.SetBool("uUseIbl", false);
+            shader.SetFloat("uIblIntensity", 1.0f);
+        }
     }
 
     private unsafe void UploadBones(Matrix4x4[] bones)
@@ -1575,6 +1605,7 @@ public unsafe class MasterRenderer
         if (_ssaoNoiseTex != 0) { _gl.DeleteTexture(_ssaoNoiseTex); _ssaoNoiseTex = 0; }
         if (_sharedBonesSSBO != 0) { _gl.DeleteBuffer(_sharedBonesSSBO); _sharedBonesSSBO = 0; }
         _lightingBuffer?.Dispose();
+        _imageBasedLighting?.Dispose();
         _shadowMap?.Dispose();
         _staticShadowMap?.Dispose();
         _spotShadowMap?.Dispose();

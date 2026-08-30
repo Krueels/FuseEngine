@@ -28,6 +28,7 @@ public sealed class EditorLightingSystem : IDisposable
     private readonly GL _gl;
     private readonly LightingBuffer _lightingBuffer;
     private readonly bool _supportsShadows;
+    private readonly ImageBasedLighting? _imageBasedLighting;
     private readonly ShadowMap? _directionalShadowMap;
     private readonly ShadowMap? _spotShadowMap;
     private readonly PointShadowMap[] _pointShadowMaps = [];
@@ -74,10 +75,11 @@ public sealed class EditorLightingSystem : IDisposable
         public bool Valid;
     }
 
-    public EditorLightingSystem(GL gl, bool supportsShadows)
+    public EditorLightingSystem(GL gl, bool supportsShadows, ImageBasedLighting? imageBasedLighting = null)
     {
         _gl = gl;
         _supportsShadows = supportsShadows;
+        _imageBasedLighting = imageBasedLighting;
         _lightingBuffer = new LightingBuffer(gl);
 
         if (!supportsShadows)
@@ -206,6 +208,17 @@ public sealed class EditorLightingSystem : IDisposable
         _spotShadowMap.BindForReading(TextureUnit.Texture2);
         for (int i = 0; i < _pointShadowMaps.Length; i++)
             _pointShadowMaps[i].BindForReading(TextureUnit.Texture3 + i);
+    }
+
+    public void BindImageBasedLighting(Shader shader)
+    {
+        if (_imageBasedLighting != null)
+            _imageBasedLighting.Bind(shader);
+        else
+        {
+            shader.SetBool("uUseIbl", false);
+            shader.SetFloat("uIblIntensity", 1.0f);
+        }
     }
 
     private void UploadUnlit(Vector3 cameraPosition)

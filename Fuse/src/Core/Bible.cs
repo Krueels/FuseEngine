@@ -105,15 +105,15 @@ public static class Bible
     public static void PreloadAll(AssetManager assets, AudioSystem? audio = null)
     {
         // --- Texturas ---
-        assets.GetTexture(Tex(Crosshair));
-        assets.GetTexture(Tex(CrosshairInteract));
-        assets.GetTexture(Tex(EnemyIcon));
-        assets.GetTexture(Tex(GlockAlbedo));
-        assets.GetTexture(Tex(ArmsMale));
-        assets.GetTexture(Tex(Skybox));
-        assets.GetTexture(Tex(Crate));
+        assets.GetTexture(Tex(Crosshair), Fuse.Renderer.TextureColorSpace.Linear);
+        assets.GetTexture(Tex(CrosshairInteract), Fuse.Renderer.TextureColorSpace.Linear);
+        assets.GetTexture(Tex(EnemyIcon), Fuse.Renderer.TextureColorSpace.Linear);
+        assets.GetTexture(Tex(GlockAlbedo), Fuse.Renderer.TextureColorSpace.Srgb);
+        assets.GetTexture(Tex(ArmsMale), Fuse.Renderer.TextureColorSpace.Srgb);
+        assets.GetTexture(Tex(Skybox), Fuse.Renderer.TextureColorSpace.Srgb);
+        assets.GetTexture(Tex(Crate), Fuse.Renderer.TextureColorSpace.Srgb);
         for (int i = 0; i < 3; i++)
-            assets.GetTexture(Tex(string.Format(MuzzleFlash, i)));
+            assets.GetTexture(Tex(string.Format(MuzzleFlash, i)), Fuse.Renderer.TextureColorSpace.Srgb);
 
         // --- Modelos skinned (Glock + AK + Inimigo) ---
         assets.GetSkinnedModel(Model(GlockModel));
