@@ -144,9 +144,6 @@ public class GameplayHUD
         gl.Enable(EnableCap.Blend);
         gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
-        if (!isPaused)
-            interaction?.Update();
-
         _hud.Draw(ui, width, height);
 
         _enemyDebugHUD?.Draw(ui, width, height);

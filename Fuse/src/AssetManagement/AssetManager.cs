@@ -206,9 +206,11 @@ public class AssetManager
 
     private readonly object _streamingGate = new();
     private readonly object _textureGate = new();
+    private readonly object _skinnedPreloadGate = new();
     private readonly PriorityQueue<IBackgroundAssetJob, int> _backgroundQueue = new();
     private readonly PriorityQueue<Action, int> _gpuUploadQueue = new();
     private readonly Dictionary<string, List<TaskCompletionSource<Renderer.Texture>>> _textureWaiters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingSkinnedPreloads = new(StringComparer.OrdinalIgnoreCase);
     private readonly AutoResetEvent _streamingWake = new(false);
     private readonly CancellationTokenSource _streamingCancellation = new();
     private readonly Task _streamingWorker;
@@ -338,6 +340,29 @@ public class AssetManager
         QueueBackground(new FilePreloadJob(
             [path],
             static (manager, assetPath) => manager.GetModel(assetPath),
+            priority), priority);
+    }
+
+    /// <summary>
+    /// Queues an animated/skinned model using the same loader that the
+    /// viewmodel uses. QueueModelPreload is only for static LoadedModel assets
+    /// and does not populate the skinned-model cache.
+    /// </summary>
+    public void QueueSkinnedModelPreload(string path, AssetPriority priority = AssetPriority.Normal)
+    {
+        string resolvedPath = ResolveAssetPath(path);
+        if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath))
+            return;
+
+        lock (_skinnedPreloadGate)
+        {
+            if (_skinnedModels.ContainsKey(resolvedPath) || !_pendingSkinnedPreloads.Add(resolvedPath))
+                return;
+        }
+
+        QueueBackground(new FilePreloadJob(
+            [resolvedPath],
+            static (manager, assetPath) => manager.LoadSkinnedModelFromPreload(assetPath),
             priority), priority);
     }
 
@@ -563,16 +588,43 @@ public class AssetManager
 
     public Animation.SkinnedModel? GetSkinnedModel(string path)
     {
-        if (_skinnedModels.TryGetValue(path, out var cached))
+        string resolvedPath = ResolveAssetPath(path);
+        if (_skinnedModels.TryGetValue(resolvedPath, out var cached))
             return cached;
 
-        var loaded = Renderer.SkinnedModelLoader.Load(_gl, path,
+        var loaded = Renderer.SkinnedModelLoader.Load(_gl, resolvedPath,
             texPath => GetTexture(texPath, Renderer.TextureColorSpace.Srgb));
         if (loaded == null)
             return null;
 
-        _skinnedModels[path] = loaded;
+        _skinnedModels[resolvedPath] = loaded;
+        lock (_skinnedPreloadGate)
+            _pendingSkinnedPreloads.Remove(resolvedPath);
         return loaded;
+    }
+
+    /// <summary>
+    /// Returns a skinned model only when it is already resident. Unlike
+    /// GetSkinnedModel, this method never imports a file or touches OpenGL.
+    /// </summary>
+    public bool TryGetLoadedSkinnedModel(string path, out Animation.SkinnedModel? model)
+    {
+        string resolvedPath = ResolveAssetPath(path);
+        return _skinnedModels.TryGetValue(resolvedPath, out model);
+    }
+
+    /// <summary>
+    /// Checks the material cache without loading, compiling or resolving any
+    /// texture dependencies.
+    /// </summary>
+    public bool TryGetLoadedMaterial(string? path, out MaterialRuntime? material)
+    {
+        material = null;
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        string fullPath = MaterialRuntime.ResolveAssetPath(path);
+        return _materials.TryGetValue(fullPath, out material);
     }
 
     public void Clear()
@@ -606,6 +658,21 @@ public class AssetManager
         _missingModels.Clear();
         _skinnedModels.Clear();
         _loadedCleanPaths.Clear();
+        lock (_skinnedPreloadGate)
+            _pendingSkinnedPreloads.Clear();
+    }
+
+    private void LoadSkinnedModelFromPreload(string path)
+    {
+        try
+        {
+            GetSkinnedModel(path);
+        }
+        finally
+        {
+            lock (_skinnedPreloadGate)
+                _pendingSkinnedPreloads.Remove(ResolveAssetPath(path));
+        }
     }
 
     private void QueueBackground(IBackgroundAssetJob job, AssetPriority priority)

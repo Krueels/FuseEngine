@@ -44,14 +44,21 @@ public class PickupController
         _bli = world.Native.BodyLockInterface;
     }
 
-    public void Update(float dt)
+    /// <summary>
+    /// Processes pickup input once per rendered frame. Physics manipulation of
+    /// the held body remains in PhysicsUpdate below.
+    /// </summary>
+    public void FrameUpdate(float dt)
     {
         UpdateLookMomentum(dt);
 
         if (!Input.Input.IsCursorDisabled()) return;
 
-        // Só processa pickup se NÃO estiver em contexto de arma
+        // Pickup is available only with the hands free. The Weapon context is
+        // intentionally active while a weapon is equipped and must block this
+        // input, even though the check itself now runs once per render frame.
         if (InputManager.IsContextActive(InputContext.Weapon)) return;
+        if (InputManager.CurrentContext == InputContext.UI) return;
 
         if (Input.Input.KeyPressed(Input.KeyCodes.E))
         {

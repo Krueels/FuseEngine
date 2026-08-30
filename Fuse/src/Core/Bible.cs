@@ -122,10 +122,16 @@ public static class Bible
         for (int i = 0; i < 3; i++)
             assets.QueueTexturePreload(Tex(string.Format(MuzzleFlash, i)), TextureColorSpace.Srgb, AssetPriority.High);
 
-        assets.QueueModelPreload(Model(GlockModel), AssetPriority.High);
-        assets.QueueModelPreload(Model(AKModel), AssetPriority.Normal);
-        assets.QueueModelPreload(Model(UniSexGuy), AssetPriority.Normal);
-        assets.QueueModelPreload(Model(SpiderModel), AssetPriority.Normal);
+        // Viewmodels use the skinned loader. QueueModelPreload would populate
+        // only the static-model cache and the weapon would still hitch on equip.
+        assets.QueueSkinnedModelPreload(Model(GlockModel), AssetPriority.Critical);
+        assets.QueueSkinnedModelPreload(Model(AKModel), AssetPriority.High);
+        assets.QueueMaterialPreload(MAT_Arms, AssetPriority.Critical);
+        assets.QueueMaterialPreload(MAT_Glock, AssetPriority.High);
+        assets.QueueMaterialPreload(MAT_AK, AssetPriority.High);
+
+        assets.QueueSkinnedModelPreload(Model(UniSexGuy), AssetPriority.Normal);
+        assets.QueueSkinnedModelPreload(Model(SpiderModel), AssetPriority.Normal);
 
         if (audio == null)
             return;

@@ -293,6 +293,7 @@ public unsafe class Application : IDisposable
                 ProcessPendingMapChange();
                 _assets.PumpGpuUploads(2);
                 _audio.PumpPreloads(2);
+                _weaponSystem?.ProcessPendingEquip();
 
                 if (!_paused)
                 {
@@ -327,6 +328,15 @@ public unsafe class Application : IDisposable
                     _physicsAccumulator = 0.0;
 
                 HandleInput();
+
+                // Interaction and pickup input are edge-triggered and must be
+                // evaluated once per rendered frame. The held body's force
+                // application remains in UpdateFixedSimulation.
+                if (!_paused)
+                {
+                    _interaction.Update();
+                    _pickup.FrameUpdate(dt);
+                }
 
                 // The weapon state is fixed-timestep, but the viewmodel follows
                 // the camera and must be refreshed for every rendered frame.
@@ -396,7 +406,6 @@ public unsafe class Application : IDisposable
             _player.Update(fixedDt);
 
         _impactSound.Update(fixedDt);
-        _pickup.Update(fixedDt);
         _sceneManager.Update(fixedDt);
         _weaponSystem?.Update(fixedDt);
 

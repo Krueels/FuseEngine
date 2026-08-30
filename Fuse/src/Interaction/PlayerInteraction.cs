@@ -41,6 +41,9 @@ public class PlayerInteraction
                 _crosshairNode.Texture = _crosshairTexture;
         }
 
+        if (!Input.Input.IsCursorDisabled() || InputManager.CurrentContext == InputContext.UI)
+            return;
+
         if (Input.Input.KeyPressed(KeyCodes.E) && _lookingAt != null)
         {
             _lookingAt.OnInteract();

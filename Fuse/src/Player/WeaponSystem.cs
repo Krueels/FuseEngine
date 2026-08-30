@@ -34,6 +34,7 @@ public class WeaponSystem : IDisposable
     private readonly Dictionary<string, (int CurrentAmmo, int ReserveAmmo)> _ammoState = new();
     private IWeapon? _currentWeapon;
     private string? _currentWeaponId;
+    private string? _pendingWeaponId;
 
     private Entity? _viewmodelEntity;
     private Animator? _viewmodelAnimator;
@@ -110,6 +111,29 @@ public class WeaponSystem : IDisposable
             return false;
         }
 
+        if (string.Equals(_currentWeaponId, weaponId, StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingWeaponId = null;
+            return true;
+        }
+
+        // Equip must not import a skinned model or compile a material in the
+        // input handler. If an asset is not resident yet, keep the current
+        // weapon visible and finish this request from ProcessPendingEquip on a
+        // later frame.
+        if (!AreWeaponAssetsReady(weapon))
+        {
+            if (!string.Equals(_pendingWeaponId, weaponId, StringComparison.OrdinalIgnoreCase))
+            {
+                _pendingWeaponId = weaponId;
+                QueueWeaponAssets(weapon);
+                Logger.Info($"[WeaponSystem] Waiting for assets before equipping: {weaponId}");
+            }
+            return false;
+        }
+
+        _pendingWeaponId = null;
+
         // Unequip current weapon first
         if (_currentWeapon != null)
         {
@@ -175,8 +199,45 @@ public class WeaponSystem : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Completes a weapon switch once all model and material dependencies are
+    /// resident. This is intentionally called once per rendered frame, after
+    /// the asset manager has pumped its GPU queue.
+    /// </summary>
+    public void ProcessPendingEquip()
+    {
+        string? pendingWeaponId = _pendingWeaponId;
+        if (string.IsNullOrEmpty(pendingWeaponId))
+            return;
+
+        Equip(pendingWeaponId);
+    }
+
+    public string? PendingWeaponId => _pendingWeaponId;
+
+    private bool AreWeaponAssetsReady(IWeapon weapon)
+    {
+        if (!_assets.TryGetLoadedSkinnedModel(weapon.ViewmodelModelPath, out _))
+            return false;
+
+        if (!_assets.TryGetLoadedMaterial(Bible.MAT_Arms, out _))
+            return false;
+
+        return string.IsNullOrWhiteSpace(weapon.ViewmodelMaterialPath) ||
+               _assets.TryGetLoadedMaterial(weapon.ViewmodelMaterialPath, out _);
+    }
+
+    private void QueueWeaponAssets(IWeapon weapon)
+    {
+        _assets.QueueSkinnedModelPreload(weapon.ViewmodelModelPath, AssetPriority.High);
+        _assets.QueueMaterialPreload(Bible.MAT_Arms, AssetPriority.High);
+        if (!string.IsNullOrWhiteSpace(weapon.ViewmodelMaterialPath))
+            _assets.QueueMaterialPreload(weapon.ViewmodelMaterialPath, AssetPriority.High);
+    }
+
     public void Unequip()
     {
+        _pendingWeaponId = null;
         if (_currentWeapon != null)
         {
             _ammoState[_currentWeaponId!] = (_currentWeapon.CurrentAmmo, _currentWeapon.ReserveAmmo);
