@@ -17,6 +17,7 @@ public sealed class MaterialEditorWindow : IDisposable
     private MaterialAsset? _asset;
     private string _path = "";
     private string _selectedNodeId = "";
+    private readonly HashSet<string> _selectedNodeIds = [];
     private string _pendingNodeId = "";
     private string _pendingSocket = "";
     private Vector2 _canvasPan = new(40, 40);
@@ -33,9 +34,27 @@ public sealed class MaterialEditorWindow : IDisposable
     private bool _previewDragging;
     private string _previewSignature = "";
     private string _failedPreviewSignature = "";
+    private string _materialFilter = "";
+    private Vector2 _contextMenuPosition;
+    private string _hoveredNodeId = "";
+    private string _contextNodeId = "";
+    private bool _draggingNodes;
+    private Vector2 _nodeDragLastMouse;
+    private bool _marqueeSelecting;
+    private bool _marqueeAdditive;
+    private Vector2 _marqueeStart;
+    private Vector2 _marqueeCurrent;
 
     public bool IsOpen { get; private set; }
     public string CurrentPath => _path;
+    public bool IsInputContextActive { get; private set; }
+
+    public void OpenStandalone()
+    {
+        IsOpen = true;
+        IsInputContextActive = false;
+        _status = "Select a material from the gallery.";
+    }
 
     public void Open(string materialPath)
     {
@@ -45,10 +64,18 @@ public sealed class MaterialEditorWindow : IDisposable
             _asset = MaterialAsset.Load(fullPath);
             _path = fullPath;
             _selectedNodeId = _asset.Graph.FindOutput()?.Id ?? "";
+            _selectedNodeIds.Clear();
+            if (!string.IsNullOrEmpty(_selectedNodeId))
+                _selectedNodeIds.Add(_selectedNodeId);
             _pendingNodeId = "";
             _pendingSocket = "";
             _dirty = false;
             _status = "";
+            _canvasPan = new Vector2(40, 40);
+            _canvasZoom = 1.0f;
+            _contextNodeId = "";
+            _marqueeSelecting = false;
+            _draggingNodes = false;
             DisposePreviewMaterial();
             _previewSignature = "";
             _failedPreviewSignature = "";
@@ -61,36 +88,98 @@ public sealed class MaterialEditorWindow : IDisposable
         }
     }
 
-    public void Draw(EditorAssetService assetService, EditorSceneService sceneService)
+    public void Draw(
+        EditorAssetService assetService,
+        EditorSceneService sceneService,
+        EditorInputService inputService)
     {
-        if (!IsOpen || _asset == null)
+        IsInputContextActive = false;
+        if (!IsOpen)
             return;
 
-        ImGui.SetNextWindowSize(new Vector2(1080, 700), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(1180, 700), ImGuiCond.FirstUseEver);
         bool open = IsOpen;
-        if (!ImGui.Begin($"Material Graph - {_asset.Name}##MaterialGraphWindow", ref open, ImGuiWindowFlags.MenuBar))
+        string title = _asset == null ? "Material Graph" : $"Material Graph - {_asset.Name}";
+        if (!ImGui.Begin($"{title}##MaterialGraphWindow", ref open, ImGuiWindowFlags.MenuBar))
         {
+            IsInputContextActive = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
+            if (IsInputContextActive)
+                inputService.SetContext(EditorInputContext.MaterialGraph);
             IsOpen = open;
             ImGui.End();
             return;
         }
         IsOpen = open;
 
+        IsInputContextActive = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
+        if (IsInputContextActive)
+            inputService.SetContext(EditorInputContext.MaterialGraph);
+
+        HandleKeyboardShortcuts(assetService, sceneService);
+
         DrawMenu(assetService, sceneService);
 
-        float inspectorWidth = 300.0f;
         Vector2 available = ImGui.GetContentRegionAvail();
-        ImGui.BeginChild("MaterialGraphCanvas", new Vector2(MathF.Max(200, available.X - inspectorWidth - 8), available.Y), ImGuiChildFlags.Borders,
-            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-        DrawCanvas();
+        const float galleryWidth = 235.0f;
+        ImGui.BeginChild("MaterialGallery", new Vector2(galleryWidth, available.Y), ImGuiChildFlags.Borders);
+        DrawMaterialGallery(assetService);
         ImGui.EndChild();
 
         ImGui.SameLine();
-        ImGui.BeginChild("MaterialGraphInspector", new Vector2(inspectorWidth, available.Y), ImGuiChildFlags.Borders);
-        DrawInspector(assetService);
-        ImGui.EndChild();
+        if (_asset == null)
+        {
+            ImGui.BeginChild("MaterialGraphEmpty", new Vector2(-1, available.Y), ImGuiChildFlags.Borders);
+            ImGui.Spacing();
+            ImGui.TextUnformatted("Material Graph");
+            ImGui.Separator();
+            ImGui.TextWrapped("Select a material in the gallery to open and edit its graph.");
+            ImGui.EndChild();
+        }
+        else
+        {
+            float inspectorWidth = 300.0f;
+            ImGui.BeginChild("MaterialGraphCanvas", new Vector2(MathF.Max(200, available.X - galleryWidth - inspectorWidth - 16), available.Y), ImGuiChildFlags.Borders,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+            DrawCanvas();
+            ImGui.EndChild();
+
+            ImGui.SameLine();
+            ImGui.BeginChild("MaterialGraphInspector", new Vector2(inspectorWidth, available.Y), ImGuiChildFlags.Borders);
+            DrawInspector(assetService);
+            ImGui.EndChild();
+        }
 
         ImGui.End();
+    }
+
+    private void DrawMaterialGallery(EditorAssetService assetService)
+    {
+        ImGui.TextUnformatted("Materials");
+        ImGui.Separator();
+        ImGui.InputTextWithHint("##MaterialFilter", "Filter materials...", ref _materialFilter, 128);
+        ImGui.Spacing();
+
+        IReadOnlyList<string> materials = assetService.EnumerateMaterials();
+        bool any = false;
+        foreach (string material in materials)
+        {
+            string fileName = Path.GetFileNameWithoutExtension(material);
+            if (!string.IsNullOrWhiteSpace(_materialFilter) &&
+                !material.Contains(_materialFilter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            any = true;
+            bool selected = MaterialRuntime.ResolveAssetPath(material)
+                .Equals(_path, StringComparison.OrdinalIgnoreCase);
+            if (ImGui.Selectable(fileName, selected))
+                Open(material);
+            if (selected)
+                ImGui.SetItemDefaultFocus();
+            ImGui.TextDisabled($"  {material}");
+        }
+
+        if (!any)
+            ImGui.TextDisabled(materials.Count == 0 ? "No .fmat materials found." : "No materials match the filter.");
     }
 
     private void DrawMenu(EditorAssetService assetService, EditorSceneService sceneService)
@@ -98,27 +187,14 @@ public sealed class MaterialEditorWindow : IDisposable
         if (!ImGui.BeginMenuBar())
             return;
 
-        if (ImGui.MenuItem("Save", "Ctrl+S"))
+        if (ImGui.MenuItem("Save", "Ctrl+S", false, _asset != null))
             Save(assetService, sceneService);
-        if (ImGui.MenuItem("Reload"))
+        if (ImGui.MenuItem("Reload", "", false, _asset != null))
             Open(_path);
 
-        if (ImGui.BeginMenu("Add Node"))
+        if (ImGui.BeginMenu("Add Node", _asset != null))
         {
-            MaterialGraph graph = _asset!.Graph;
-            foreach (MaterialNodeDefinition definition in MaterialNodeCatalog.Definitions)
-            {
-                bool alreadyHasOutput = definition.Type == "PBROutput" && graph.FindOutput() != null;
-                if (ImGui.MenuItem(definition.DisplayName, "", false, !alreadyHasOutput))
-                {
-                    Vector2 origin = _lastCanvasMin == Vector2.Zero ? ImGui.GetWindowPos() : _lastCanvasMin;
-                    Vector2 position = (ImGui.GetMousePos() - origin - _canvasPan) / _canvasZoom;
-                    MaterialGraphNode node = MaterialNodeCatalog.CreateNode(definition.Type, position);
-                    graph.Nodes.Add(node);
-                    _selectedNodeId = node.Id;
-                    _dirty = true;
-                }
-            }
+            DrawAddNodeItems(ImGui.GetMousePos());
             ImGui.EndMenu();
         }
 
@@ -147,6 +223,108 @@ public sealed class MaterialEditorWindow : IDisposable
         ImGui.EndMenuBar();
     }
 
+    private void HandleKeyboardShortcuts(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!IsInputContextActive || ImGui.GetIO().WantTextInput)
+            return;
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.S) && _asset != null)
+            Save(assetService, sceneService);
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.A) && _asset != null)
+            SetSelection(_asset.Graph.Nodes.Select(node => node.Id), false);
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Delete))
+            DeleteSelectedNode();
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            _pendingNodeId = "";
+            _pendingSocket = "";
+        }
+    }
+
+    private void DrawAddNodeItems(Vector2 screenPosition)
+    {
+        if (_asset == null)
+            return;
+
+        MaterialGraph graph = _asset.Graph;
+        foreach (MaterialNodeDefinition definition in MaterialNodeCatalog.Definitions)
+        {
+            bool alreadyHasOutput = definition.Type == "PBROutput" && graph.FindOutput() != null;
+            if (!ImGui.MenuItem(definition.DisplayName, "", false, !alreadyHasOutput))
+                continue;
+
+            Vector2 origin = _lastCanvasMin == Vector2.Zero ? ImGui.GetWindowPos() : _lastCanvasMin;
+            Vector2 position = (screenPosition - origin - _canvasPan) / _canvasZoom;
+            MaterialGraphNode node = MaterialNodeCatalog.CreateNode(definition.Type, position);
+            graph.Nodes.Add(node);
+            SelectNode(node.Id, false);
+            _dirty = true;
+        }
+    }
+
+    private void SelectNode(string nodeId, bool additive)
+    {
+        if (string.IsNullOrEmpty(nodeId))
+        {
+            if (!additive)
+            {
+                _selectedNodeIds.Clear();
+                _selectedNodeId = "";
+            }
+            return;
+        }
+
+        if (!additive)
+        {
+            _selectedNodeIds.Clear();
+            _selectedNodeIds.Add(nodeId);
+            _selectedNodeId = nodeId;
+            return;
+        }
+
+        if (!_selectedNodeIds.Add(nodeId))
+            _selectedNodeIds.Remove(nodeId);
+
+        _selectedNodeId = _selectedNodeIds.Contains(nodeId)
+            ? nodeId
+            : _selectedNodeIds.LastOrDefault() ?? "";
+    }
+
+    private void SetSelection(IEnumerable<string> nodeIds, bool additive)
+    {
+        if (!additive)
+            _selectedNodeIds.Clear();
+
+        foreach (string nodeId in nodeIds)
+            _selectedNodeIds.Add(nodeId);
+
+        _selectedNodeId = _selectedNodeIds.LastOrDefault() ?? "";
+    }
+
+    private void DeleteSelectedNode()
+    {
+        if (_asset == null || _selectedNodeIds.Count == 0)
+            return;
+
+        MaterialGraphNode[] nodesToDelete = _asset.Graph.Nodes
+            .Where(node => _selectedNodeIds.Contains(node.Id) && node.Type != "PBROutput")
+            .ToArray();
+        if (nodesToDelete.Length == 0)
+            return;
+
+        HashSet<string> deletedIds = nodesToDelete.Select(node => node.Id).ToHashSet();
+        _asset.Graph.Links.RemoveAll(link => deletedIds.Contains(link.FromNode) || deletedIds.Contains(link.ToNode));
+        foreach (MaterialGraphNode node in nodesToDelete)
+            _asset.Graph.Nodes.Remove(node);
+
+        _selectedNodeIds.ExceptWith(deletedIds);
+        _selectedNodeId = _selectedNodeIds.LastOrDefault() ?? "";
+        _dirty = true;
+    }
+
     private void DrawCanvas()
     {
         MaterialGraph graph = _asset!.Graph;
@@ -156,6 +334,7 @@ public sealed class MaterialEditorWindow : IDisposable
         _lastCanvasMax = canvasMax;
         Vector2 mouse = ImGui.GetMousePos();
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        _hoveredNodeId = "";
 
         bool canvasHovered = ImGui.IsWindowHovered();
         float wheel = ImGui.GetIO().MouseWheel;
@@ -187,6 +366,113 @@ public sealed class MaterialEditorWindow : IDisposable
         foreach (MaterialGraphNode node in nodes)
             DrawNode(node, canvasMin, mouse, drawList);
 
+        if (_draggingNodes)
+        {
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                Vector2 delta = (mouse - _nodeDragLastMouse) / _canvasZoom;
+                if (delta.LengthSquared() > 0.000001f)
+                {
+                    foreach (MaterialGraphNode selectedNode in graph.Nodes
+                                 .Where(selectedNode => _selectedNodeIds.Contains(selectedNode.Id)))
+                    {
+                        selectedNode.Position += delta;
+                    }
+                    _dirty = true;
+                }
+                _nodeDragLastMouse = mouse;
+            }
+            else
+            {
+                _draggingNodes = false;
+            }
+        }
+
+        bool clickedNode = nodes.Any(node => IsInsideNode(node, canvasMin, mouse));
+        if (canvasHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
+            !clickedNode && string.IsNullOrEmpty(_pendingNodeId))
+        {
+            _marqueeSelecting = true;
+            _marqueeStart = mouse;
+            _marqueeCurrent = mouse;
+            _marqueeAdditive = ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift;
+            if (!_marqueeAdditive)
+                SelectNode("", false);
+        }
+
+        if (_marqueeSelecting)
+        {
+            _marqueeCurrent = mouse;
+            if (ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            {
+                Vector2 selectionMin = Vector2.Min(_marqueeStart, _marqueeCurrent);
+                Vector2 selectionMax = Vector2.Max(_marqueeStart, _marqueeCurrent);
+                IEnumerable<string> selectedIds = nodes
+                    .Where(node => IsNodeIntersecting(node, canvasMin, selectionMin, selectionMax))
+                    .Select(node => node.Id);
+                SetSelection(selectedIds, _marqueeAdditive);
+                _marqueeSelecting = false;
+            }
+        }
+
+        if (_marqueeSelecting)
+        {
+            Vector2 selectionMin = Vector2.Min(_marqueeStart, _marqueeCurrent);
+            Vector2 selectionMax = Vector2.Max(_marqueeStart, _marqueeCurrent);
+            uint fillColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.55f, 0.95f, 0.18f));
+            uint borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 0.7f, 1.0f, 0.9f));
+            drawList.AddRectFilled(selectionMin, selectionMax, fillColor);
+            drawList.AddRect(selectionMin, selectionMax, borderColor, 0.0f, ImDrawFlags.None, 1.0f);
+        }
+
+        if (canvasHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            _contextMenuPosition = mouse;
+            if (!string.IsNullOrEmpty(_hoveredNodeId))
+            {
+                _contextNodeId = _hoveredNodeId;
+                ImGui.OpenPopup("MaterialGraphNodeContext");
+            }
+            else
+            {
+                _contextNodeId = "";
+                ImGui.OpenPopup("MaterialGraphCanvasContext");
+            }
+        }
+
+        if (ImGui.BeginPopup("MaterialGraphNodeContext"))
+        {
+            MaterialGraphNode? contextNode = graph.FindNode(_contextNodeId);
+            if (contextNode != null)
+            {
+                if (ImGui.MenuItem("Select"))
+                    SelectNode(contextNode.Id, ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift);
+
+                bool canDelete = contextNode.Type != "PBROutput";
+                if (ImGui.MenuItem("Delete Node", "Delete", false, canDelete))
+                {
+                    SelectNode(contextNode.Id, false);
+                    DeleteSelectedNode();
+                }
+            }
+            ImGui.EndPopup();
+        }
+
+        if (ImGui.BeginPopup("MaterialGraphCanvasContext"))
+        {
+            if (ImGui.BeginMenu("Add Node"))
+            {
+                DrawAddNodeItems(_contextMenuPosition);
+                ImGui.EndMenu();
+            }
+            if (ImGui.MenuItem("Reset View"))
+            {
+                _canvasPan = new Vector2(40, 40);
+                _canvasZoom = 1.0f;
+            }
+            ImGui.EndPopup();
+        }
+
         if (!string.IsNullOrEmpty(_pendingNodeId))
         {
             MaterialGraphNode? source = graph.FindNode(_pendingNodeId);
@@ -204,9 +490,6 @@ public sealed class MaterialEditorWindow : IDisposable
             }
         }
 
-        if (canvasHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
-            !nodes.Any(node => IsInsideNode(node, canvasMin, mouse)))
-            _selectedNodeId = "";
     }
 
     private void DrawNode(MaterialGraphNode node, Vector2 canvasMin, Vector2 mouse, ImDrawListPtr drawList)
@@ -219,7 +502,9 @@ public sealed class MaterialEditorWindow : IDisposable
         float height = HeaderHeight + 12 + rowCount * SocketSpacing;
         Vector2 min = canvasMin + _canvasPan + node.Position * _canvasZoom;
         Vector2 max = min + new Vector2(NodeWidth, height) * _canvasZoom;
-        bool selected = node.Id == _selectedNodeId;
+        if (mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y)
+            _hoveredNodeId = node.Id;
+        bool selected = _selectedNodeIds.Contains(node.Id);
         float rounding = MathF.Max(2.0f, 6.0f * _canvasZoom);
         float fontSize = MathF.Max(7.0f, ImGui.GetFontSize() * _canvasZoom);
         float textScale = fontSize / ImGui.GetFontSize();
@@ -240,13 +525,25 @@ public sealed class MaterialEditorWindow : IDisposable
         drawList.AddText(ImGui.GetFont(), fontSize, min + new Vector2(10, 6) * _canvasZoom, 0xffffffff, node.Name);
 
         ImGui.SetCursorScreenPos(min);
-        ImGui.InvisibleButton($"node_header_{node.Id}", new Vector2(NodeWidth, HeaderHeight) * _canvasZoom);
+        ImGui.InvisibleButton($"node_surface_{node.Id}", new Vector2(NodeWidth, height) * _canvasZoom);
         if (ImGui.IsItemClicked())
-            _selectedNodeId = node.Id;
-        if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
         {
-            node.Position += ImGui.GetIO().MouseDelta / _canvasZoom;
-            _dirty = true;
+            bool additive = ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift;
+            bool alreadySelected = _selectedNodeIds.Contains(node.Id);
+            if (additive || !alreadySelected)
+                SelectNode(node.Id, additive);
+            else
+                _selectedNodeId = node.Id;
+
+            if (IsInsideAnyPin(node, canvasMin, mouse))
+            {
+                _draggingNodes = false;
+            }
+            else
+            {
+                _draggingNodes = true;
+                _nodeDragLastMouse = mouse;
+            }
         }
 
         float pinHitRadius = MathF.Max(8.0f, 8.0f * _canvasZoom);
@@ -260,7 +557,13 @@ public sealed class MaterialEditorWindow : IDisposable
             drawList.AddText(ImGui.GetFont(), fontSize, pin + new Vector2(9, -8) * _canvasZoom,
                 0xffd7d7d7, socket.Name);
             if (Vector2.DistanceSquared(mouse, pin) <= pinHitRadiusSquared && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                CompleteLink(node, socket.Name, socket.Type);
+            {
+                _draggingNodes = false;
+                if (string.IsNullOrEmpty(_pendingNodeId))
+                    DisconnectInput(node.Id, socket.Name);
+                else
+                    CompleteLink(node, socket.Name, socket.Type);
+            }
         }
 
         for (int i = 0; i < definition.Outputs.Length; i++)
@@ -274,11 +577,28 @@ public sealed class MaterialEditorWindow : IDisposable
                 0xffd7d7d7, socket.Name);
             if (Vector2.DistanceSquared(mouse, pin) <= pinHitRadiusSquared && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
+                _draggingNodes = false;
                 _pendingNodeId = node.Id;
                 _pendingSocket = socket.Name;
-                _selectedNodeId = node.Id;
+                SelectNode(node.Id, ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift);
             }
         }
+    }
+
+    private void DisconnectInput(string targetNodeId, string targetSocket)
+    {
+        if (_asset == null)
+            return;
+
+        int removed = _asset.Graph.Links.RemoveAll(link =>
+            link.ToNode == targetNodeId && link.ToSocket == targetSocket);
+        if (removed <= 0)
+            return;
+
+        _pendingNodeId = "";
+        _pendingSocket = "";
+        _dirty = true;
+        _status = "Connection removed.";
     }
 
     private void CompleteLink(MaterialGraphNode targetNode, string targetSocket, MaterialValueType targetType)
@@ -351,6 +671,12 @@ public sealed class MaterialEditorWindow : IDisposable
         ImGui.Spacing();
         ImGui.TextUnformatted("Selected Node");
         ImGui.Separator();
+        if (_selectedNodeIds.Count > 1)
+        {
+            ImGui.TextDisabled($"{_selectedNodeIds.Count} nodes selected. Ctrl/Shift-click toggles selection; drag on empty space selects a group.");
+            ImGui.Separator();
+        }
+
         MaterialGraphNode? node = _asset.Graph.FindNode(_selectedNodeId);
         if (node == null)
         {
@@ -396,13 +722,9 @@ public sealed class MaterialEditorWindow : IDisposable
         if (node.Type != "PBROutput")
         {
             ImGui.Spacing();
-            if (ImGui.Button("Delete Node", new Vector2(-1, 0)))
-            {
-                _asset.Graph.Links.RemoveAll(link => link.FromNode == node.Id || link.ToNode == node.Id);
-                _asset.Graph.Nodes.Remove(node);
-                _selectedNodeId = "";
-                _dirty = true;
-            }
+            string deleteLabel = _selectedNodeIds.Count > 1 ? "Delete Selected Nodes" : "Delete Node";
+            if (ImGui.Button(deleteLabel, new Vector2(-1, 0)))
+                DeleteSelectedNode();
         }
     }
 
@@ -649,6 +971,41 @@ public sealed class MaterialEditorWindow : IDisposable
         Vector2 min = canvasMin + _canvasPan + node.Position * _canvasZoom;
         Vector2 max = min + new Vector2(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing) * _canvasZoom;
         return mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y;
+    }
+
+    private bool IsNodeIntersecting(
+        MaterialGraphNode node,
+        Vector2 canvasMin,
+        Vector2 selectionMin,
+        Vector2 selectionMax)
+    {
+        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
+        int rows = Math.Max(1, Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0));
+        Vector2 nodeMin = canvasMin + _canvasPan + node.Position * _canvasZoom;
+        Vector2 nodeMax = nodeMin + new Vector2(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing) * _canvasZoom;
+        return nodeMin.X <= selectionMax.X && nodeMax.X >= selectionMin.X &&
+               nodeMin.Y <= selectionMax.Y && nodeMax.Y >= selectionMin.Y;
+    }
+
+    private bool IsInsideAnyPin(MaterialGraphNode node, Vector2 canvasMin, Vector2 mouse)
+    {
+        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
+        if (definition == null)
+            return false;
+
+        float pinHitRadius = MathF.Max(8.0f, 8.0f * _canvasZoom);
+        float pinHitRadiusSquared = pinHitRadius * pinHitRadius;
+        foreach (MaterialSocketDefinition socket in definition.Inputs)
+        {
+            if (Vector2.DistanceSquared(mouse, GetInputPin(node, socket.Name, canvasMin)) <= pinHitRadiusSquared)
+                return true;
+        }
+        foreach (MaterialSocketDefinition socket in definition.Outputs)
+        {
+            if (Vector2.DistanceSquared(mouse, GetOutputPin(node, socket.Name, canvasMin)) <= pinHitRadiusSquared)
+                return true;
+        }
+        return false;
     }
 
     private void DrawGrid(ImDrawListPtr drawList, Vector2 min, Vector2 max)

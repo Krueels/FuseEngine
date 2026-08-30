@@ -4,8 +4,19 @@ using Fuse.Input;
 
 namespace Blowtorch;
 
+public enum EditorInputContext
+{
+    Map,
+    MaterialGraph
+}
+
 public unsafe class EditorInputService
 {
+    public EditorInputContext ActiveContext { get; private set; } = EditorInputContext.Map;
+
+    public bool IsMapContext => ActiveContext == EditorInputContext.Map;
+    public bool IsMaterialGraphContext => ActiveContext == EditorInputContext.MaterialGraph;
+
     public void Initialize(Glfw glfw, WindowHandle* windowHandle)
     {
         Input.Init(glfw, windowHandle);
@@ -18,6 +29,18 @@ public unsafe class EditorInputService
     public void Update()
     {
         Input.Update();
+    }
+
+    public void BeginFrame()
+    {
+        // The map is the default context. A focused tool window can claim the
+        // frame later while its ImGui window is being drawn.
+        ActiveContext = EditorInputContext.Map;
+    }
+
+    public void SetContext(EditorInputContext context)
+    {
+        ActiveContext = context;
     }
 
     private void OnKeyCallback(WindowHandle* w, Keys key, int scanCode, InputAction action, KeyModifiers mods)

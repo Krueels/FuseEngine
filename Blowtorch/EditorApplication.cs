@@ -85,6 +85,7 @@ public unsafe class EditorApplication : IDisposable
             gl.Clear(Silk.NET.OpenGL.ClearBufferMask.ColorBufferBit | Silk.NET.OpenGL.ClearBufferMask.DepthBufferBit);
 
             _inputService.Update();
+            _inputService.BeginFrame();
             _imgui.NewFrame(dt, fbWidth, fbHeight);
 
             // Render Viewports
@@ -109,7 +110,7 @@ public unsafe class EditorApplication : IDisposable
             _viewportSide.EndRender(fbWidth, fbHeight);
 
             // Render UI
-            _ui.Draw(_window, _viewport3D, _viewportTop, _viewportFront, _viewportSide, _sceneService, _assetService, _history);
+            _ui.Draw(_window, _viewport3D, _viewportTop, _viewportFront, _viewportSide, _sceneService, _assetService, _history, _inputService);
 
             _imgui.Render();
             _window.SwapBuffers();

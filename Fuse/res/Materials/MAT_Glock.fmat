@@ -38,8 +38,8 @@
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          29,
-          51
+          55.44999,
+          142.25244
         ],
         "properties": {
           "path": "Textures/weapons/glock/Glock_ALB.png",
@@ -76,8 +76,8 @@
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          42,
-          358
+          268.1475,
+          339.485
         ],
         "properties": {
           "path": "Textures/weapons/glock/Glock_RMA.png",

@@ -117,7 +117,16 @@ public unsafe class EditorUI : IDisposable
 
     public void Dispose() => _materialEditor.Dispose();
 
-    public void Draw(EditorWindow window, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
+    public void Draw(
+        EditorWindow window,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorInputService inputService)
     {
         if (_currentMode != EditorMode.DrawBrush)
         {
@@ -136,8 +145,6 @@ public unsafe class EditorUI : IDisposable
         {
             _activeDraggingViewport = null;
         }
-
-        HandleKeyboardShortcuts(sceneService, assetService, history);
 
         if (_focusCameraRequested && _selectedObject != null)
         {
@@ -186,7 +193,11 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.End();
 
-        DrawViewportWindow(window, viewport3D, viewportTop, viewportFront, viewportSide, sceneService, assetService, history);
+        // Draw the graph before map input is processed so it can claim the
+        // MaterialGraph context in the same frame when it has focus.
+        _materialEditor.Draw(assetService, sceneService, inputService);
+
+        DrawViewportWindow(window, viewport3D, viewportTop, viewportFront, viewportSide, sceneService, assetService, history, inputService);
 
         viewport3D.ShowHitboxes = _showHitBoxes;
         viewportTop.ShowHitboxes = _showHitBoxes;
@@ -199,7 +210,7 @@ public unsafe class EditorUI : IDisposable
         if (_showJsonWindow)
             DrawJsonWindow(sceneService.Document);
 
-        _materialEditor.Draw(assetService, sceneService);
+        HandleKeyboardShortcuts(sceneService, assetService, history, inputService);
     }
 
     private void DuplicateObject(MapObject obj, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -707,9 +718,16 @@ public unsafe class EditorUI : IDisposable
         return files.Length > 0 ? files[0] : null;
     }
 
-    private void HandleKeyboardShortcuts(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
+    private void HandleKeyboardShortcuts(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorInputService inputService)
     {
         var io = ImGui.GetIO();
+
+        if (!inputService.IsMapContext)
+            return;
         
         // Handle shortcuts only if we're not typing in text inputs
         if (io.WantTextInput) return;
@@ -842,6 +860,9 @@ public unsafe class EditorUI : IDisposable
             }
             if (ImGui.BeginMenu("Materials"))
             {
+                if (ImGui.MenuItem("Open Material Graph"))
+                    _materialEditor.OpenStandalone();
+
                 if (ImGui.MenuItem("New Material..."))
                     RequestNewMaterial(_selectedObjects.Count > 0 ? _selectedObjects : (_selectedObject != null ? [_selectedObject] : []));
 
@@ -876,7 +897,8 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewportSide, 
         EditorSceneService sceneService, 
         EditorAssetService assetService, 
-        CommandHistory history)
+        CommandHistory history,
+        EditorInputService inputService)
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
 
@@ -896,7 +918,9 @@ public unsafe class EditorUI : IDisposable
             ImGui.SameLine();
             if (ImGui.RadioButton("Shear (T)", _gizmoOperation == GizmoOperation.Shear)) _gizmoOperation = GizmoOperation.Shear;
 
-            if (!ImGui.IsMouseDown(ImGuiMouseButton.Right) && !ImGui.GetIO().WantTextInput)
+            if (inputService.IsMapContext &&
+                !ImGui.IsMouseDown(ImGuiMouseButton.Right) &&
+                !ImGui.GetIO().WantTextInput)
             {
                 if (ImGui.IsKeyPressed(ImGuiKey.Escape))
                 {
