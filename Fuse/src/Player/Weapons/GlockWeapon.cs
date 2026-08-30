@@ -346,19 +346,23 @@ public sealed class GlockWeapon : IWeapon
 
     private void ApplyDamage(JoltPhysicsSharp.BodyID bodyId, Vector3 hitPos, Vector3 direction)
     {
+        WeaponSystem? system = _system;
+        if (system == null)
+            return;
+
         // Apply damage at enemy
-        if (_system?.EnemySystem?.TryGetEnemy(bodyId, out var enemy) == true)
+        if (system.EnemySystem?.TryGetEnemy(bodyId, out var enemy) == true && enemy != null)
         {
-            enemy.TakeDamage(Damage, hitPos, direction, _system.Physics);
+            enemy.TakeDamage(Damage, hitPos, direction, system.Physics);
             return; // não aplicar impulso em inimigos
         }
         
         // Try to get interactable
-        if (_system.Physics.BodyInterface.IsAdded(bodyId))
+        if (system.Physics.BodyInterface.IsAdded(bodyId))
         {
             var interactable = Interaction.InteractionSystem.GetInteractable(
-                _system.Physics.BodyInterface, bodyId,
-                _system.Physics.BodyInterface.GetUserData(bodyId)
+                system.Physics.BodyInterface, bodyId,
+                system.Physics.BodyInterface.GetUserData(bodyId)
                 );
 
             if (interactable != null)
@@ -370,14 +374,14 @@ public sealed class GlockWeapon : IWeapon
         // Apply impulse - BodyInterface acorda o corpo automaticamente
         float mass = 1.0f;
         BodyLockRead readLock = default;
-        _system.Physics.BodyLockInterface.LockRead(bodyId, out readLock);
-        if (readLock.Succeeded && readLock.Body.IsDynamic)
-            mass = 1.0f / readLock.Body.MotionProperties.InverseMassUnchecked;
+        system.Physics.BodyLockInterface.LockRead(bodyId, out readLock);
+        if (readLock.Succeeded && readLock.Body is { } body && body.IsDynamic)
+            mass = 1.0f / body.MotionProperties.InverseMassUnchecked;
         if (readLock.Succeeded)
-            _system.Physics.BodyLockInterface.UnlockRead(readLock);
+            system.Physics.BodyLockInterface.UnlockRead(readLock);
 
         Vector3 impulse = direction * Damage * 0.5f * mass;
-        _system.Physics.BodyInterface.AddImpulse(bodyId, impulse);
+        system.Physics.BodyInterface.AddImpulse(bodyId, impulse);
 
         // spawn impact decal
         //_system?.SpawnImpactDecal(hitPos, direction);

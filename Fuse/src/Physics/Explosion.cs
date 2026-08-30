@@ -23,7 +23,7 @@ public static class Explosion
         using var bodyFilter = new DefaultBodyFilter();
         using var shapeFilter = new DefaultShapeFilter();
 
-        narrow.CollideShape(sphere, ref scale, ref transform, ref baseOffset,
+        narrow.CollideShape(sphere, in scale, in transform, in baseOffset,
             CollisionCollectorType.AllHit, results,
             bpFilter, olFilter, bodyFilter, shapeFilter);
 
@@ -38,7 +38,11 @@ public static class Explosion
             bli.LockRead(id, out bodyLock);
             if (!bodyLock.Succeeded) continue;
 
-            var body = bodyLock.Body;
+            if (bodyLock.Body is not { } body)
+            {
+                bli.UnlockRead(bodyLock);
+                continue;
+            }
             if (!body.IsDynamic) { bli.UnlockRead(bodyLock); continue; }
 
             float invMass = body.MotionProperties.InverseMassUnchecked;

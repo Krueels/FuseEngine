@@ -903,19 +903,22 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             _model != null &&
             Body.IsBuilt)
         {
+            Entity? entity = this.Entity;
+            if (entity == null)
+                return;
             Vector3 proxyOrigin =
-                Body.Position(physics) + Entity.ModelOffset;
+                Body.Position(physics) + entity.ModelOffset;
 
             Quaternion proxyRotation =
                 Quaternion.Concatenate(
-                    Entity.ModelRotation,
+                    entity.ModelRotation,
                     Body.Rotation(physics));
 
             _damageBody.SyncFromSkeleton(
                 _model.Skeleton,
                 proxyOrigin,
                 proxyRotation,
-                Entity.Transform.Scale * Entity.ModelScale);
+                entity.Transform.Scale * entity.ModelScale);
         }
     }
 

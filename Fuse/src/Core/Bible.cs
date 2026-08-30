@@ -63,6 +63,7 @@ public static class Bible
     public const string ShaderSkinnedVert = "Shaders/skinned.vert";
     public const string ShaderSkinnedShadowVert = "Shaders/shadow_skinned.vert";
     public const string ShaderPointShadowSkinnedVert = "Shaders/point_shadow_skinned.vert";
+    public const string ShaderForwardPlusCull = "Shaders/forward_plus.comp";
 
     // Shaders - billboard
     public const string ShaderBillboardVert = "Shaders/billboard.vert";
@@ -107,6 +108,46 @@ public static class Bible
     public static string Audio(string name) => $"{ResPath.Path}/{name}";
     public static string Shader(string name) => $"{ResPath.Path}/{name}";
     public static string Font(string name) => $"{ResPath.Path}/{name}";
+
+    /// <summary>
+    /// Schedules the assets used by the first gameplay frame. Textures are
+    /// decoded in the background and models/shaders are admitted to the bounded
+    /// render-thread queue, so map loading no longer performs all work in one call.
+    /// </summary>
+    public static void QueuePreload(AssetManager assets, AudioSystem? audio = null)
+    {
+        assets.QueueTexturePreload(Tex(Crosshair), TextureColorSpace.Linear, AssetPriority.Critical);
+        assets.QueueTexturePreload(Tex(CrosshairInteract), TextureColorSpace.Linear, AssetPriority.Critical);
+        assets.QueueTexturePreload(Tex(EnemyIcon), TextureColorSpace.Linear, AssetPriority.High);
+        for (int i = 0; i < 3; i++)
+            assets.QueueTexturePreload(Tex(string.Format(MuzzleFlash, i)), TextureColorSpace.Srgb, AssetPriority.High);
+
+        assets.QueueModelPreload(Model(GlockModel), AssetPriority.High);
+        assets.QueueModelPreload(Model(AKModel), AssetPriority.Normal);
+        assets.QueueModelPreload(Model(UniSexGuy), AssetPriority.Normal);
+        assets.QueueModelPreload(Model(SpiderModel), AssetPriority.Normal);
+
+        if (audio == null)
+            return;
+
+        audio.QueuePreloadSound(Audio(GlockDrawFirst), AssetPriority.Critical);
+        audio.QueuePreloadSound(Audio(GlockReload), AssetPriority.High);
+        audio.QueuePreloadSound(Audio(GlockReloadEmpty), AssetPriority.High);
+        for (int i = 0; i < 4; i++)
+            audio.QueuePreloadSound(Audio($"{GlockFire}{i}.wav"), AssetPriority.High);
+
+        for (int i = 0; i < 4; i++)
+            audio.QueuePreloadSound(Audio($"{AKFire}{i}.wav"), AssetPriority.Normal);
+        audio.QueuePreloadSound(Audio(AKReload), AssetPriority.Normal);
+        audio.QueuePreloadSound(Audio(AKReloadEmpty), AssetPriority.Normal);
+
+        for (int i = 0; i < 3; i++)
+            audio.QueuePreloadSound(Audio($"{BulletImpact}{i:D2}.mp3"), AssetPriority.Low);
+
+        // These are the sounds that previously caused the random first-use spike.
+        for (int i = 1; i <= 15; i++)
+            audio.QueuePreloadSound($"{SpiderFootStep}{i:00}.wav", AssetPriority.High);
+    }
 
     public static void PreloadAll(AssetManager assets, AudioSystem? audio = null)
     {

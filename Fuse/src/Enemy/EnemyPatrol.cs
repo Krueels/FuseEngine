@@ -181,7 +181,7 @@ public sealed class EnemyPatrol : Debug.IGizmoDrawable
 
         Vector3 dirNorm = Vector3.Normalize(direction);
         Vector3 dirScaled = dirNorm * maxDistance;
-        var ray = new Ray(ref origin, ref dirScaled);
+        var ray = new Ray(in origin, in dirScaled);
 
         return _physics.NarrowPhaseQuery.CastRay(ray, out _, bpFilter, olFilter, bodyFilter);
     }

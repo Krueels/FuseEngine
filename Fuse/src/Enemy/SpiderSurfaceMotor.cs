@@ -222,7 +222,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         Quaternion rotation = RotationFromSurface(initialNormal, initialForward, initialForward);
         Vector3 position = spawnPosition;
-        Character = new CharacterVirtual(settings, ref position, ref rotation, 0, physics.Native);
+        Character = new CharacterVirtual(settings, in position, in rotation, 0, physics.Native);
 
         _solver.BeginFrame();
         if (_solver.TryAcquireContact(
@@ -405,7 +405,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         using (var bodyFilter = new EnemyBodyFilter(_body.Native))
         using (var shapeFilter = new DefaultShapeFilter())
         {
-            Character.Update(dt, ref _objectLayer, _physics.Native, bodyFilter, shapeFilter);
+            Character.Update(dt, in _objectLayer, _physics.Native, bodyFilter, shapeFilter);
         }
 
         Vector3 endPosition = Character.Position;

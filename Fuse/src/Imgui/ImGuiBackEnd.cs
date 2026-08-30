@@ -64,6 +64,8 @@ public unsafe class ImGuiBackEnd : IDisposable
         if (ImGui.Checkbox("Bhop Mode", ref bhopMode))
             player.EnableBhop = bhopMode;
 
+        DrawProfiler(renderer);
+
         if (ImGuiNET.ImGui.CollapsingHeader("Post-Process"))
         {
             var pp = renderer.PostPipeline.Settings; // precisamos expor property pública no MasterRenderer
@@ -123,6 +125,45 @@ public unsafe class ImGuiBackEnd : IDisposable
             }
         }
         ImGui.End();
+    }
+
+    private static void DrawProfiler(Renderer.MasterRenderer renderer)
+    {
+        if (!ImGui.CollapsingHeader("Profiler", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        EngineProfiler profiler = renderer.Profiler;
+        ProfilerSnapshot stats = profiler.LastFrame;
+        double averageFrame = profiler.AverageFrameMilliseconds;
+        double fps = stats.FrameMilliseconds > 0.0
+            ? 1000.0 / stats.FrameMilliseconds
+            : 0.0;
+
+        ImGui.Text($"Frame: {stats.FrameMilliseconds:0.00} ms ({fps:0.0} FPS)");
+        ImGui.Text($"Frame médio ({120}): {averageFrame:0.00} ms");
+        ImGui.SeparatorText("Renderização");
+        ImGui.Text($"Render principal: {stats.MainRenderMilliseconds:0.00} ms");
+        ImGui.Text($"  Sombras direcionais: {stats.DirectionalShadowMilliseconds:0.00} ms");
+        ImGui.Text($"  Sombras spot: {stats.SpotShadowMilliseconds:0.00} ms");
+        ImGui.Text($"  Sombras point: {stats.PointShadowMilliseconds:0.00} ms");
+        ImGui.Text($"  PBR (CPU): {stats.PbrMilliseconds:0.00} ms");
+        ImGui.Text($"Pós-processamento: {stats.PostProcessMilliseconds:0.00} ms");
+        ImGui.Text($"Objetos desenhados: {stats.ObjectsDrawn}");
+
+        ImGui.SeparatorText("Iluminação");
+        ImGui.Text($"Luzes na cena: {stats.LightsInScene}");
+        ImGui.Text($"Point: {stats.PointLights}   Spot: {stats.SpotLights}");
+        ImGui.Text($"Luzes avaliadas pelo PBR: {stats.LightsEvaluated}");
+
+        ImGui.SeparatorText("Gameplay");
+        ImGui.Text($"Física: {stats.PhysicsMilliseconds:0.00} ms");
+        ImGui.Text($"IA da aranha: {stats.SpiderAiMilliseconds:0.00} ms");
+        ImGui.Text($"Carregamento de áudio: {stats.AudioLoadingMilliseconds:0.00} ms");
+
+        ImGui.SeparatorText("Profiler");
+        ImGui.TextUnformatted("Tempos medidos na CPU; o custo real da GPU pode ser diferente.");
+        if (ImGui.Button("Resetar histórico"))
+            profiler.Reset();
     }
 
     public void Render()

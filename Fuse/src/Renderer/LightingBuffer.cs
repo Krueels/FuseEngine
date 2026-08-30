@@ -60,7 +60,12 @@ public sealed unsafe class LightingBuffer : IDisposable
     {
         Array.Clear(_data);
 
-        WriteVec4(0, pointLights.Length, spotLights.Length, directionalShadowsEnabled ? 1.0f : 0.0f, shadowFilterEnabled ? 1.0f : 0.0f);
+        // The legacy UBO remains limited because decals and fallback shaders
+        // still consume its compact fixed-size arrays. Forward+ uses its own
+        // larger SSBO and receives the complete selected light set.
+        int legacyPointCount = System.Math.Min(pointLights.Length, MaxPointLights);
+        int legacySpotCount = System.Math.Min(spotLights.Length, MaxSpotLights);
+        WriteVec4(0, legacyPointCount, legacySpotCount, directionalShadowsEnabled ? 1.0f : 0.0f, shadowFilterEnabled ? 1.0f : 0.0f);
         WriteVec4(4, directionalLightDirection.X, directionalLightDirection.Y, directionalLightDirection.Z, ambient);
         WriteVec4(8, directionalLightColor.X, directionalLightColor.Y, directionalLightColor.Z, cascadeBlendFraction);
         WriteVec4(12, shadowBiasBase, shadowBiasFactor, shadowSpread, shadowFarPlane);

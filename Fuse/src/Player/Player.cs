@@ -45,7 +45,6 @@ public class Player : IDisposable
     private float _surfAirAccel = 150.0f;
     private float _surfMaxSpeed = 3.8f;
     private float _maxVelocity = 3500.0f;
-    private float _surfMinSpeed = 1.0f;
 
     private bool _isSprinting;
     private float _sprintSpeedMul = 1.5f;
@@ -71,10 +70,6 @@ public class Player : IDisposable
     private Light? _flashlight;
     private Audio.AudioSystem? _audio;
 
-    private float _tiltTarget;
-    private float _tiltCurrent;
-    private const float MaxTilt = MathF.PI / 55f;
-    private const float TiltSpeed = 6f;
 
     private bool _imguiWantedKeyboardPrev = false;
 
@@ -104,8 +99,8 @@ public class Player : IDisposable
         Quaternion identity = Quaternion.Identity;
         _character = new CharacterVirtual(
             _settings,
-            ref posVec,
-            ref identity,
+            in posVec,
+            in identity,
             0,
             _world.Native);
 
@@ -159,7 +154,7 @@ public class Player : IDisposable
         _deathTimer = _respawnDelay;
 
         Logger.Info("[PLAYER] DIED!");
-        _audio.Play(Bible.Audio(Bible.DeathSound), volume: 0.3f);
+        _audio?.Play(Bible.Audio(Bible.DeathSound), volume: 0.3f);
         _onPlayerDeath?.Invoke();
 
         // Freezes the player
@@ -240,7 +235,7 @@ public class Player : IDisposable
 
         using var bodyFilter = new Physics.DefaultBodyFilter();
         using var shapeFilter = new Physics.DefaultShapeFilter();
-        _character.ExtendedUpdate(dt, updSettings, ref _objectLayer, _world.Native, bodyFilter, shapeFilter);
+        _character.ExtendedUpdate(dt, updSettings, in _objectLayer, _world.Native, bodyFilter, shapeFilter);
 
         if (_character.GroundState == GroundState.OnGround)
         {
@@ -297,7 +292,7 @@ public class Player : IDisposable
         if (Input.Input.KeyPressed(KeyCodes.F))
         {
             _flashlight.Enabled = !_flashlight.Enabled;
-            _audio.Play("Audio/flashlight.wav", volume: 1.0f);
+            _audio?.Play("Audio/flashlight.wav", volume: 1.0f);
         }
     }
 
@@ -600,7 +595,7 @@ public class Player : IDisposable
             float checkDist = standHalfH - crouchHalfH;
             var origin = new Vector3(pos.X, topY, pos.Z);
             var dir = new Vector3(0, 1, 0) * checkDist;
-            Ray ray = new(ref origin, ref dir);
+            Ray ray = new(in origin, in dir);
 
             using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
             using var olFilter = new Physics.DefaultObjectLayerFilter();
@@ -630,7 +625,7 @@ public class Player : IDisposable
 
         using var bodyFilter = new Physics.DefaultBodyFilter();
         using var shapeFilter = new Physics.DefaultShapeFilter();
-        _character.SetShape(0.0f, newShape, 1.0f, ref _objectLayer, _world.Native, bodyFilter, shapeFilter);
+        _character.SetShape(0.0f, newShape, 1.0f, in _objectLayer, _world.Native, bodyFilter, shapeFilter);
         _character.LinearVelocity = vel;
     }
 
@@ -671,9 +666,9 @@ public class Player : IDisposable
 
             if (bodyLock.Succeeded)
             {
-                if (bodyLock.Body.IsDynamic)
+                if (bodyLock.Body is { } body && body.IsDynamic)
                 {
-                    float mass = 1.0f / bodyLock.Body.MotionProperties.InverseMassUnchecked;
+                    float mass = 1.0f / body.MotionProperties.InverseMassUnchecked;
                     float relVel = -Vector3.Dot(_character.LinearVelocity, c.ContactNormal);
                     if (relVel > 0.0f)
                     {
@@ -702,7 +697,8 @@ public class Player : IDisposable
         _bli.LockRead(bodyID2, out bodyLock);
         if (bodyLock.Succeeded)
         {
-            if (bodyLock.Body.IsStatic && contactNormal.Y > 0.707f && !bodyLock.Body.IsSensor)
+            if (bodyLock.Body is { } body && body.IsStatic &&
+                contactNormal.Y > 0.707f && !body.IsSensor)
                 settings.CanPushCharacter = false;
             _bli.UnlockRead(bodyLock);
         }

@@ -86,7 +86,7 @@ namespace Fuse.Enemy
 
             Vector3 posVec = safeSpawn;
             Quaternion identity = Quaternion.Identity;
-            _character = new CharacterVirtual(charSettings, ref posVec, ref identity, 0, physics.Native);
+            _character = new CharacterVirtual(charSettings, in posVec, in identity, 0, physics.Native);
             
 
             var model = _assets.GetSkinnedModel(Bible.Model(Bible.UniSexGuy));
@@ -122,18 +122,19 @@ namespace Fuse.Enemy
                 Entity.ModelScale = new System.Numerics.Vector3(145.4f, 145.4f, 145.4f);
 
                 // Play idle se existir
-                if (_animator.GetClip("Idle") != null)
+                var idleClip = _animator.GetClip("Idle");
+                if (idleClip != null)
                 {
-                    var idleClip = _animator.GetClip("Idle");
                     idleClip.Loop = true;
                     var walkClip = _animator.GetClip("Walk");
-                    walkClip.Loop = true;
+                    if (walkClip != null)
+                        walkClip.Loop = true;
                     _animator.Play("Idle");
                 }
                 else if (!string.IsNullOrEmpty(model.DefaultClipName))
                 {
-                    var idleClip = _animator.GetClip(model.DefaultClipName);
-                    if (idleClip != null) idleClip.Loop = true;
+                    var defaultIdleClip = _animator.GetClip(model.DefaultClipName);
+                    if (defaultIdleClip != null) defaultIdleClip.Loop = true;
                     _animator.Play(model.DefaultClipName);
                 }
             }
@@ -197,7 +198,7 @@ namespace Fuse.Enemy
 
                 using var bodyFilter = new EnemyBodyFilter(Body.Native);
                 using var shapeFilter = new DefaultShapeFilter();
-                _character.ExtendedUpdate(dt, updSettings, ref _objectLayer, physics.Native, bodyFilter, shapeFilter);
+                _character.ExtendedUpdate(dt, updSettings, in _objectLayer, physics.Native, bodyFilter, shapeFilter);
 
                 // Safety: if character fell way below the map, teleport back up
                 Vector3 charPos = _character.Position;
@@ -242,8 +243,10 @@ namespace Fuse.Enemy
         {
             if (IsDead || !Body.IsBuilt) return;
 
-            Vector3 pos = Body.Position(_physics);
-            Quaternion rot = Body.Rotation(_physics);
+            if (_physics is not { } physics)
+                return;
+            Vector3 pos = Body.Position(physics);
+            Quaternion rot = Body.Rotation(physics);
             drawer.DrawCapsule(pos, rot, _capsuleHeight * 0.5f, _capsuleRadius, new Vector3(1, 0, 0));
         }
 

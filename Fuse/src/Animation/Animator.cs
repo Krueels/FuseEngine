@@ -94,8 +94,10 @@ public sealed class Animator
     public void Update(float dt)
     {
         //Logger.Info($"[AnimatorUpdate] clip={CurrentClip?.Name} playing={Playing} dt={dt:F4} bones={FinalBoneMatrices.Length}");
-        bool animate = CurrentClip != null && Playing && dt > 0f;
-        bool fading = _prevClip != null && _fadeProgress < 1.0f;
+        AnimationClip? currentClip = CurrentClip;
+        AnimationClip? previousClip = _prevClip;
+        bool animate = currentClip != null && Playing && dt > 0f;
+        bool fading = previousClip != null && _fadeProgress < 1.0f;
 
         foreach (var node in _skeleton.Nodes)
             node.Local = node.RestLocal;
@@ -112,25 +114,27 @@ public sealed class Animator
         }
 
         if (animate)
-            CurrentClip.Apply(TimeSeconds, _skeleton);
+            currentClip!.Apply(TimeSeconds, _skeleton);
 
-        if (fading)
+        if (fading && previousClip != null &&
+            _prevNodeLocals is { } previousLocals &&
+            _nextNodeLocals is { } nextLocals)
         {
             // 1. Capturar pose do novo clip (já aplicada em _skeleton.Nodes)
             for (int i = 0; i < _skeleton.Nodes.Length; i++)
-                _nextNodeLocals![i] = _skeleton.Nodes[i].Local;
+                nextLocals[i] = _skeleton.Nodes[i].Local;
 
             // 2. Capturar pose do clip antigo
-            _prevClip!.Apply(_prevTime, _skeleton);
+            previousClip.Apply(_prevTime, _skeleton);
             for (int i = 0; i < _skeleton.Nodes.Length; i++)
-                _prevNodeLocals![i] = _skeleton.Nodes[i].Local;
+                previousLocals[i] = _skeleton.Nodes[i].Local;
 
             // 3. Blend TRS entre antigo e novo
             float w = _fadeProgress;
             for (int i = 0; i < _skeleton.Nodes.Length; i++)
             {
-                var oldNode = _prevNodeLocals[i];
-                var newNode = _nextNodeLocals[i];
+                var oldNode = previousLocals[i];
+                var newNode = nextLocals[i];
 
                 DecomposeMatrix(oldNode, out Vector3 oldPos, out Quaternion oldRot, out Vector3 oldScale);
                 DecomposeMatrix(newNode, out Vector3 newPos, out Quaternion newRot, out Vector3 newScale);

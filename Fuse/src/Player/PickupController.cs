@@ -80,9 +80,9 @@ public class PickupController
         float mass = 1.0f;
         BodyLockRead readLock = default;
         _bli.LockRead(_heldBodyID, out readLock);
-        if (readLock.Succeeded)
+        if (readLock.Succeeded && readLock.Body is { } readBody)
         {
-            float invMass = readLock.Body.MotionProperties.InverseMassUnchecked;
+            float invMass = readBody.MotionProperties.InverseMassUnchecked;
             mass = (float.IsNaN(invMass) || invMass == 0.0f) ? 1.0f : 1.0f / invMass;
             _bli.UnlockRead(readLock);
         }
@@ -102,7 +102,7 @@ public class PickupController
         using var olFilter = new Physics.DefaultObjectLayerFilter();
         using var bodyFilter = new Physics.DefaultBodyFilter();
         Vector3 dirScaled = dir * _pickupRange;
-        var ray = new Ray(ref origin, ref dirScaled);
+        var ray = new Ray(in origin, in dirScaled);
 
         if (!_world.NarrowPhaseQuery.CastRay(ray, out var hit, bpFilter, olFilter, bodyFilter))
             return;
@@ -114,8 +114,7 @@ public class PickupController
         _bli.LockRead(hitID, out readLock);
         if (!readLock.Succeeded) return;
 
-        var body = readLock.Body;
-        if (!body.IsRigidBody || body.IsStatic)
+        if (readLock.Body is not { } body || !body.IsRigidBody || body.IsStatic)
         {
             _bli.UnlockRead(readLock);
             return;
@@ -135,9 +134,9 @@ public class PickupController
 
         BodyLockWrite writeLock = default;
         _bli.LockWrite(hitID, out writeLock);
-        if (writeLock.Succeeded)
+        if (writeLock.Succeeded && writeLock.Body is { } writeBody)
         {
-            writeLock.Body.SetAllowSleeping(false);
+            writeBody.SetAllowSleeping(false);
             _bli.UnlockWrite(writeLock);
         }
 
@@ -155,9 +154,9 @@ public class PickupController
         {
             BodyLockWrite writeLock = default;
             _bli.LockWrite(_heldBodyID, out writeLock);
-            if (writeLock.Succeeded)
+            if (writeLock.Succeeded && writeLock.Body is { } writeBody)
             {
-                writeLock.Body.SetAllowSleeping(true);
+                writeBody.SetAllowSleeping(true);
                 _bli.UnlockWrite(writeLock);
             }
         }
@@ -207,9 +206,9 @@ public class PickupController
         {
             BodyLockRead readLock = default;
             _bli.LockRead(_heldBodyID, out readLock);
-            if (readLock.Succeeded)
+            if (readLock.Succeeded && readLock.Body is { } readBody)
             {
-                float invMass = readLock.Body.MotionProperties.InverseMassUnchecked;
+                float invMass = readBody.MotionProperties.InverseMassUnchecked;
                 if (invMass > 0.0f)
                     impulse *= 1.0f / invMass;
                 _bli.UnlockRead(readLock);

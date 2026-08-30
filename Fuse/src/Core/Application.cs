@@ -16,6 +16,9 @@ public unsafe class Application : IDisposable
 {
     private readonly Window _window;
     private double _lastTime;
+    private double _physicsAccumulator;
+    private const float FixedPhysicsDelta = 1.0f / 60.0f;
+    private const int MaxPhysicsStepsPerFrame = 8;
     private bool _paused;
     private int _scrWidth = 1280, _scrHeight = 800;
     private bool _screenshotRequested;
@@ -53,6 +56,7 @@ public unsafe class Application : IDisposable
     // Map Transition
     private string? _pendingMapLoad;
     private bool _pendingMapReload;
+    private bool _preloadQueued;
 
     public Application()
     {
@@ -79,7 +83,10 @@ public unsafe class Application : IDisposable
 
         // Audio
         _audio = new Audio.AudioSystem { GlobalVolume = 1.0f };
+        _audio.Profiler = _renderer.Profiler;
         _impactSound = new Audio.ImpactSoundSystem(_physics, _audio);
+        Bible.QueuePreload(_assets, _audio);
+        _preloadQueued = true;
 
         // UI, HUD & ImGui
         _ui = new UIRenderer(gl, _scrWidth, _scrHeight);
@@ -167,6 +174,7 @@ public unsafe class Application : IDisposable
 
     private void LoadMap(string mapName, Action<float, string>? onProgress = null)
     {
+        _assets.QueueMapPreload(mapName, AssetManagement.AssetPriority.Critical);
         _impactSound?.Clear();
         _enemySystem?.Clear();
         var spawn = _sceneManager.LoadMap(mapName, onProgress);
@@ -183,6 +191,8 @@ public unsafe class Application : IDisposable
 
     private void ReloadMap(Action<float, string>? onProgress = null)
     {
+        if (_sceneManager.CurrentMapPath is { } currentMap)
+            _assets.QueueMapPreload(currentMap, AssetManagement.AssetPriority.Critical);
         _impactSound?.Clear();
         _enemySystem?.Clear();
         var spawn = _sceneManager.ReloadMap(onProgress);
@@ -268,58 +278,71 @@ public unsafe class Application : IDisposable
         {
             while (!_window.ShouldClose)
             {
+                _renderer.Profiler.BeginFrame();
                 double now = _window.GlfwApi.GetTime();
-                float dt = (float)(now - _lastTime);
+                float dt = float.Clamp((float)(now - _lastTime), 0.0f, 0.25f);
                 _lastTime = now;
                 Engine.Tick(dt);
 
                 Input.Input.Update();
                 var gl = _window.GL;
                 float aspect = (float)_scrWidth / _scrHeight;
+                Player.Player player = _player ?? throw new InvalidOperationException("Player is not initialized.");
+                Camera camera = player.Camera;
 
                 ProcessPendingMapChange();
+                _assets.PumpGpuUploads(2);
+                _audio.PumpPreloads(2);
 
                 if (!_paused)
                 {
-                    _pickup.PhysicsUpdate(dt);
-                    _physics.Step(float.Min(dt, 0.0333f));
-
                     UpdateUIFocus();
+                    _physicsAccumulator = System.Math.Min(
+                        _physicsAccumulator + dt,
+                        FixedPhysicsDelta * MaxPhysicsStepsPerFrame);
 
-                    _player.Update(dt);
-                    _audio.UpdateListener(_player.Camera.Position, _player.Camera.Front, _player.Camera.Up, _player.LinearVelocity);
-                    _impactSound.Update(dt);
-                    _pickup.Update(dt);
+                    int physicsSteps = 0;
+                    while (_physicsAccumulator >= FixedPhysicsDelta && physicsSteps < MaxPhysicsStepsPerFrame)
+                    {
+                        UpdateFixedSimulation(FixedPhysicsDelta);
+                        _physicsAccumulator -= FixedPhysicsDelta;
+                        physicsSteps++;
+                    }
 
-                    _sceneManager.Update(dt);
-                    _weaponSystem?.Update(dt);
-                    _weaponSystem?.PhysicsUpdate(dt);
-                    _enemySystem?.Update(dt);
-                    _enemySystem?.UpdateContactDamage(dt);
+                    // Drop excess accumulated time after a long stall. This keeps
+                    // the simulation deterministic without a spiral of physics steps.
+                    if (physicsSteps == MaxPhysicsStepsPerFrame &&
+                        _physicsAccumulator >= FixedPhysicsDelta)
+                        _physicsAccumulator = 0.0;
 
-                    if (_sceneManager.CheckPendingResets())
-                        RequestMapReload();
+                    _audio.UpdateListener(camera.Position, camera.Front, camera.Up, player.LinearVelocity);
                 }
+                else
+                    _physicsAccumulator = 0.0;
 
                 HandleInput();
 
+                // The weapon state is fixed-timestep, but the viewmodel follows
+                // the camera and must be refreshed for every rendered frame.
+                _weaponSystem?.RenderUpdate(dt);
+
                 // Particle & Decal Updates
-                _weaponSystem?.Render(_renderer, _player.Camera, aspect);
+                _weaponSystem?.Render(_renderer, camera, aspect);
                 _renderer.UpdateDecals(dt, _physics);
 
 
                 // World Render
-                _renderer.RenderFrame(_sceneManager.ActiveScene, _player.Camera, _physics);
+                _renderer.RenderFrame(_sceneManager.ActiveScene, camera, _physics);
 
                 //deathscren
                 _deathScreen?.Update(dt, _player.IsDead);
-                _deathScreen?.Render(_renderer.PostPipeline.HdrColorId, _scrWidth, _scrHeight, (float)now);
+                _deathScreen?.Render(_renderer.PostPipeline!.HdrColorId, _scrWidth, _scrHeight, (float)now);
 
 
                 // ImGui & Console Frame
                 _imgui.NewFrame(dt, _scrWidth, _scrHeight);
                 if (_showImgui)
-                    _imgui.DrawWindows(_player, _renderer);
+                    _imgui.DrawWindows(player, _renderer);
 
                 // Debug Drawer (OrientationGizmo uses ImGui foreground draw list, must run before _imgui.Render)
                 if (_debugDrawer.Enabled)
@@ -332,7 +355,7 @@ public unsafe class Application : IDisposable
                 }
 
                 // HUD Draw
-                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, _player, _player?.Camera, _scrWidth, _scrHeight);
+                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, player, camera, _scrWidth, _scrHeight);
                 GameNotify.Update(dt);
                 _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
 
@@ -341,6 +364,7 @@ public unsafe class Application : IDisposable
 
                 _window.SwapBuffers();
                 _window.PollEvents();
+                _renderer.Profiler.EndFrame();
 
             }
         }
@@ -350,6 +374,35 @@ public unsafe class Application : IDisposable
         }
 
         Logger.Important("Exited game loop");
+    }
+
+    private void UpdateFixedSimulation(float fixedDt)
+    {
+        using (var physicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))
+        {
+            _pickup.PhysicsUpdate(fixedDt);
+            _physics.Step(fixedDt);
+        }
+
+        using (var playerPhysicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))
+            _player.Update(fixedDt);
+
+        _impactSound.Update(fixedDt);
+        _pickup.Update(fixedDt);
+        _sceneManager.Update(fixedDt);
+        _weaponSystem?.Update(fixedDt);
+
+        using (var weaponPhysicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))
+            _weaponSystem?.PhysicsUpdate(fixedDt);
+
+        using (var spiderAiScope = _renderer.Profiler.Measure(ProfilerSection.SpiderAi))
+        {
+            _enemySystem?.Update(fixedDt);
+            _enemySystem?.UpdateContactDamage(fixedDt);
+        }
+
+        if (_sceneManager.CheckPendingResets())
+            RequestMapReload();
     }
 
     private void UpdateUIFocus()
@@ -385,6 +438,7 @@ public unsafe class Application : IDisposable
     private void HandleInput()
     {
         if (_paused) return;
+        if (_player is not { } player) return;
 
         // Toggle Console
         if (Input.Input.KeyPressed(KeyCodes.GraveAccent))
@@ -448,12 +502,12 @@ public unsafe class Application : IDisposable
         }
 
         // Enemy Selection Raycat (when in selection mode)
-        if (_enemySelectionMode && _enemySystem != null && _player != null)
+        if (_enemySelectionMode && _enemySystem != null)
         {
             if (Input.Input.LeftMousePressed())
             {
                 var mousePos = Input.Input.MousePosition;
-                var ray = _player.Camera.GetMouseRay(mousePos, _renderer.Width, _renderer.Height);
+                var ray = player.Camera.GetMouseRay(mousePos, _renderer.Width, _renderer.Height);
 
                 IEnemy? hitEnemy = null;
                 if (_physics.NarrowPhaseQuery.CastRay(ray, out var hit,
@@ -473,7 +527,7 @@ public unsafe class Application : IDisposable
 
         DevShortcuts.HandleInput(
             _sceneManager,
-            _player,
+            player,
             _weaponSystem,
             _enemySystem,
             _physics,
@@ -520,7 +574,13 @@ public unsafe class Application : IDisposable
 
     private void OnLoadProgress(float progress, string status)
     {
-        Bible.PreloadAll(_assets, _audio);
+        if (!_preloadQueued)
+        {
+            Bible.QueuePreload(_assets, _audio);
+            _preloadQueued = true;
+        }
+        _assets.PumpGpuUploads(4);
+        _audio.PumpPreloads(4);
         _loadingScreen.UpdateProgress(progress, status, _window, _window.GL, _ui, _scrWidth, _scrHeight);
     }
 

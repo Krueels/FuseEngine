@@ -7,7 +7,6 @@ namespace Fuse.Renderer.PostProcess;
 public sealed class PostProcessShader : IDisposable
 {
     private readonly GL _gl;
-    private readonly AssetManager _assets;
     private Shader _shader;
     
     // Uniform locations

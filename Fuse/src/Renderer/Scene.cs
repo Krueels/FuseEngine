@@ -419,7 +419,7 @@ public class Scene
         }
     }
 
-    public void Render(
+    public int Render(
         Shader legacyShader,
         Texture defaultTexture,
         Matrix4x4? cullMatrix = null,
@@ -429,6 +429,7 @@ public class Scene
         Shader? activeShader = null;
         bool cullEnabled = true;
         bool blendEnabled = false;
+        int objectsDrawn = 0;
 
         // 3. Render all entities
         foreach (var e in _entities)
@@ -440,6 +441,7 @@ public class Scene
                 continue;
 
             IReadOnlyList<MeshPart> parts = e.Mesh.Parts;
+            bool objectDrawn = false;
             for (int partIndex = 0; partIndex < parts.Count; partIndex++)
             {
                 MeshPart part = parts[partIndex];
@@ -516,7 +518,11 @@ public class Scene
                 }
 
                 e.Mesh.DrawPart(part);
+                objectDrawn = true;
             }
+
+            if (objectDrawn)
+                objectsDrawn++;
         }
 
         if (!cullEnabled)
@@ -526,6 +532,8 @@ public class Scene
             legacyShader.Gl.Disable(Silk.NET.OpenGL.EnableCap.Blend);
             legacyShader.Gl.DepthMask(true);
         }
+
+        return objectsDrawn;
     }
 
     private static void MixHash(ref ulong hash, uint value)

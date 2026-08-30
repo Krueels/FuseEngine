@@ -20,7 +20,6 @@ public unsafe class DebugDrawer : IDisposable
     private uint _billboardShader;
     private uint _billboardVao;
     private uint _billboardVbo;
-    private int _billboardTexture = -1;
 
     private readonly List<Line> _lines = [];
 

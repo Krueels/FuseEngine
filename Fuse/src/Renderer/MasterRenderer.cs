@@ -66,7 +66,7 @@ public unsafe class MasterRenderer
 
     private const int CascadeCount = 3;
     private const int MaxShadowedPointLightSlots = 4;
-    private const int MaxLightCandidates = 64;
+    private const int MaxLightCandidates = 256;
 
     private struct LayerShadowCache
     {
@@ -95,14 +95,15 @@ public unsafe class MasterRenderer
     private readonly LayerShadowCache[] _spotShadowCache = new LayerShadowCache[LightingBuffer.MaxSpotLights];
     private readonly PointShadowCache[] _pointShadowCache = new PointShadowCache[MaxShadowedPointLightSlots];
     private readonly LightCandidate[] _lightCandidates = new LightCandidate[MaxLightCandidates];
-    private readonly Light[] _pointLights = new Light[LightingBuffer.MaxPointLights];
-    private readonly Light[] _spotLights = new Light[LightingBuffer.MaxSpotLights];
+    private readonly Light[] _pointLights = new Light[ForwardPlusLighting.MaxPointLights];
+    private readonly Light[] _spotLights = new Light[ForwardPlusLighting.MaxSpotLights];
     private readonly Light[] _shadowPointLights = new Light[MaxShadowedPointLightSlots];
     private readonly Light[] _shadowPointSelectionScratch = new Light[MaxShadowedPointLightSlots];
     private readonly Matrix4x4[] _lightSpaceMatrices = new Matrix4x4[CascadeCount];
     private readonly Matrix4x4[] _spotSpaceMatrices = new Matrix4x4[LightingBuffer.MaxSpotLights];
     private readonly float[] _cascadeLevels = new float[CascadeCount];
     private readonly float[] _cascadeTexelSizes = new float[CascadeCount];
+    private ForwardPlusLighting? _forwardPlusLighting;
 
     private static readonly Vector3[] PointShadowTargets =
     [
@@ -136,6 +137,8 @@ public unsafe class MasterRenderer
     private PostProcessPipeline _postPipeline = null!;
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
+    private readonly EngineProfiler _profiler = new();
+    public EngineProfiler Profiler => _profiler;
     private Matrix4x4 _prevViewProj = Matrix4x4.Identity;
 
     // SSAO
@@ -375,6 +378,17 @@ public unsafe class MasterRenderer
             _staticPointShadowMaps[i] = new PointShadowMap(_gl, ShadowResolution);
         }
         _lightingBuffer = new LightingBuffer(_gl);
+        try
+        {
+            _forwardPlusLighting = new ForwardPlusLighting(
+                _gl, Bible.Shader(Bible.ShaderForwardPlusCull));
+            Logger.Important("Forward+ light culling enabled");
+        }
+        catch (Exception ex)
+        {
+            _forwardPlusLighting = null;
+            Logger.Warn($"Forward+ disabled: {ex.Message}");
+        }
         
         _skyBoxCubeMesh = assets.GetMesh("cube")!;
         
@@ -508,6 +522,8 @@ public unsafe class MasterRenderer
 
     public void RenderFrame(Scene scene, Camera camera, Physics.PhysicsWorld physics)
     {
+        using var mainRenderScope = _profiler.Measure(ProfilerSection.MainRender);
+
         float aspect = (float)_scrWidth / _scrHeight;
         var view = camera.GetViewMatrix();
         var proj = camera.GetProjectionMatrix(aspect);
@@ -542,9 +558,9 @@ public unsafe class MasterRenderer
 
         CalculateCascadeSplits(camera.NearPlane, ShadowFarPlane, _cascadeLevels);
         int spotCount = SelectLights(scene.Lights, LightType.Spot, _spotLights,
-            LightingBuffer.MaxSpotLights, camera);
+            ForwardPlusLighting.MaxSpotLights, camera);
         int pointCount = SelectLights(scene.Lights, LightType.Point, _pointLights,
-            LightingBuffer.MaxPointLights, camera);
+            ForwardPlusLighting.MaxPointLights, camera);
         int shadowPointLimit = int.Clamp(MaxShadowedPointLights, 1, MaxShadowedPointLightSlots);
         int shadowPointCount = SelectShadowedPointLights(
             _pointLights.AsSpan(0, pointCount), _shadowPointLights, shadowPointLimit, camera);
@@ -557,11 +573,22 @@ public unsafe class MasterRenderer
         Array.Clear(_cascadeTexelSizes);
 
         if (renderDirShadows && _shadowShader.ID != 0)
+        {
+            using var shadowScope = _profiler.Measure(ProfilerSection.DirectionalShadows);
             RenderDirectionalShadowPass(scene, camera, aspect, lightDir);
+        }
         if (ShadowsEnabled && _shadowShader.ID != 0)
-            RenderSpotShadowPass(scene, spotCount);
+        {
+            using var shadowScope = _profiler.Measure(ProfilerSection.SpotShadows);
+            RenderSpotShadowPass(scene, System.Math.Min(spotCount, LightingBuffer.MaxSpotLights));
+        }
         if (ShadowsEnabled && _pointShadowShader.ID != 0)
+        {
+            using var shadowScope = _profiler.Measure(ProfilerSection.PointShadows);
             RenderPointShadowPass(scene, shadowPointCount);
+        }
+
+        _profiler.SetLightingCounts(scene.Lights.Count, pointCount, spotCount);
 
         _gl.Disable(EnableCap.PolygonOffsetFill);
         _gl.PolygonOffset(0.0f, 0.0f);
@@ -592,7 +619,14 @@ public unsafe class MasterRenderer
             _pointLights.AsSpan(0, pointCount),
             _shadowPointLights.AsSpan(0, shadowPointCount),
             _spotLights.AsSpan(0, spotCount),
-            _spotSpaceMatrices.AsSpan(0, spotCount));
+            _spotSpaceMatrices.AsSpan(0, System.Math.Min(spotCount, _spotSpaceMatrices.Length)));
+
+        _forwardPlusLighting?.UploadLights(
+            _pointLights.AsSpan(0, pointCount),
+            _spotLights.AsSpan(0, spotCount),
+            _shadowPointLights.AsSpan(0, shadowPointCount),
+            ShadowsEnabled);
+        _forwardPlusLighting?.Dispatch(view, proj, _scrWidth, _scrHeight);
 
         // --- 2. Regular Render Pass (sempre no HDR FBO) ---
         if (!_postPipeline.ValidateHdrFbo(_gl))
@@ -646,16 +680,21 @@ public unsafe class MasterRenderer
             SetupWorldUniforms(_shader, view, proj);
 
             Matrix4x4 cameraViewProjection = view * proj;
-            scene.Render(
-                _shader,
-                _crateTexture,
-                cameraViewProjection,
-                materialShader => SetupWorldUniforms(materialShader, view, proj));
+            using (var pbrScope = _profiler.Measure(ProfilerSection.Pbr))
+            {
+                int staticObjectsDrawn = scene.Render(
+                    _shader,
+                    _crateTexture,
+                    cameraViewProjection,
+                    materialShader => SetupWorldUniforms(materialShader, view, proj));
 
-            // Skinned entities (main pass)
-            _skinnedShader.Use();
-            SetupWorldUniforms(_skinnedShader, view, proj);
-            RenderSkinned(scene, _skinnedShader, cameraViewProjection, view, proj);
+                // Skinned entities (main pass)
+                _skinnedShader.Use();
+                SetupWorldUniforms(_skinnedShader, view, proj);
+                int skinnedObjectsDrawn = RenderSkinned(
+                    scene, _skinnedShader, cameraViewProjection, view, proj);
+                _profiler.SetRenderCounts(staticObjectsDrawn + skinnedObjectsDrawn);
+            }
         }
 
         // ===== DECALS (Forward Lit in HDR FBO, after geometry) =====
@@ -723,20 +762,23 @@ public unsafe class MasterRenderer
             _prevViewProj = view * proj;
         }
 
-        if (_postPipeline.Settings.Enabled)
+        using (var postProcessScope = _profiler.Measure(ProfilerSection.PostProcess))
         {
-            _postPipeline.SetViewProj(_prevViewProj, view, proj);
-            _postPipeline.Execute(_postPipeline.HdrColorId, 0, _postPipeline.HdrEmissiveId); // 0 = tela final
-        }
-        else
-        {
-            // Sem post-process: blit simples do HDR FBO para a tela
-            _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
-            _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _postPipeline.HdrFbo);
-            _gl.BlitFramebuffer(0, 0, _postPipeline.Width, _postPipeline.Height,
-                                0, 0, _scrWidth, _scrHeight,
-                                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
-            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            if (_postPipeline.Settings.Enabled)
+            {
+                _postPipeline.SetViewProj(_prevViewProj, view, proj);
+                _postPipeline.Execute(_postPipeline.HdrColorId, 0, _postPipeline.HdrEmissiveId); // 0 = tela final
+            }
+            else
+            {
+                // Sem post-process: blit simples do HDR FBO para a tela
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _postPipeline.HdrFbo);
+                _gl.BlitFramebuffer(0, 0, _postPipeline.Width, _postPipeline.Height,
+                                    0, 0, _scrWidth, _scrHeight,
+                                    ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            }
         }
 
         _prevViewProj = view * proj;
@@ -1129,6 +1171,16 @@ public unsafe class MasterRenderer
         shader.SetBool("uMaterialReceiveShadows", true);
         shader.SetFloat("uIsViewmodel", 0.0f);
         shader.SetBool("uOutputSrgb", !_postPipeline.Settings.Enabled);
+        if (_forwardPlusLighting != null)
+            _forwardPlusLighting.ConfigureShader(shader);
+        else
+        {
+            shader.SetBool("uUseForwardPlus", false);
+            shader.SetInt("uForwardPlusTileCountX", 1);
+            shader.SetInt("uForwardPlusTileCountY", 1);
+            shader.SetInt("uForwardPlusPointCount", 0);
+            shader.SetInt("uForwardPlusSpotCount", 0);
+        }
 
         shader.SetInt("uTexture", 0);
         shader.SetInt("uShadowMap", 1);
@@ -1174,7 +1226,7 @@ public unsafe class MasterRenderer
         _gl.BindBuffer(GLEnum.ShaderStorageBuffer, 0);
     }
 
-    private void RenderSkinned(
+    private int RenderSkinned(
         Scene scene,
         Shader legacyShader,
         Matrix4x4? cullMatrix = null,
@@ -1186,6 +1238,7 @@ public unsafe class MasterRenderer
         Shader? activeShader = null;
         bool cullEnabled = true;
         bool blendEnabled = false;
+        int objectsDrawn = 0;
         foreach (var e in scene.Entities)
         {
             if (!e.Visible || e.SkinnedModel == null || e.Animator == null) continue;
@@ -1195,6 +1248,7 @@ public unsafe class MasterRenderer
 
             Matrix4x4 modelMatrix = e.RenderMatrix;
             UploadBones(e.Animator.FinalBoneMatrices);
+            bool objectDrawn = false;
 
             for (int submeshIndex = 0; submeshIndex < e.SkinnedModel.Submeshes.Length; submeshIndex++)
             {
@@ -1258,7 +1312,11 @@ public unsafe class MasterRenderer
                 }
 
                 sub.Mesh.Draw();
+                objectDrawn = true;
             }
+
+            if (objectDrawn)
+                objectsDrawn++;
         }
 
         if (!cullEnabled)
@@ -1268,6 +1326,8 @@ public unsafe class MasterRenderer
             _gl.Disable(EnableCap.Blend);
             _gl.DepthMask(true);
         }
+
+        return objectsDrawn;
     }
 
     private void RenderSkinnedShadowCasters(
@@ -1611,6 +1671,7 @@ public unsafe class MasterRenderer
     {
         if (_ssaoNoiseTex != 0) { _gl.DeleteTexture(_ssaoNoiseTex); _ssaoNoiseTex = 0; }
         if (_sharedBonesSSBO != 0) { _gl.DeleteBuffer(_sharedBonesSSBO); _sharedBonesSSBO = 0; }
+        _forwardPlusLighting?.Dispose();
         _lightingBuffer?.Dispose();
         _imageBasedLighting?.Dispose();
         _shadowMap?.Dispose();

@@ -110,7 +110,7 @@ public class Camera
 
         var origin = Position;
         var dirScaled = rayDir * 100f; // 100m range
-        return new Ray(ref origin, ref dirScaled);
+        return new Ray(in origin, in dirScaled);
     }
 
     public Vector3 Front => _front;

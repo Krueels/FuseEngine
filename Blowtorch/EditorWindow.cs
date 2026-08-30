@@ -19,7 +19,9 @@ public unsafe class EditorWindow : IDisposable
         if (!_glfw.Init())
             throw new Exception("Failed to init GLFW");
 
-        _glfw.WindowHint(WindowHintInt.ContextVersionMajor, 3);
+        // Keep the editor context aligned with the runtime: material shaders
+        // and the shared skinned pipeline require OpenGL 4.3.
+        _glfw.WindowHint(WindowHintInt.ContextVersionMajor, 4);
         _glfw.WindowHint(WindowHintInt.ContextVersionMinor, 3);
         _glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core);
         _glfw.WindowHint(WindowHintBool.Maximized, true);

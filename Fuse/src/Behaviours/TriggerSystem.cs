@@ -35,7 +35,7 @@ public sealed class TriggerSystem
             _bli.LockRead(c.BodyB, out bodyLock);
             if (bodyLock.Succeeded)
             {
-                if (bodyLock.Body.IsSensor)
+                if (bodyLock.Body is { } body && body.IsSensor)
                 {
                     BodyID id = c.BodyB;
                     _current.Add(id);

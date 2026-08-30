@@ -10,7 +10,7 @@ public unsafe class Window : IDisposable
 
     private readonly Glfw _glfw;
     private readonly WindowHandle* _handle;
-    private readonly GL _gl;
+    private readonly GL _gl = null!;
     private int _width;
     private int _height;
     private bool _firstMouse = true;
@@ -30,7 +30,9 @@ public unsafe class Window : IDisposable
         }
         Logger.Important("GLFW Init");
 
-        _glfw.WindowHint(WindowHintInt.ContextVersionMajor, 3);
+        // Forward+ and the existing skinned shaders use OpenGL 4.3
+        // shader-storage buffers and compute shaders.
+        _glfw.WindowHint(WindowHintInt.ContextVersionMajor, 4);
         _glfw.WindowHint(WindowHintInt.ContextVersionMinor, 3);
         _glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core);
 
@@ -126,7 +128,6 @@ public unsafe class Window : IDisposable
     public event ScrollDelegate? OnScroll;
     public event ResizeDelegate? OnResize;
     public event KeyPressDelegate? OnKeyPress;
-    public event MouseButtonDelegate? OnMouseButton;
 
     private static void OnFramebufferSizeCallback(WindowHandle* w, int width, int height)
     {

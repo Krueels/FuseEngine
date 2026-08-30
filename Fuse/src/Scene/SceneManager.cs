@@ -218,7 +218,12 @@ private void ClearCurrentMap()
                                         if (prop.PropertyType == typeof(float)) prop.SetValue(behaviour, (float)valNode);
                                         else if (prop.PropertyType == typeof(int)) prop.SetValue(behaviour, (int)valNode);
                                         else if (prop.PropertyType == typeof(bool)) prop.SetValue(behaviour, (bool)valNode);
-                                        else if (prop.PropertyType == typeof(string)) prop.SetValue(behaviour, (string)valNode);
+                                        else if (prop.PropertyType == typeof(string))
+                                        {
+                                            string? stringValue = (string?)valNode;
+                                            if (stringValue != null)
+                                                prop.SetValue(behaviour, stringValue);
+                                        }
                                     } catch { }
                                 }
                             }
@@ -316,7 +321,7 @@ private void ClearCurrentMap()
         hitResult = default;
         Vector3 dirNormalized = Vector3.Normalize(direction);
         Vector3 dirScaled = dirNormalized * maxDistance;
-        var ray = new Ray(ref origin, ref dirScaled);
+        var ray = new Ray(in origin, in dirScaled);
 
         using var bpFilter = new Physics.DefaultBroadPhaseLayerFilter();
         using var olFilter = new Physics.DefaultObjectLayerFilter();

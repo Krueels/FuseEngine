@@ -225,6 +225,15 @@ public class WeaponSystem : IDisposable
             UpdateMuzzleFlashPosition();
         }
 
+    }
+
+    /// <summary>
+    /// Updates only camera-dependent weapon visuals. This must run once per
+    /// rendered frame, independently of the fixed physics timestep, otherwise
+    /// the viewmodel can remain several frames behind mouse camera movement.
+    /// </summary>
+    public void RenderUpdate(float dt)
+    {
         UpdateViewmodelTransform(dt);
     }
 

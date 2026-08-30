@@ -18,7 +18,7 @@ public class GameplayHUD
     private HUDText _reserveAmmoText = null!;
     private HUDText _enemyDebugSelectionMode = null!;
     private EnemyDebugHUD _enemyDebugHUD = null!;
-    private HUDText _playerHealth = null;
+    private HUDText? _playerHealth;
 
     private const int MaxNotifications = 5;
     private readonly HUDText[] _notifySlots = new HUDText[MaxNotifications];

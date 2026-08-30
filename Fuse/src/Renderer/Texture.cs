@@ -12,83 +12,181 @@ public enum TextureColorSpace
     Data
 }
 
+/// <summary>
+/// CPU-side image data. It is independent of OpenGL so it can be produced by
+/// the asset worker thread and uploaded later on the render thread.
+/// </summary>
+public sealed class TextureUploadData
+{
+    internal TextureUploadData(int width, int height, byte[] originalPixels, byte[] flippedPixels)
+    {
+        Width = width;
+        Height = height;
+        OriginalPixels = originalPixels;
+        FlippedPixels = flippedPixels;
+    }
+
+    public int Width { get; }
+    public int Height { get; }
+    internal byte[] OriginalPixels { get; }
+    internal byte[] FlippedPixels { get; }
+}
+
 public unsafe class Texture : IDisposable
 {
     private readonly GL _gl;
-    private readonly uint _id;
-    private readonly int _width;
-    private readonly int _height;
-    private readonly byte[]? _pixelData;
+    private uint _id;
+    private int _width;
+    private int _height;
+    private byte[]? _pixelData;
     private readonly int _channels;
+    private bool _disposed;
+    private bool _isReady;
+    private bool _isPlaceholder;
+    private bool _isFailed;
+
     public TextureColorSpace ColorSpace { get; }
+    public bool IsReady => _isReady;
+    public bool IsPlaceholder => _isPlaceholder;
+    public bool IsFailed => _isFailed;
 
     public Texture(GL gl, string filepath, TextureColorSpace colorSpace = TextureColorSpace.Srgb)
     {
         _gl = gl;
         ColorSpace = colorSpace;
+        _channels = 4;
 
+        TextureUploadData? data = DecodeFile(filepath);
+        if (data == null)
+        {
+            _isFailed = true;
+            return;
+        }
+
+        ApplyUpload(data, filepath);
+    }
+
+    private Texture(GL gl, TextureColorSpace colorSpace, bool placeholder)
+    {
+        _gl = gl;
+        ColorSpace = colorSpace;
+        _channels = 4;
+        _isPlaceholder = placeholder;
+    }
+
+    /// <summary>
+    /// Creates a valid 1x1 texture while the real image is being decoded. The
+    /// same Texture object is updated in place when the upload finishes.
+    /// </summary>
+    public static Texture CreatePlaceholder(GL gl, TextureColorSpace colorSpace)
+    {
+        var texture = new Texture(gl, colorSpace, placeholder: true)
+        {
+            _width = 1,
+            _height = 1,
+            _pixelData = colorSpace == TextureColorSpace.Data
+                ? new byte[] { 128, 128, 255, 255 }
+                : new byte[] { 128, 128, 128, 255 }
+        };
+
+        texture.UploadPixels(texture._pixelData, 1, 1, logPath: null);
+        texture._isReady = false;
+        return texture;
+    }
+
+    /// <summary>
+    /// Decodes an image without touching OpenGL. This is used by the AssetManager
+    /// worker and is safe to call away from the render thread.
+    /// </summary>
+    public static TextureUploadData? DecodeFile(string filepath)
+    {
         if (!File.Exists(filepath))
         {
             Logger.Error($"Texture file not found: {filepath}");
-            return;
+            return null;
         }
-
-        byte[] fileData = File.ReadAllBytes(filepath);
-        ImageResult image;
 
         try
         {
-            image = ImageResult.FromMemory(fileData, ColorComponents.RedGreenBlueAlpha);
+            byte[] fileData = File.ReadAllBytes(filepath);
+            ImageResult image = ImageResult.FromMemory(fileData, ColorComponents.RedGreenBlueAlpha);
+            int width = image.Width;
+            int height = image.Height;
+            byte[] original = image.Data;
+            byte[] flipped = new byte[original.Length];
+            int rowSize = width * 4;
+
+            // stb_image is top-left based; OpenGL texture coordinates are bottom-left.
+            for (int y = 0; y < height; y++)
+                System.Buffer.BlockCopy(original, y * rowSize, flipped, (height - 1 - y) * rowSize, rowSize);
+
+            return new TextureUploadData(width, height, original, flipped);
         }
         catch (Exception ex)
         {
-            Logger.Error($"Failed to load texture: {filepath} ({ex.Message})");
-            return;
+            Logger.Error($"Failed to decode texture: {filepath} ({ex.Message})");
+            return null;
         }
+    }
 
-        _width = image.Width;
-        _height = image.Height;
+    /// <summary>Must only be called on the thread that owns the OpenGL context.</summary>
+    internal void ApplyUpload(TextureUploadData data, string? logPath)
+    {
+        if (_disposed)
+            return;
 
-        _channels = 4;
+        _width = data.Width;
+        _height = data.Height;
+        _pixelData = data.OriginalPixels;
+        _isFailed = false;
+        _isPlaceholder = false;
+        UploadPixels(data.FlippedPixels, data.Width, data.Height, logPath);
+    }
+
+    internal void MarkFailed()
+    {
+        if (!_disposed)
+            _isFailed = true;
+    }
+
+    private void UploadPixels(byte[] pixels, int width, int height, string? logPath)
+    {
+        if (_id != 0)
+            _gl.DeleteTexture(_id);
+
         var format = PixelFormat.Rgba;
-        // Color textures are decoded from sRGB to linear by the sampler. Normal,
-        // metallic/roughness and AO maps must remain linear data textures.
-        var internalFormat = colorSpace == TextureColorSpace.Srgb
+        var internalFormat = ColorSpace == TextureColorSpace.Srgb
             ? InternalFormat.SrgbAlpha
             : InternalFormat.Rgba;
 
-        // Keep original pixels for color analysis (before flip)
-        _pixelData = image.Data;
+        _id = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _id);
 
-        // Flip vertically (stb_image default is top-left, OpenGL expects bottom-left)
-        int rowSize = _width * _channels;
-        byte[] flipped = new byte[image.Data.Length];
-        for (int y = 0; y < _height; y++)
-            System.Buffer.BlockCopy(image.Data, y * rowSize, flipped, (_height - 1 - y) * rowSize, rowSize);
-        image.Data = flipped;
-
-        _id = gl.GenTexture();
-        gl.BindTexture(TextureTarget.Texture2D, _id);
-
-        fixed (byte* dataPtr = image.Data)
+        fixed (byte* dataPtr = pixels)
         {
-            gl.TexImage2D(TextureTarget.Texture2D, 0, (int)internalFormat, (uint)_width, (uint)_height, 0,
-                format, PixelType.UnsignedByte, dataPtr);
+            _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)internalFormat,
+                (uint)width, (uint)height, 0, format, PixelType.UnsignedByte, dataPtr);
         }
 
-        gl.GenerateMipmap(TextureTarget.Texture2D);
+        _gl.GenerateMipmap(TextureTarget.Texture2D);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.Repeat);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.Repeat);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.LinearMipmapLinear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
 
-        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.Repeat);
-        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.Repeat);
-        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.LinearMipmapLinear);
-        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
-
-        Logger.Asset($"Texture loaded: {filepath} ({_width}x{_height})");
+        _isReady = true;
+        if (!string.IsNullOrWhiteSpace(logPath))
+            Logger.Asset($"Texture loaded: {logPath} ({width}x{height})");
     }
 
     public void Dispose()
     {
-        _gl.DeleteTexture(_id);
+        if (_disposed)
+            return;
+        _disposed = true;
+        if (_id != 0)
+            _gl.DeleteTexture(_id);
+        _id = 0;
     }
 
     public uint ID => _id;
@@ -128,7 +226,6 @@ public unsafe class Texture : IDisposable
                 double min = rn < gn ? (rn < bn ? rn : bn) : (gn < bn ? gn : bn);
                 double sat = max < 0.01 ? 0.0 : (max - min) / max;
 
-                // Skip dark (max < 0.15) or desaturated (sat < 0.15) pixels
                 if (max < 0.15 || sat < 0.15) continue;
 
                 r += rn; g += gn; b += bn;
@@ -138,7 +235,6 @@ public unsafe class Texture : IDisposable
 
         if (count == 0)
         {
-            // Fallback: if nothing saturated, average the whole top 70%
             for (int y = 0; y < skyLimit; y += stepY)
             {
                 for (int x = 0; x < _width; x += stepX)

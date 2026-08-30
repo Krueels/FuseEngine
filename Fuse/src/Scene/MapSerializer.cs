@@ -489,7 +489,13 @@ public static class MapSerializer
             foreach (string slotPath in materialPaths)
                 entity.Materials.Add(assets.TryGetMaterial(slotPath));
 
-            if (!string.IsNullOrEmpty(texturePath))
+            bool hasMaterial = entity.Material != null || entity.Materials.Any(material => material != null);
+
+            // A material owns its texture graph. Some old maps still contain a
+            // legacy texture field pointing to a file that was moved into a
+            // subfolder; do not load or report that fallback when the material
+            // was resolved successfully.
+            if (!string.IsNullOrEmpty(texturePath) && !hasMaterial)
             {
                 string texPath = texturePath;
                 if (texPath.StartsWith("res/"))

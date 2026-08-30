@@ -24,7 +24,7 @@ public class LoadedModel : IDisposable
 
 public class HullVertex : MIConvexHull.IVertex
 {
-    public double[] Position { get; set; }
+    public double[] Position { get; set; } = [];
 }
 
 public static unsafe class ModelLoader
