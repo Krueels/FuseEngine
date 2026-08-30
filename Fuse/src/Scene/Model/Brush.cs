@@ -51,7 +51,18 @@ public class Brush : MapObject
             if (len > 0.000001f)
             {
                 newNormal /= len;
-                Faces[i] = new Face(new System.Numerics.Plane(newNormal, d / len));
+                Faces[i] = new Face(new System.Numerics.Plane(newNormal, d / len))
+                {
+                    Texture = face.Texture,
+                    MaterialSlot = face.MaterialSlot,
+                    UAxis = face.UAxis,
+                    VAxis = face.VAxis,
+                    UScale = face.UScale,
+                    VScale = face.VScale,
+                    UOffset = face.UOffset,
+                    VOffset = face.VOffset,
+                    Rotation = face.Rotation
+                };
             }
         }
     }

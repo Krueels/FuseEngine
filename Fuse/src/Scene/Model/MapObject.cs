@@ -13,6 +13,11 @@ public class MapObject
     public System.Numerics.Vector2 UvOffset { get; set; } = System.Numerics.Vector2.Zero;
     public float UvRotation { get; set; } = 0f;
 
+    /// <summary>Material asset applied to the whole object. Stored relative to res/.</summary>
+    public string? MaterialPath { get; set; }
+    /// <summary>Optional Blender-style material slots. Brush faces and model parts reference these by index.</summary>
+    public List<string> MaterialSlots { get; set; } = new();
+    /// <summary>Legacy texture path. Kept so version-1 maps remain fully compatible.</summary>
     public string? Texture { get; set; }
     public string? Interactable { get; set; }
     public List<Fuse.Behaviours.BehaviourData> Behaviours { get; set; } = new();

@@ -14,6 +14,8 @@ public struct Vertex
     public Vector3 Normal;
 }
 
+public readonly record struct MeshPart(uint IndexOffset, uint IndexCount, int MaterialSlot);
+
 public unsafe class Mesh : IDisposable
 {
     private readonly GL _gl;
@@ -23,20 +25,25 @@ public unsafe class Mesh : IDisposable
     private uint _lineEbo;
     private uint _indexCount;
     private uint _lineIndexCount;
+    private readonly MeshPart[] _parts;
 
     public uint Vao => _vao;
     public uint Vbo => _vbo;
     public uint Ebo => _ebo;
     public uint IndexCount => _indexCount;
+    public IReadOnlyList<MeshPart> Parts => _parts;
     public AABB LocalBounds { get; }
     public BoundingSphere LocalBoundingSphere { get; }
 
     public bool HasLineBuffer => _lineEbo != 0;
 
-    public Mesh(GL gl, Vertex[] vertices, uint[] indices, uint[]? lineIndices = null)
+    public Mesh(GL gl, Vertex[] vertices, uint[] indices, uint[]? lineIndices = null, MeshPart[]? parts = null)
     {
         _gl = gl;
         _indexCount = (uint)indices.Length;
+        _parts = parts is { Length: > 0 }
+            ? parts
+            : [new MeshPart(0, _indexCount, 0)];
 
         Span<Vector3> positions = vertices.Length <= 512
             ? stackalloc Vector3[vertices.Length]
@@ -118,6 +125,19 @@ public unsafe class Mesh : IDisposable
     {
         _gl.BindVertexArray(_vao);
         _gl.DrawElements(PrimitiveType.Triangles, _indexCount, DrawElementsType.UnsignedInt, (void*)0);
+        _gl.BindVertexArray(0);
+    }
+
+    public void DrawPart(MeshPart part)
+    {
+        if (part.IndexCount == 0)
+            return;
+        _gl.BindVertexArray(_vao);
+        _gl.DrawElements(
+            PrimitiveType.Triangles,
+            part.IndexCount,
+            DrawElementsType.UnsignedInt,
+            (void*)(nuint)(part.IndexOffset * sizeof(uint)));
         _gl.BindVertexArray(0);
     }
 

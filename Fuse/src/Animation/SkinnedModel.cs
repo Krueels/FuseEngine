@@ -5,6 +5,9 @@ namespace Fuse.Animation;
 public sealed class SkinnedSubmesh
 {
     public string Name { get; set; } = "";
+    public int MaterialSlot { get; set; }
+    public string MaterialPath { get; set; } = "";
+    public Renderer.Materials.MaterialRuntime? Material { get; set; }
     public required SkinnedMesh Mesh { get; init; }
     public Texture? Texture { get; set; }
 }

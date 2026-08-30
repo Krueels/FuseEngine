@@ -44,6 +44,9 @@ public static class MeshGenerator
         var vertices = new List<Vertex>();
         var indices = new List<uint>();
         var lineIndices = new List<uint>();
+        var parts = new List<MeshPart>();
+        var indicesByMaterial = new Dictionary<int, List<uint>>();
+        var materialOrder = new List<int>();
         
         var faces = brush.Faces;
         int numFaces = faces.Count;
@@ -181,12 +184,20 @@ public static class MeshGenerator
                 currentIndex++;
             }
 
-            // Triangulate (triangle fan from the first vertex)
+            // Triangulate into a per-material bucket. This keeps per-face material
+            // assignment without turning every face into a separate draw call.
+            int materialSlot = System.Math.Max(0, face.MaterialSlot);
+            if (!indicesByMaterial.TryGetValue(materialSlot, out List<uint>? materialIndices))
+            {
+                materialIndices = [];
+                indicesByMaterial[materialSlot] = materialIndices;
+                materialOrder.Add(materialSlot);
+            }
             for (uint i = 1; i < polyVerts.Count - 1; i++)
             {
-                indices.Add(startIndex);
-                indices.Add(startIndex + i);
-                indices.Add(startIndex + i + 1);
+                materialIndices.Add(startIndex);
+                materialIndices.Add(startIndex + i);
+                materialIndices.Add(startIndex + i + 1);
             }
 
             // Generate Line Indices (edges of the face)
@@ -197,7 +208,16 @@ public static class MeshGenerator
             }
         }
 
-        return new MeshData(vertices.ToArray(), indices.ToArray(), lineIndices.ToArray());
+        foreach (int materialSlot in materialOrder)
+        {
+            List<uint> materialIndices = indicesByMaterial[materialSlot];
+            uint partIndexOffset = (uint)indices.Count;
+            indices.AddRange(materialIndices);
+            if (materialIndices.Count > 0)
+                parts.Add(new MeshPart(partIndexOffset, (uint)materialIndices.Count, materialSlot));
+        }
+
+        return new MeshData(vertices.ToArray(), indices.ToArray(), lineIndices.ToArray(), parts.ToArray());
     }
 
     public static void AddUniqueVertex(List<Vector3> list, Vector3 v)
@@ -382,11 +402,13 @@ public class MeshData
     public Vertex[] Vertices { get; }
     public uint[] Indices { get; }
     public uint[] LineIndices { get; }
+    public MeshPart[] Parts { get; }
 
-    public MeshData(Vertex[] vertices, uint[] indices, uint[] lineIndices = null)
+    public MeshData(Vertex[] vertices, uint[] indices, uint[]? lineIndices = null, MeshPart[]? parts = null)
     {
         Vertices = vertices;
         Indices = indices;
-        LineIndices = lineIndices;
+        LineIndices = lineIndices ?? [];
+        Parts = parts ?? [new MeshPart(0, (uint)indices.Length, 0)];
     }
 }

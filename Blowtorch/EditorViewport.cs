@@ -130,15 +130,23 @@ public unsafe class EditorViewport : IDisposable
         _gl.DepthMask(true);
         _gl.DepthFunc(DepthFunction.Less);
 
-        shader.Use();
-        shader.SetFloat("uIsViewmodel", 1.0f);
-        shader.SetMat4("uView", view);
-        shader.SetMat4("uProj", proj);
-        shader.SetInt("uTexture", 0);
-        shader.SetBool("uIsEmissive", false);
-        shader.SetVec3("uEmissiveColor", Vector3.Zero);
-        shader.SetFloat("uEmissiveStrength", 0.0f);
-        _lightingSystem.BindShadowMaps(shader);
+        void PrepareMaterialShader(Shader target)
+        {
+            target.Use();
+            target.SetFloat("uIsViewmodel", 1.0f);
+            target.SetMat4("uView", view);
+            target.SetMat4("uProj", proj);
+            target.SetInt("uTexture", 0);
+            target.SetInt("uMaterialAlphaMode", 0);
+            target.SetFloat("uMaterialAlphaCutoff", 0.5f);
+            target.SetBool("uMaterialReceiveShadows", true);
+            target.SetBool("uIsEmissive", false);
+            target.SetVec3("uEmissiveColor", Vector3.Zero);
+            target.SetFloat("uEmissiveStrength", 0.0f);
+            _lightingSystem.BindShadowMaps(target);
+        }
+
+        PrepareMaterialShader(shader);
 
         // Draw Grid
         var gridShader = assetService.GridShader;
@@ -198,37 +206,92 @@ public unsafe class EditorViewport : IDisposable
             shader.SetVec3("uColor", Vector3.One);
         }
 
+        Shader? activeShader = shader;
+        bool cullEnabled = true;
+        bool blendEnabled = false;
         foreach (var entity in scene.Entities)
         {
             if (!entity.Visible || entity.Mesh == null) continue;
 
-            shader.SetMat4("uModel", entity.Transform.Matrix);
-            shader.SetVec2("uUvScale", entity.UvScale);
-            shader.SetVec2("uUvOffset", entity.UvOffset);
-            shader.SetFloat("uUvRotation", entity.UvRotation);
-
             if (!isWireframe)
             {
-                uint texId = assetService.GetOrCreateTexture(entity.TexturePath);
-                if (texId == 0)
-                    texId = assetService.DefaultTexture;
-
-                if (texId != 0)
+                foreach (var part in entity.Mesh.Parts)
                 {
-                    shader.SetBool("uUseTexture", true);
-                    shader.SetInt("uTexture", 0);
-                    _gl.ActiveTexture(TextureUnit.Texture0);
-                    _gl.BindTexture(TextureTarget.Texture2D, texId);
-                }
-                else
-                {
-                    shader.SetBool("uUseTexture", false);
-                }
+                    var material = entity.ResolveMaterial(part.MaterialSlot);
+                    Shader targetShader = material?.StaticShader ?? shader;
+                    if (!ReferenceEquals(activeShader, targetShader))
+                    {
+                        PrepareMaterialShader(targetShader);
+                        activeShader = targetShader;
+                    }
 
-                entity.Mesh.Draw();
+                    bool wantsCull = material?.Asset.TwoSided != true;
+                    if (wantsCull != cullEnabled)
+                    {
+                        if (wantsCull) _gl.Enable(EnableCap.CullFace);
+                        else _gl.Disable(EnableCap.CullFace);
+                        cullEnabled = wantsCull;
+                    }
+
+                    bool wantsBlend = material?.Asset.AlphaMode == Fuse.Renderer.Materials.MaterialAlphaMode.Blend;
+                    if (wantsBlend != blendEnabled)
+                    {
+                        if (wantsBlend)
+                        {
+                            _gl.Enable(EnableCap.Blend);
+                            _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                            _gl.DepthMask(false);
+                        }
+                        else
+                        {
+                            _gl.Disable(EnableCap.Blend);
+                            _gl.DepthMask(true);
+                        }
+                        blendEnabled = wantsBlend;
+                    }
+
+                    targetShader.SetMat4("uModel", entity.Transform.Matrix);
+                    targetShader.SetVec2("uUvScale", entity.UvScale);
+                    targetShader.SetVec2("uUvOffset", entity.UvOffset);
+                    targetShader.SetFloat("uUvRotation", entity.UvRotation);
+
+                    if (material != null)
+                    {
+                        material.Bind(targetShader);
+                    }
+                    else
+                    {
+                        uint texId = assetService.GetOrCreateTexture(entity.TexturePath);
+                        if (texId == 0)
+                            texId = assetService.DefaultTexture;
+
+                        targetShader.SetBool("uUseTexture", texId != 0);
+                        targetShader.SetInt("uMaterialAlphaMode", 0);
+                        targetShader.SetBool("uMaterialReceiveShadows", true);
+                        if (texId != 0)
+                        {
+                            targetShader.SetInt("uTexture", 0);
+                            _gl.ActiveTexture(TextureUnit.Texture0);
+                            _gl.BindTexture(TextureTarget.Texture2D, texId);
+                        }
+                    }
+
+                    entity.Mesh.DrawPart(part);
+                }
             }
             else
             {
+                if (!ReferenceEquals(activeShader, shader))
+                {
+                    PrepareMaterialShader(shader);
+                    shader.SetBool("uUseTexture", false);
+                    shader.SetVec3("uColor", new Vector3(0.8f, 0.8f, 0.8f));
+                    activeShader = shader;
+                }
+                shader.SetMat4("uModel", entity.Transform.Matrix);
+                shader.SetVec2("uUvScale", entity.UvScale);
+                shader.SetVec2("uUvOffset", entity.UvOffset);
+                shader.SetFloat("uUvRotation", entity.UvRotation);
                 if (entity.Mesh.HasLineBuffer)
                 {
                     _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
@@ -240,6 +303,14 @@ public unsafe class EditorViewport : IDisposable
                     entity.Mesh.Draw();
                 }
             }
+        }
+
+        if (!cullEnabled)
+            _gl.Enable(EnableCap.CullFace);
+        if (blendEnabled)
+        {
+            _gl.Disable(EnableCap.Blend);
+            _gl.DepthMask(true);
         }
 
         if (isWireframe)

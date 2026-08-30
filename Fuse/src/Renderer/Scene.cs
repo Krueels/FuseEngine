@@ -35,6 +35,10 @@ public class Entity
 {
     public string Id { get; set; } = "";
     public string MeshKey { get; set; } = "";
+    public string MaterialPath { get; set; } = "";
+    public List<string> MaterialPaths { get; set; } = [];
+    public Materials.MaterialRuntime? Material { get; set; }
+    public List<Materials.MaterialRuntime?> Materials { get; set; } = [];
     public string TexturePath { get; set; } = "";
     public string InteractableType { get; set; } = "";
     public List<Behaviours.BehaviourData> Behaviours { get; set; } = new();
@@ -110,6 +114,13 @@ public class Entity
 
     public Fuse.Math.BoundingSphere GetWorldBoundingSphere() =>
         Fuse.Math.BoundingSphere.FromAABB(GetWorldRenderBounds());
+
+    public Materials.MaterialRuntime? ResolveMaterial(int slot)
+    {
+        if (slot >= 0 && slot < Materials.Count && Materials[slot] != null)
+            return Materials[slot];
+        return Material;
+    }
 }
 
 public class Scene
@@ -162,6 +173,8 @@ public class Scene
             entity.MeshOwnedByEntity = false;
             entity.Body = null;
             entity.SkinnedModel = null;
+            entity.Material = null;
+            entity.Materials.Clear();
             entity.Animator = null;
             entity.AttachedLight = null;
         }
@@ -202,6 +215,12 @@ public class Scene
             MixHash(ref hash, (uint)RuntimeHelpers.GetHashCode(geometry));
             MixHash(ref hash, entity.RenderMatrix);
             MixHash(ref hash, (uint)BitConverter.SingleToInt32Bits(entity.ShadowBoundsPadding));
+            MixHash(ref hash, entity.Material == null ? 0u : (uint)RuntimeHelpers.GetHashCode(entity.Material));
+            for (int materialIndex = 0; materialIndex < entity.Materials.Count; materialIndex++)
+            {
+                Materials.MaterialRuntime? material = entity.Materials[materialIndex];
+                MixHash(ref hash, material == null ? 0u : (uint)RuntimeHelpers.GetHashCode(material));
+            }
         }
 
         MixHash(ref hash, (uint)_staticShadowCasters.Count);
@@ -225,7 +244,20 @@ public class Scene
                 continue;
 
             shader.SetMat4("uModel", entity.RenderMatrix);
-            entity.Mesh.Draw();
+            shader.SetVec2("uUvScale", entity.UvScale);
+            shader.SetVec2("uUvOffset", entity.UvOffset);
+            shader.SetFloat("uUvRotation", entity.UvRotation);
+            foreach (MeshPart part in entity.Mesh.Parts)
+            {
+                Materials.MaterialRuntime? material = entity.ResolveMaterial(part.MaterialSlot);
+                if (material?.Asset.CastShadows == false)
+                    continue;
+                if (material != null)
+                    material.BindShadow(shader);
+                else
+                    shader.SetBool("uShadowAlphaMask", false);
+                entity.Mesh.DrawPart(part);
+            }
         }
     }
 
@@ -347,9 +379,16 @@ public class Scene
         }
     }
 
-    public void Render(Shader shader, Texture defaultTexture, Matrix4x4? cullMatrix = null)
+    public void Render(
+        Shader legacyShader,
+        Texture defaultTexture,
+        Matrix4x4? cullMatrix = null,
+        Action<Shader>? prepareShader = null)
     {
         ViewFrustum? frustum = cullMatrix.HasValue ? new ViewFrustum(cullMatrix.Value) : null;
+        Shader? activeShader = null;
+        bool cullEnabled = true;
+        bool blendEnabled = false;
 
         // 3. Render all entities
         foreach (var e in _entities)
@@ -360,36 +399,92 @@ public class Scene
             if (frustum.HasValue && !frustum.Value.Intersects(e.GetWorldRenderBounds()))
                 continue;
 
-            shader.SetMat4("uModel", e.Transform.Matrix);
-            shader.SetVec2("uUvScale", e.UvScale);
-            shader.SetVec2("uUvOffset", e.UvOffset);
-            shader.SetFloat("uUvRotation", e.UvRotation);
-
-            var tex = e.Texture ?? defaultTexture;
-            if (tex != null)
+            IReadOnlyList<MeshPart> parts = e.Mesh.Parts;
+            for (int partIndex = 0; partIndex < parts.Count; partIndex++)
             {
-                shader.SetBool("uUseTexture", true);
-                tex.Bind(0);
-            }
-            else
-            {
-                shader.SetBool("uUseTexture", false);
-            }
+                MeshPart part = parts[partIndex];
+                Materials.MaterialRuntime? material = e.ResolveMaterial(part.MaterialSlot);
+                Shader shader = material?.StaticShader ?? legacyShader;
+                if (!ReferenceEquals(activeShader, shader))
+                {
+                    shader.Use();
+                    prepareShader?.Invoke(shader);
+                    activeShader = shader;
+                }
 
-            // Emissive
-            bool isEmissive = tex != null &&
-                !string.IsNullOrEmpty(e.TexturePath) &&
-                e.TexturePath.Contains("emi_", StringComparison.OrdinalIgnoreCase);
+                bool wantsCull = material?.Asset.TwoSided != true;
+                if (wantsCull != cullEnabled)
+                {
+                    if (wantsCull) shader.Gl.Enable(Silk.NET.OpenGL.EnableCap.CullFace);
+                    else shader.Gl.Disable(Silk.NET.OpenGL.EnableCap.CullFace);
+                    cullEnabled = wantsCull;
+                }
 
-            shader.SetBool("uIsEmissive", isEmissive);
-            if (isEmissive)
-            {
-                Vector3 dominantColor = tex!.GetDominantColor();
-                shader.SetVec3("uEmissiveColor", dominantColor);
-                shader.SetFloat("uEmissiveStrength", e.EmissiveStrength);
+                bool wantsBlend = material?.Asset.AlphaMode == Materials.MaterialAlphaMode.Blend;
+                if (wantsBlend != blendEnabled)
+                {
+                    if (wantsBlend)
+                    {
+                        shader.Gl.Enable(Silk.NET.OpenGL.EnableCap.Blend);
+                        shader.Gl.BlendFunc(
+                            Silk.NET.OpenGL.BlendingFactor.SrcAlpha,
+                            Silk.NET.OpenGL.BlendingFactor.OneMinusSrcAlpha);
+                        shader.Gl.DepthMask(false);
+                    }
+                    else
+                    {
+                        shader.Gl.Disable(Silk.NET.OpenGL.EnableCap.Blend);
+                        shader.Gl.DepthMask(true);
+                    }
+                    blendEnabled = wantsBlend;
+                }
+
+                shader.SetMat4("uModel", e.Transform.Matrix);
+                shader.SetVec2("uUvScale", e.UvScale);
+                shader.SetVec2("uUvOffset", e.UvOffset);
+                shader.SetFloat("uUvRotation", e.UvRotation);
+
+                Texture? tex = e.Texture ?? defaultTexture;
+                if (material != null)
+                {
+                    material.Bind(shader);
+                    shader.SetBool("uIsEmissive", false);
+                }
+                else if (tex != null)
+                {
+                    shader.SetBool("uUseTexture", true);
+                    shader.SetInt("uMaterialAlphaMode", 0);
+                    shader.SetBool("uMaterialReceiveShadows", true);
+                    tex.Bind(0);
+                }
+                else
+                {
+                    shader.SetBool("uUseTexture", false);
+                }
+
+                // Legacy emissive convention remains available to version-1 maps.
+                bool isEmissive = (material == null || material.IsLegacy) && tex != null &&
+                    !string.IsNullOrEmpty(e.TexturePath) &&
+                    e.TexturePath.Contains("emi_", StringComparison.OrdinalIgnoreCase);
+
+                shader.SetBool("uIsEmissive", isEmissive);
+                if (isEmissive)
+                {
+                    Vector3 dominantColor = tex!.GetDominantColor();
+                    shader.SetVec3("uEmissiveColor", dominantColor);
+                    shader.SetFloat("uEmissiveStrength", e.EmissiveStrength);
+                }
+
+                e.Mesh.DrawPart(part);
             }
+        }
 
-            e.Mesh.Draw();
+        if (!cullEnabled)
+            legacyShader.Gl.Enable(Silk.NET.OpenGL.EnableCap.CullFace);
+        if (blendEnabled)
+        {
+            legacyShader.Gl.Disable(Silk.NET.OpenGL.EnableCap.Blend);
+            legacyShader.Gl.DepthMask(true);
         }
     }
 

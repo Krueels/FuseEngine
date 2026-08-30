@@ -144,6 +144,15 @@ public static class MapSerializer
 
             if (!string.IsNullOrEmpty(e.TexturePath))
                 obj["texture"] = e.TexturePath;
+            if (!string.IsNullOrEmpty(e.MaterialPath))
+                obj["material"] = e.MaterialPath;
+            if (e.MaterialPaths.Count > 0)
+            {
+                var slots = new JsonArray();
+                foreach (string materialPath in e.MaterialPaths)
+                    slots.Add(materialPath);
+                obj["material_slots"] = slots;
+            }
 
             if (!string.IsNullOrEmpty(e.InteractableType))
                 obj["interactable"] = e.InteractableType;
@@ -299,7 +308,7 @@ public static class MapSerializer
         bool IsGloballyVisible(string id)
         {
             if (!visibleMap.TryGetValue(id, out bool vis) || !vis) return false;
-            if (parentMap.TryGetValue(id, out string parentId))
+            if (parentMap.TryGetValue(id, out string? parentId) && !string.IsNullOrEmpty(parentId))
             {
                 return IsGloballyVisible(parentId);
             }
@@ -352,6 +361,17 @@ public static class MapSerializer
 
             string texturePath = obj.TryGetPropertyValue("texture", out var texNode)
                 ? (string)texNode! : "";
+            string materialPath = obj.TryGetPropertyValue("material", out var materialNode)
+                ? (string)materialNode! : "";
+            var materialPaths = new List<string>();
+            if (obj.TryGetPropertyValue("material_slots", out var materialSlotsNode) && materialSlotsNode is JsonArray materialSlotsArray)
+            {
+                foreach (JsonNode? slotNode in materialSlotsArray)
+                {
+                    if (slotNode != null)
+                        materialPaths.Add(slotNode.GetValue<string>());
+                }
+            }
 
             Renderer.Mesh? mesh = null;
             System.Numerics.Vector3[]? brushCollVerts = null;
@@ -364,7 +384,7 @@ public static class MapSerializer
             {
                 var brushObj = (Brush)MapDocument.ParseObject(obj);
                 var meshData = MeshGenerator.Generate(brushObj);
-                mesh = new Renderer.Mesh(assets.Gl, meshData.Vertices, meshData.Indices);
+                mesh = new Renderer.Mesh(assets.Gl, meshData.Vertices, meshData.Indices, meshData.LineIndices, meshData.Parts);
                 brushCollVerts = new System.Numerics.Vector3[meshData.Vertices.Length];
                 for (int i = 0; i < meshData.Vertices.Length; i++) brushCollVerts[i] = meshData.Vertices[i].Position;
                 brushCollIndices = meshData.Indices;
@@ -432,6 +452,8 @@ public static class MapSerializer
             entity.MeshOwnedByEntity = isBrush;
             entity.MapData = obj;
             entity.MeshKey = meshKey;
+            entity.MaterialPath = materialPath;
+            entity.MaterialPaths = materialPaths;
             entity.TexturePath = texturePath;
             entity.ModelScale = modelScale;
             entity.InteractableType = obj.TryGetPropertyValue("interactable", out var it) ? (string)it! : "";
@@ -456,6 +478,11 @@ public static class MapSerializer
             entity.Visible = IsGloballyVisible(id);
             entity.ParentId = obj.TryGetPropertyValue("parent", out var pIdNode) ? (string)pIdNode! : "";
             entity.AttachedLight = attachedLight;
+
+            if (!string.IsNullOrWhiteSpace(materialPath))
+                entity.Material = assets.TryGetMaterial(materialPath);
+            foreach (string slotPath in materialPaths)
+                entity.Materials.Add(assets.TryGetMaterial(slotPath));
 
             if (!string.IsNullOrEmpty(texturePath))
             {
@@ -492,6 +519,9 @@ public static class MapSerializer
                     entity.EmissiveColor = Vector3.One;
                     entity.EmissiveStrength = 2.0f;
                 }
+
+                if (entity.Material == null)
+                    entity.Material = assets.GetLegacyMaterial(texturePath);
             }
 
             if (obj.TryGetPropertyValue("interactable", out var interactableNode))

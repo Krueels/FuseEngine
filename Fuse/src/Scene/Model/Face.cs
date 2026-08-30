@@ -6,6 +6,7 @@ public class Face
 {
     public Plane Plane { get; set; }
     public string Texture { get; set; } = "default";
+    public int MaterialSlot { get; set; } = 0;
     
     // UV Mapping properties
     public Vector3 UAxis { get; set; } = Vector3.UnitX;

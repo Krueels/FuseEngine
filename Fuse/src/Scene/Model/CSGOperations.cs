@@ -8,12 +8,48 @@ public static class CSGOperations
 {
     private const float Epsilon = 0.005f;
 
+    private static string? ResolveFaceMaterial(Brush brush, int slot)
+    {
+        if (slot >= 0 && slot < brush.MaterialSlots.Count &&
+            !string.IsNullOrWhiteSpace(brush.MaterialSlots[slot]))
+            return brush.MaterialSlots[slot];
+        return string.IsNullOrWhiteSpace(brush.MaterialPath) ? null : brush.MaterialPath;
+    }
+
+    private static int ImportFaceMaterial(Brush destination, Brush source, int sourceSlot)
+    {
+        string? materialPath = ResolveFaceMaterial(source, sourceSlot);
+        if (materialPath == null)
+            return 0;
+
+        int existing = destination.MaterialSlots.FindIndex(path =>
+            path.Equals(materialPath, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0)
+            return existing;
+
+        // Preserve the destination's implicit slot zero before adding a material
+        // imported from the second brush.
+        if (destination.MaterialSlots.Count == 0)
+        {
+            if (string.IsNullOrWhiteSpace(destination.MaterialPath))
+                return 0; // Keep legacy-texture CSG behavior unchanged.
+            destination.MaterialSlots.Add(destination.MaterialPath);
+            if (destination.MaterialPath.Equals(materialPath, StringComparison.OrdinalIgnoreCase))
+                return 0;
+        }
+
+        destination.MaterialSlots.Add(materialPath);
+        return destination.MaterialSlots.Count - 1;
+    }
+
     public static Brush ToWorldSpace(Brush brush)
     {
         var worldBrush = new Brush
         {
             Id = brush.Id,
             Texture = brush.Texture,
+            MaterialPath = brush.MaterialPath,
+            MaterialSlots = brush.MaterialSlots.ToList(),
             Visible = brush.Visible,
             ParentId = brush.ParentId,
             UvScale = brush.UvScale,
@@ -49,6 +85,7 @@ public static class CSGOperations
             worldBrush.Faces.Add(new Face(worldPlane)
             {
                 Texture = face.Texture,
+                MaterialSlot = face.MaterialSlot,
                 UAxis = worldU,
                 VAxis = worldV,
                 UScale = face.UScale,
@@ -68,6 +105,8 @@ public static class CSGOperations
         {
             Id = worldBrush.Id,
             Texture = worldBrush.Texture,
+            MaterialPath = worldBrush.MaterialPath,
+            MaterialSlots = worldBrush.MaterialSlots.ToList(),
             Visible = worldBrush.Visible,
             ParentId = worldBrush.ParentId,
             UvScale = worldBrush.UvScale,
@@ -89,6 +128,7 @@ public static class CSGOperations
             localBrush.Faces.Add(new Face(localPlane)
             {
                 Texture = face.Texture,
+                MaterialSlot = face.MaterialSlot,
                 UAxis = face.UAxis,
                 VAxis = face.VAxis,
                 UScale = face.UScale,
@@ -169,6 +209,8 @@ public static class CSGOperations
         {
             Id = "brush_" + Guid.NewGuid().ToString().Substring(0, 8),
             Texture = original.Texture,
+            MaterialPath = original.MaterialPath,
+            MaterialSlots = original.MaterialSlots.ToList(),
             Visible = original.Visible,
             ParentId = original.ParentId,
             UvScale = original.UvScale,
@@ -180,6 +222,7 @@ public static class CSGOperations
             newBrush.Faces.Add(new Face(face.Plane)
             {
                 Texture = face.Texture,
+                MaterialSlot = face.MaterialSlot,
                 UAxis = face.UAxis,
                 VAxis = face.VAxis,
                 UScale = face.UScale,
@@ -206,6 +249,7 @@ public static class CSGOperations
             newBrush.Faces.Add(new Face(newPlane)
             {
                 Texture = templateFace.Texture,
+                MaterialSlot = templateFace.MaterialSlot,
                 UScale = templateFace.UScale,
                 VScale = templateFace.VScale,
                 UOffset = templateFace.UOffset,
@@ -225,6 +269,13 @@ public static class CSGOperations
         var worldTarget = ToWorldSpace(target);
         var worldTool = ToWorldSpace(tool);
 
+        var toolMaterialSlots = new Dictionary<int, int>();
+        foreach (Face toolFace in worldTool.Faces)
+        {
+            if (!toolMaterialSlots.ContainsKey(toolFace.MaterialSlot))
+                toolMaterialSlots[toolFace.MaterialSlot] = ImportFaceMaterial(worldTarget, worldTool, toolFace.MaterialSlot);
+        }
+
         var resultPieces = new List<Brush>();
         var currentPieces = new List<Brush> { worldTarget };
 
@@ -233,7 +284,19 @@ public static class CSGOperations
             var nextPieces = new List<Brush>();
             foreach (var p in currentPieces)
             {
-                SplitBrush(p, toolFace.Plane, toolFace, out Brush? outside, out Brush? inside);
+                var cutFace = new Face(toolFace.Plane)
+                {
+                    Texture = toolFace.Texture,
+                    MaterialSlot = toolMaterialSlots[toolFace.MaterialSlot],
+                    UAxis = toolFace.UAxis,
+                    VAxis = toolFace.VAxis,
+                    UScale = toolFace.UScale,
+                    VScale = toolFace.VScale,
+                    UOffset = toolFace.UOffset,
+                    VOffset = toolFace.VOffset,
+                    Rotation = toolFace.Rotation
+                };
+                SplitBrush(p, toolFace.Plane, cutFace, out Brush? outside, out Brush? inside);
                 
                 if (outside != null)
                     resultPieces.Add(outside);
@@ -267,6 +330,8 @@ public static class CSGOperations
         {
             Id = "brush_" + Guid.NewGuid().ToString().Substring(0, 8),
             Texture = a.Texture,
+            MaterialPath = a.MaterialPath,
+            MaterialSlots = a.MaterialSlots.ToList(),
             Visible = a.Visible,
             ParentId = a.ParentId,
             UvScale = a.UvScale,
@@ -277,7 +342,7 @@ public static class CSGOperations
         {
             newBrush.Faces.Add(new Face(face.Plane)
             {
-                Texture = face.Texture, UAxis = face.UAxis, VAxis = face.VAxis,
+                Texture = face.Texture, MaterialSlot = face.MaterialSlot, UAxis = face.UAxis, VAxis = face.VAxis,
                 UScale = face.UScale, VScale = face.VScale, UOffset = face.UOffset, VOffset = face.VOffset, Rotation = face.Rotation
             });
         }
@@ -297,7 +362,9 @@ public static class CSGOperations
             {
                 newBrush.Faces.Add(new Face(face.Plane)
                 {
-                    Texture = face.Texture, UAxis = face.UAxis, VAxis = face.VAxis,
+                    Texture = face.Texture,
+                    MaterialSlot = ImportFaceMaterial(newBrush, worldB, face.MaterialSlot),
+                    UAxis = face.UAxis, VAxis = face.VAxis,
                     UScale = face.UScale, VScale = face.VScale, UOffset = face.UOffset, VOffset = face.VOffset, Rotation = face.Rotation
                 });
             }
@@ -328,6 +395,8 @@ public static class CSGOperations
         {
             Id = "brush_" + Guid.NewGuid().ToString().Substring(0, 8),
             Texture = brush.Texture,
+            MaterialPath = brush.MaterialPath,
+            MaterialSlots = brush.MaterialSlots.ToList(),
             Visible = brush.Visible,
             ParentId = brush.ParentId,
             UvScale = brush.UvScale,
@@ -346,7 +415,7 @@ public static class CSGOperations
             var newPlane = new Plane(face.Plane.Normal, face.Plane.D + thickness);
             innerBrush.Faces.Add(new Face(newPlane)
             {
-                Texture = face.Texture, UAxis = face.UAxis, VAxis = face.VAxis,
+                Texture = face.Texture, MaterialSlot = face.MaterialSlot, UAxis = face.UAxis, VAxis = face.VAxis,
                 UScale = face.UScale, VScale = face.VScale, UOffset = face.UOffset, VOffset = face.VOffset, Rotation = face.Rotation
             });
         }

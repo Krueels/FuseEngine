@@ -9,12 +9,13 @@ public unsafe class Shader : IDisposable
 {
     private readonly GL _gl;
     private readonly uint _id;
+    public bool IsValid { get; }
 
     public Shader(GL gl, string vertexSrc, string fragmentSrc)
     {
         _gl = gl;
-        uint vs = Compile(ShaderType.VertexShader, vertexSrc);
-        uint fs = Compile(ShaderType.FragmentShader, fragmentSrc);
+        uint vs = Compile(ShaderType.VertexShader, vertexSrc, out bool vertexValid);
+        uint fs = Compile(ShaderType.FragmentShader, fragmentSrc, out bool fragmentValid);
 
         _id = gl.CreateProgram();
         gl.AttachShader(_id, vs);
@@ -22,11 +23,14 @@ public unsafe class Shader : IDisposable
         gl.LinkProgram(_id);
 
         gl.GetProgram(_id, GLEnum.LinkStatus, out int success);
-        if (success == 0)
+        bool linkValid = success != 0;
+        if (!linkValid)
         {
             string info = gl.GetProgramInfoLog(_id);
             Logger.Error($"Shader link error: {info}");
         }
+
+        IsValid = vertexValid && fragmentValid && linkValid;
 
         gl.DeleteShader(vs);
         gl.DeleteShader(fs);
@@ -75,6 +79,7 @@ public unsafe class Shader : IDisposable
     }
 
     public uint ID => _id;
+    internal GL Gl => _gl;
 
     public void Use()
     {
@@ -102,7 +107,7 @@ public unsafe class Shader : IDisposable
 
     // SSBO (std430) para matrizes de ossos — binding point 0 conforme shaders
     private uint _bonesSSBO = 0;
-    private Matrix4x4[] _transposedMatrices;
+    private Matrix4x4[] _transposedMatrices = [];
 
     public unsafe void SetBonesSSBO(Matrix4x4[] matrices)
     {
@@ -115,7 +120,7 @@ public unsafe class Shader : IDisposable
 
         // System.Numerics é row-major; GLSL std430 espera column-major.
         // Transpor cada matriz antes do upload.
-        if (_transposedMatrices == null || _transposedMatrices.Length < matrices.Length)
+        if (_transposedMatrices.Length < matrices.Length)
         {
             _transposedMatrices = new Matrix4x4[matrices.Length];
         }
@@ -193,7 +198,7 @@ public unsafe class Shader : IDisposable
         return loc;
     }
 
-    private uint Compile(ShaderType type, string source)
+    private uint Compile(ShaderType type, string source, out bool valid)
     {
         uint shader = _gl.CreateShader(type);
 
@@ -207,7 +212,8 @@ public unsafe class Shader : IDisposable
         _gl.CompileShader(shader);
 
         _gl.GetShader(shader, GLEnum.CompileStatus, out int success);
-        if (success == 0)
+        valid = success != 0;
+        if (!valid)
         {
             string info = _gl.GetShaderInfoLog(shader);
             string typeName = type == ShaderType.VertexShader ? "VERTEX" : "FRAGMENT";

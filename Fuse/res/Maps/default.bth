@@ -38,6 +38,7 @@
       "id": "cube",
       "visible": true,
       "mesh": "cube",
+      "material": "Materials/NewMaterial.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "interactable": "CubeInteract",
       "body": {

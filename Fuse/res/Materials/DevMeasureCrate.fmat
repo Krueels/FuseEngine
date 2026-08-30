@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "Dev Measure Crate",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "base_color_texture",
+        "type": "Texture2D",
+        "name": "Base Color",
+        "position": [120.0, 160.0],
+        "properties": {
+          "path": "Textures/dev_measurecrate01.bmp",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [520.0, 160.0],
+        "properties": {
+          "base_color": [1.0, 1.0, 1.0],
+          "roughness": 0.65,
+          "metallic": 0.0,
+          "emission": [0.0, 0.0, 0.0],
+          "alpha": 1.0
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "base_color_texture",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "base_color_texture",
+        "from_socket": "Alpha",
+        "to_node": "output",
+        "to_socket": "Alpha"
+      }
+    ]
+  }
+}

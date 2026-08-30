@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "name": "NewMaterial",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1
+        }
+      },
+      {
+        "id": "bc5d918544664893aa56cffb4ba5fcac",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          90,
+          130
+        ],
+        "properties": {
+          "path": "Textures/hl2/concrete/concretefloor005a.bmp",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "e6c1068db57c46f8bc48f566b558ded5",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          94,
+          292
+        ],
+        "properties": {
+          "path": "Textures/NormalMap.png",
+          "color_space": "sRGB"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "e6c1068db57c46f8bc48f566b558ded5",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "bc5d918544664893aa56cffb4ba5fcac",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      }
+    ]
+  }
+}

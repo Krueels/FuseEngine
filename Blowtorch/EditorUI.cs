@@ -7,12 +7,16 @@ using Fuse.Scene.Model;
 using Fuse.Renderer;
 using Fuse.Core;
 using Fuse;
+using Fuse.Renderer.Materials;
 using System.Windows.Media.Animation;
 
 namespace Blowtorch;
 
-public unsafe class EditorUI
+public unsafe class EditorUI : IDisposable
 {
+    private const string DefaultMaterialPath = "Materials/Default.fmat";
+    private const string DevBrushMaterialPath = "Materials/DevMeasureCrate.fmat";
+
     private bool _showOpenDialog;
     private string[] _availableMaps = [];
     private int _selectedOpenMapIndex = -1;
@@ -27,6 +31,11 @@ public unsafe class EditorUI
 
     private bool _showMapWindow = true;
     private bool _showJsonWindow = false;
+    private readonly MaterialEditorWindow _materialEditor = new();
+    private bool _newMaterialPopupRequested;
+    private string _newMaterialName = "NewMaterial";
+    private string _newMaterialTexture = "";
+    private readonly List<MapObject> _newMaterialTargets = [];
 
     // Snapping
     private bool _snapEnabled = true;
@@ -106,6 +115,8 @@ public unsafe class EditorUI
     public bool ShowMapWindow => _showMapWindow;
     public bool ShowJsonWindow => _showJsonWindow;
 
+    public void Dispose() => _materialEditor.Dispose();
+
     public void Draw(EditorWindow window, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
     {
         if (_currentMode != EditorMode.DrawBrush)
@@ -161,6 +172,7 @@ public unsafe class EditorUI
         DrawOpenDialog(sceneService, assetService);
         DrawSaveAsDialog(sceneService);
         DrawHollowDialog(sceneService, assetService, history);
+        DrawNewMaterialDialog(sceneService, assetService, history);
         //DrawLaunchErrorDialog();
 
         if (_newDocumentRequested)
@@ -186,6 +198,8 @@ public unsafe class EditorUI
 
         if (_showJsonWindow)
             DrawJsonWindow(sceneService.Document);
+
+        _materialEditor.Draw(assetService, sceneService);
     }
 
     private void DuplicateObject(MapObject obj, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -824,6 +838,20 @@ public unsafe class EditorUI
                 {
                     _showHollowDialog = true;
                 }
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("Materials"))
+            {
+                if (ImGui.MenuItem("New Material..."))
+                    RequestNewMaterial(_selectedObjects.Count > 0 ? _selectedObjects : (_selectedObject != null ? [_selectedObject] : []));
+
+                bool canOpenSelected = _selectedObject != null && !string.IsNullOrWhiteSpace(_selectedObject.MaterialPath);
+                if (ImGui.MenuItem("Open Selected Material", "", false, canOpenSelected))
+                    _materialEditor.Open(_selectedObject!.MaterialPath!);
+
+                ImGui.Separator();
+                if (ImGui.MenuItem("Convert Legacy Textures to Materials"))
+                    ConvertLegacyTexturesToMaterials(sceneService, assetService, history);
                 ImGui.EndMenu();
             }
             if (ImGui.BeginMenu("View"))
@@ -2054,18 +2082,40 @@ public unsafe class EditorUI
                 Undo.ForceEnd(history, sceneService, assetService);
             }
 
-            string commonTex = _selectedObjects.Select(o => o.Texture).Distinct().Count() == 1 ? (_selectedObjects.First().Texture ?? "") : "";
-            string multiTex = commonTex;
-            if (ImGui.InputText("Texture##multiTex", ref multiTex, 256))
+            string commonMaterial = _selectedObjects.Select(o => o.MaterialPath).Distinct().Count() == 1
+                ? (_selectedObjects.First().MaterialPath ?? "")
+                : "";
+            if (DrawMaterialPicker("Material##multiMaterial", commonMaterial, assetService, out string multiMaterial))
             {
-                Undo.TrackItem(_frameBeginState);
+                Undo.RecordState(_frameBeginState);
                 foreach (var obj in _selectedObjects)
+                    AssignMaterial(obj, multiMaterial, sceneService, assetService);
+                Undo.ForceEnd(history, sceneService, assetService);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("New##multiMaterial"))
+                RequestNewMaterial(_selectedObjects);
+
+            if (ImGui.TreeNode("Legacy Texture Compatibility##multiLegacyTexture"))
+            {
+                string commonTex = _selectedObjects.Select(o => o.Texture).Distinct().Count() == 1 ? (_selectedObjects.First().Texture ?? "") : "";
+                string multiTex = commonTex;
+                if (ImGui.InputText("Texture##multiTex", ref multiTex, 256))
                 {
-                    obj.Texture = multiTex;
-                    var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                    if (entity != null) entity.TexturePath = multiTex;
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (var obj in _selectedObjects)
+                    {
+                        obj.Texture = multiTex;
+                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
+                        if (entity != null)
+                        {
+                            entity.TexturePath = multiTex;
+                            if (string.IsNullOrWhiteSpace(entity.MaterialPath) && !string.IsNullOrWhiteSpace(multiTex))
+                                entity.Material = assetService.AssetManager.GetLegacyMaterial(multiTex);
+                        }
+                    }
                 }
-                
+                ImGui.TreePop();
             }
 
             if (_selectedObjects.All(o => !o.IsModel))
@@ -2140,9 +2190,7 @@ public unsafe class EditorUI
                         obj.Body!.IsTrigger = multiTrigger;
                         var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                         if (entity != null)
-                        {
-                            entity.TexturePath = multiTrigger ? "Textures/tools/toolstrigger.bmp" : (obj.Texture ?? "");
-                        }
+                            ApplyTriggerPreviewMaterial(obj, entity, multiTrigger, assetService);
                     }
                     
                 }
@@ -2332,16 +2380,42 @@ public unsafe class EditorUI
                 // Visuals & Material
                 if (ImGui.CollapsingHeader("Visuals & Material", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    string texture = obj.Texture ?? "";
-                    bool texChanged = ImGui.InputText("Texture##inspectTex", ref texture, 256);
-                    Undo.TrackItem(_frameBeginState);
-                    if (texChanged)
+                    string materialPath = obj.MaterialPath ?? "";
+                    if (DrawMaterialPicker("Material##inspectMaterial", materialPath, assetService, out string selectedMaterial))
                     {
-                        obj.Texture = texture;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null) entity.TexturePath = texture;
+                        Undo.RecordState(_frameBeginState);
+                        AssignMaterial(obj, selectedMaterial, sceneService, assetService);
+                        Undo.ForceEnd(history, sceneService, assetService);
                     }
-                    
+                    if (!string.IsNullOrWhiteSpace(obj.MaterialPath))
+                    {
+                        if (ImGui.Button("Open Material Graph"))
+                            _materialEditor.Open(obj.MaterialPath);
+                        ImGui.SameLine();
+                    }
+                    if (ImGui.Button("New Material"))
+                        RequestNewMaterial([obj]);
+
+                    DrawMaterialSlots(obj, sceneService, assetService, history);
+
+                    if (ImGui.TreeNode("Legacy Texture Compatibility##inspectLegacyTexture"))
+                    {
+                        string texture = obj.Texture ?? "";
+                        bool texChanged = ImGui.InputText("Texture##inspectTex", ref texture, 256);
+                        Undo.TrackItem(_frameBeginState);
+                        if (texChanged)
+                        {
+                            obj.Texture = texture;
+                            var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
+                            if (entity != null)
+                            {
+                                entity.TexturePath = texture;
+                                if (string.IsNullOrWhiteSpace(entity.MaterialPath) && !string.IsNullOrWhiteSpace(texture))
+                                    entity.Material = assetService.AssetManager.GetLegacyMaterial(texture);
+                            }
+                        }
+                        ImGui.TreePop();
+                    }
 
                     if (!obj.IsModel)
                     {
@@ -2661,9 +2735,7 @@ public unsafe class EditorUI
                                 body.IsTrigger = isTrigger;
                                 var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                                 if (entity != null)
-                                {
-                                    entity.TexturePath = isTrigger ? "Textures/tools/toolstrigger.bmp" : (obj.Texture ?? "");
-                                }
+                                    ApplyTriggerPreviewMaterial(obj, entity, isTrigger, assetService);
                             }
                         }
 
@@ -2760,6 +2832,7 @@ public unsafe class EditorUI
             Id = $"new_{shape.ToString().ToLower()}",
             Visible = true,
             Mesh = shape == MapShapeType.Sphere ? "sphere" : "cube",
+            MaterialPath = DefaultMaterialPath,
             Body = new MapBody
             {
                 Shape = shape,
@@ -2850,6 +2923,7 @@ public unsafe class EditorUI
         var pre = sceneService.Document.Serialize();
         var brush = _previewManager.CreateBrush();
         brush.Texture = "Textures/dev_measurecrate01.bmp";
+        brush.MaterialPath = DevBrushMaterialPath;
 
         sceneService.Document.Objects.Add(brush);
         SceneNameManager.EnsureAllUnique(sceneService.Document);
@@ -2998,6 +3072,9 @@ public unsafe class EditorUI
             Visible = true,
             Model = $"Models/{filename}",
             ModelScale = Vector3.One,
+            MaterialPath = !string.IsNullOrEmpty(texturePath)
+                ? EnsureMaterialForTexture(assetService, texturePath, Path.GetFileNameWithoutExtension(texturePath))
+                : DefaultMaterialPath,
             Body = new MapBody
             {
                 Shape = MapShapeType.Trimesh,
@@ -3205,6 +3282,9 @@ public unsafe class EditorUI
                         Model = $"Models/{filename}#{meshIndex}",
                         ModelScale = scale,
                         Texture = meshTexturePath,
+                        MaterialPath = !string.IsNullOrEmpty(meshTexturePath)
+                            ? EnsureMaterialForTexture(assetService, meshTexturePath, Path.GetFileNameWithoutExtension(meshTexturePath))
+                            : DefaultMaterialPath,
                         Body = new MapBody
                         {
                             Shape = MapShapeType.Trimesh,
@@ -3729,6 +3809,332 @@ public unsafe class EditorUI
             hasBounds = true;
         }
         return hasBounds;
+    }
+
+    private static bool DrawMaterialPicker(
+        string label,
+        string currentPath,
+        EditorAssetService assetService,
+        out string selectedPath)
+    {
+        selectedPath = currentPath;
+        string preview = string.IsNullOrWhiteSpace(currentPath)
+            ? "(Legacy / Default)"
+            : Path.GetFileNameWithoutExtension(currentPath);
+        bool changed = false;
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.BeginCombo(label, preview))
+        {
+            if (ImGui.Selectable("(Legacy / Default)", string.IsNullOrWhiteSpace(currentPath)))
+            {
+                selectedPath = "";
+                changed = true;
+            }
+
+            foreach (string material in assetService.EnumerateMaterials())
+            {
+                bool selected = material.Equals(currentPath, StringComparison.OrdinalIgnoreCase);
+                if (ImGui.Selectable(material, selected))
+                {
+                    selectedPath = material;
+                    changed = true;
+                }
+                if (selected)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        return changed;
+    }
+
+    private static void AssignMaterial(
+        MapObject obj,
+        string materialPath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        obj.MaterialPath = string.IsNullOrWhiteSpace(materialPath) ? null : materialPath;
+        var entity = sceneService.Scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+        if (entity == null)
+            return;
+
+        entity.MaterialPath = obj.MaterialPath ?? "";
+        entity.Material = !string.IsNullOrWhiteSpace(obj.MaterialPath)
+            ? assetService.GetOrCreateMaterial(obj.MaterialPath)
+            : (!string.IsNullOrWhiteSpace(entity.TexturePath)
+                ? assetService.AssetManager.GetLegacyMaterial(entity.TexturePath)
+                : null);
+    }
+
+    private static void ApplyTriggerPreviewMaterial(
+        MapObject obj,
+        Entity entity,
+        bool isTrigger,
+        EditorAssetService assetService)
+    {
+        entity.TexturePath = isTrigger ? "Textures/tools/toolstrigger.bmp" : (obj.Texture ?? "");
+        entity.Materials.Clear();
+        if (isTrigger)
+        {
+            entity.Material = assetService.AssetManager.GetLegacyMaterial(entity.TexturePath);
+            return;
+        }
+
+        entity.Material = !string.IsNullOrWhiteSpace(obj.MaterialPath)
+            ? assetService.GetOrCreateMaterial(obj.MaterialPath)
+            : (!string.IsNullOrWhiteSpace(entity.TexturePath)
+                ? assetService.AssetManager.GetLegacyMaterial(entity.TexturePath)
+                : null);
+        foreach (string slot in obj.MaterialSlots)
+            entity.Materials.Add(assetService.GetOrCreateMaterial(slot));
+    }
+
+    private void DrawMaterialSlots(
+        MapObject obj,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!ImGui.TreeNode($"Material Slots ({obj.MaterialSlots.Count})##materialSlots_{obj.Id}"))
+            return;
+
+        bool slotsChanged = false;
+        int removedSlot = -1;
+        for (int i = 0; i < obj.MaterialSlots.Count; i++)
+        {
+            ImGui.PushID($"material_slot_{obj.Id}_{i}");
+            string slotPath = obj.MaterialSlots[i];
+            if (DrawMaterialPicker($"Slot {i}", slotPath, assetService, out string selectedSlot))
+            {
+                Undo.RecordState(_frameBeginState);
+                obj.MaterialSlots[i] = selectedSlot;
+                slotsChanged = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("X"))
+            {
+                Undo.RecordState(_frameBeginState);
+                removedSlot = i;
+                slotsChanged = true;
+                ImGui.PopID();
+                break;
+            }
+            ImGui.PopID();
+        }
+
+        if (removedSlot >= 0)
+        {
+            obj.MaterialSlots.RemoveAt(removedSlot);
+            if (obj is Brush brush)
+            {
+                foreach (Face face in brush.Faces)
+                {
+                    if (face.MaterialSlot == removedSlot) face.MaterialSlot = 0;
+                    else if (face.MaterialSlot > removedSlot) face.MaterialSlot--;
+                }
+            }
+        }
+
+        if (ImGui.Button("Add Material Slot"))
+        {
+            Undo.RecordState(_frameBeginState);
+            obj.MaterialSlots.Add(obj.MaterialPath ?? assetService.EnumerateMaterials().FirstOrDefault() ?? "");
+            slotsChanged = true;
+        }
+
+        bool faceAssignmentsChanged = false;
+        if (obj is Brush selectedBrush && obj.MaterialSlots.Count > 0 &&
+            ImGui.TreeNode($"Face Assignments##faceMaterials_{obj.Id}"))
+        {
+            for (int faceIndex = 0; faceIndex < selectedBrush.Faces.Count; faceIndex++)
+            {
+                Face face = selectedBrush.Faces[faceIndex];
+                int slot = Math.Clamp(face.MaterialSlot, 0, obj.MaterialSlots.Count - 1);
+                string preview = $"{slot}: {Path.GetFileNameWithoutExtension(obj.MaterialSlots[slot])}";
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.BeginCombo($"Face {faceIndex}##faceSlot_{obj.Id}_{faceIndex}", preview))
+                {
+                    for (int slotIndex = 0; slotIndex < obj.MaterialSlots.Count; slotIndex++)
+                    {
+                        if (ImGui.Selectable($"{slotIndex}: {obj.MaterialSlots[slotIndex]}", slotIndex == slot))
+                        {
+                            Undo.RecordState(_frameBeginState);
+                            face.MaterialSlot = slotIndex;
+                            faceAssignmentsChanged = true;
+                        }
+                    }
+                    ImGui.EndCombo();
+                }
+            }
+            ImGui.TreePop();
+        }
+
+        if (slotsChanged || faceAssignmentsChanged)
+        {
+            var entity = sceneService.Scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+            if (entity != null)
+            {
+                entity.MaterialPaths = obj.MaterialSlots.ToList();
+                entity.Materials.Clear();
+                foreach (string slot in obj.MaterialSlots)
+                    entity.Materials.Add(assetService.GetOrCreateMaterial(slot));
+
+                if (faceAssignmentsChanged || removedSlot >= 0)
+                {
+                    assetService.InvalidateMesh(obj.Id);
+                    entity.Mesh = assetService.GetOrCreateMesh(obj);
+                }
+            }
+            Undo.ForceEnd(history, sceneService, assetService);
+        }
+
+        ImGui.TreePop();
+    }
+
+    private void RequestNewMaterial(IEnumerable<MapObject> targets)
+    {
+        _newMaterialTargets.Clear();
+        _newMaterialTargets.AddRange(targets.Where(target => target != null).Distinct());
+        _newMaterialName = "NewMaterial";
+        _newMaterialTexture = "";
+        _newMaterialPopupRequested = true;
+    }
+
+    private void DrawNewMaterialDialog(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (_newMaterialPopupRequested)
+        {
+            ImGui.OpenPopup("Create Material");
+            _newMaterialPopupRequested = false;
+        }
+
+        if (!ImGui.BeginPopupModal("Create Material", ImGuiWindowFlags.AlwaysAutoResize))
+            return;
+
+        ImGui.InputText("Name", ref _newMaterialName, 128);
+        ImGui.InputText("Initial Base Color Texture", ref _newMaterialTexture, 512);
+        if (ImGui.BeginCombo("Browse Texture", string.IsNullOrWhiteSpace(_newMaterialTexture)
+            ? "Optional..."
+            : Path.GetFileName(_newMaterialTexture)))
+        {
+            if (ImGui.Selectable("(None)", string.IsNullOrWhiteSpace(_newMaterialTexture)))
+                _newMaterialTexture = "";
+            foreach (string texture in assetService.EnumerateTextures())
+            {
+                if (ImGui.Selectable(texture, texture.Equals(_newMaterialTexture, StringComparison.OrdinalIgnoreCase)))
+                    _newMaterialTexture = texture;
+            }
+            ImGui.EndCombo();
+        }
+
+        bool validName = !string.IsNullOrWhiteSpace(_newMaterialName);
+        if (!validName)
+            ImGui.BeginDisabled();
+        if (ImGui.Button("Create", new Vector2(120, 0)))
+        {
+            string safeName = SanitizeAssetName(_newMaterialName);
+            string relativePath = $"Materials/{safeName}.fmat";
+            string fullPath = Path.Combine(assetService.FuseResPath, relativePath);
+            int suffix = 1;
+            while (File.Exists(fullPath))
+            {
+                relativePath = $"Materials/{safeName}_{suffix++}.fmat";
+                fullPath = Path.Combine(assetService.FuseResPath, relativePath);
+            }
+
+            MaterialAsset.CreateDefault(safeName, string.IsNullOrWhiteSpace(_newMaterialTexture) ? null : _newMaterialTexture)
+                .Save(fullPath);
+            assetService.GetOrCreateMaterial(relativePath);
+
+            if (_newMaterialTargets.Count > 0)
+            {
+                Undo.RecordState(_frameBeginState);
+                foreach (MapObject target in _newMaterialTargets)
+                    AssignMaterial(target, relativePath, sceneService, assetService);
+                Undo.ForceEnd(history, sceneService, assetService);
+            }
+
+            _materialEditor.Open(relativePath);
+            ImGui.CloseCurrentPopup();
+        }
+        if (!validName)
+            ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", new Vector2(120, 0)))
+            ImGui.CloseCurrentPopup();
+        ImGui.EndPopup();
+    }
+
+    private void ConvertLegacyTexturesToMaterials(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        Undo.RecordState(_frameBeginState);
+        string defaultMaterial = EnsureMaterialForTexture(assetService, "", "DefaultMaterial");
+
+        foreach (MapObject obj in sceneService.Document.Objects)
+        {
+            if (obj.IsLight || (obj is not Brush && !obj.IsModel && string.IsNullOrWhiteSpace(obj.Mesh)))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(obj.MaterialPath))
+            {
+                obj.MaterialPath = !string.IsNullOrWhiteSpace(obj.Texture)
+                    ? EnsureMaterialForTexture(assetService, obj.Texture!, Path.GetFileNameWithoutExtension(obj.Texture))
+                    : defaultMaterial;
+            }
+
+            if (obj is not Brush brush)
+                continue;
+
+            var faceTextures = brush.Faces
+                .Select(face => face.Texture)
+                .Where(texture => !string.IsNullOrWhiteSpace(texture) && File.Exists(MaterialRuntime.ResolveAssetPath(texture)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (faceTextures.Count == 0)
+                continue;
+
+            obj.MaterialSlots.Clear();
+            foreach (string texture in faceTextures)
+                obj.MaterialSlots.Add(EnsureMaterialForTexture(assetService, texture, Path.GetFileNameWithoutExtension(texture)));
+            foreach (Face face in brush.Faces)
+            {
+                int index = faceTextures.FindIndex(texture => texture.Equals(face.Texture, StringComparison.OrdinalIgnoreCase));
+                face.MaterialSlot = index >= 0 ? index : 0;
+            }
+        }
+
+        sceneService.PopulateScene(assetService);
+        Undo.ForceEnd(history, sceneService, assetService);
+        Logger.Important("Legacy textures converted to material references. Legacy texture fields were preserved for compatibility.");
+    }
+
+    private static string EnsureMaterialForTexture(
+        EditorAssetService assetService,
+        string texturePath,
+        string suggestedName)
+    {
+        string normalizedTexture = MaterialAsset.NormalizeAssetPath(texturePath);
+        string hashSource = string.IsNullOrWhiteSpace(normalizedTexture) ? "default" : normalizedTexture.ToLowerInvariant();
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hashSource)))[..8];
+        string safeName = SanitizeAssetName(string.IsNullOrWhiteSpace(suggestedName) ? "Material" : suggestedName);
+        string relativePath = $"Materials/{safeName}_{hash}.fmat";
+        string fullPath = Path.Combine(assetService.FuseResPath, relativePath);
+        if (!File.Exists(fullPath))
+            MaterialAsset.CreateDefault(safeName, string.IsNullOrWhiteSpace(normalizedTexture) ? null : normalizedTexture).Save(fullPath);
+        return relativePath;
+    }
+
+    private static string SanitizeAssetName(string name)
+    {
+        char[] invalid = Path.GetInvalidFileNameChars();
+        string safe = new(name.Trim().Select(character => invalid.Contains(character) || char.IsWhiteSpace(character) ? '_' : character).ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "Material" : safe;
     }
 
     public void DrawPreviewDebug(Fuse.Debug.DebugDrawer drawer, EditorAssetService assetService)

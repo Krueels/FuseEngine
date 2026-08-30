@@ -9,6 +9,7 @@ using Fuse.Core;
 using Shader = Fuse.Renderer.Shader;
 using Mesh = Fuse.Renderer.Mesh;
 using Texture = Fuse.Renderer.Texture;
+using Fuse.Renderer.Materials;
 
 namespace Blowtorch;
 
@@ -38,6 +39,36 @@ public class EditorAssetService : IDisposable
     public Shader PointShadowShader => _pointShadowShader;
     public uint DefaultTexture => _defaultTex;
     public AssetManager AssetManager => _assets;
+
+    public MaterialRuntime? GetOrCreateMaterial(string? materialRelPath) =>
+        _assets.TryGetMaterial(materialRelPath);
+
+    public MaterialRuntime ReloadMaterial(string materialRelPath) =>
+        _assets.ReloadMaterial(materialRelPath);
+
+    public IReadOnlyList<string> EnumerateMaterials()
+    {
+        string materialDirectory = Path.Combine(_fuseResPath, "Materials");
+        if (!Directory.Exists(materialDirectory))
+            return [];
+        return Directory.EnumerateFiles(materialDirectory, "*.fmat", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public IReadOnlyList<string> EnumerateTextures()
+    {
+        string textureDirectory = Path.Combine(_fuseResPath, "Textures");
+        if (!Directory.Exists(textureDirectory))
+            return [];
+        string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga"];
+        return Directory.EnumerateFiles(textureDirectory, "*.*", SearchOption.AllDirectories)
+            .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 
     public void Initialize(string baseDirectory)
     {
@@ -77,7 +108,7 @@ public class EditorAssetService : IDisposable
             if (!_meshCache.TryGetValue(brush.Id, out var mesh))
             {
                 var meshData = MeshGenerator.Generate(brush);
-                mesh = new Mesh(_gl, meshData.Vertices, meshData.Indices, meshData.LineIndices);
+                mesh = new Mesh(_gl, meshData.Vertices, meshData.Indices, meshData.LineIndices, meshData.Parts);
                 _meshCache[brush.Id] = mesh;
             }
             return mesh;

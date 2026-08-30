@@ -40,6 +40,11 @@ public unsafe class EditorApplication : IDisposable
         _imgui = new ImGuiBackEnd(gl);
         _imgui.Init();
 
+        // The material graph uses custom-drawn nodes and pins. Restrict window
+        // movement to title bars so dragging graph elements never drags the
+        // containing ImGui window as well.
+        ImGuiNET.ImGui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
+
         _assetService = new EditorAssetService(gl);
         _assetService.Initialize(AppContext.BaseDirectory);
 
@@ -118,9 +123,9 @@ public unsafe class EditorApplication : IDisposable
         _viewportTop.Dispose();
         _viewportFront.Dispose();
         _viewportSide.Dispose();
+        _ui?.Dispose();
         _assetService.Dispose();
         _imgui.Dispose();
         _window.Dispose();
     }
 }
-

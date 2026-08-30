@@ -12,6 +12,7 @@ public class LoadedModel : IDisposable
     public Mesh? ConvexCollMesh { get; set; }
     public Vector3[] CollVertices { get; set; } = [];
     public uint[] CollIndices { get; set; } = [];
+    public int MaterialSlotCount { get; set; }
 
     public void Dispose()
     {
@@ -61,6 +62,8 @@ public static unsafe class ModelLoader
         var vertices = new List<Vertex>();
         var indices = new List<uint>();
         var collVerts = new List<Vector3>();
+        var meshParts = new List<MeshPart>();
+        int materialSlotCount = 0;
 
         int startMesh = 0;
         int endMesh = (int)scene->MNumMeshes;
@@ -74,6 +77,7 @@ public static unsafe class ModelLoader
         {
             var mesh = scene->MMeshes[m];
             uint baseIndex = (uint)vertices.Count;
+            uint partIndexOffset = (uint)indices.Count;
 
             for (int i = 0; i < mesh->MNumVertices; i++)
             {
@@ -100,11 +104,16 @@ public static unsafe class ModelLoader
                 for (int j = 0; j < face.MNumIndices; j++)
                     indices.Add(face.MIndices[j] + baseIndex);
             }
+
+            uint partIndexCount = (uint)indices.Count - partIndexOffset;
+            int materialSlot = (int)mesh->MMaterialIndex;
+            meshParts.Add(new MeshPart(partIndexOffset, partIndexCount, materialSlot));
+            materialSlotCount = System.Math.Max(materialSlotCount, materialSlot + 1);
         }
 
         Api.ReleaseImport(scene);
 
-        var resultMesh = new Mesh(gl, [.. vertices], [.. indices]);
+        var resultMesh = new Mesh(gl, [.. vertices], [.. indices], null, [.. meshParts]);
         Logger.Asset($"Model loaded: {path} ({vertices.Count} verts, {indices.Count} indices)");
 
         var collLineIndices = new List<uint>();
@@ -133,6 +142,7 @@ public static unsafe class ModelLoader
             ConvexCollMesh = resultConvexMesh,
             CollVertices = [.. collVerts],
             CollIndices = [.. indices],
+            MaterialSlotCount = materialSlotCount,
         };
     }
 
@@ -162,6 +172,7 @@ public static unsafe class ModelLoader
             var vertices = new List<Vertex>();
             var indices = new List<uint>();
             var collVerts = new List<Vector3>();
+            int materialSlot = (int)mesh->MMaterialIndex;
 
             for (int i = 0; i < mesh->MNumVertices; i++)
             {
@@ -189,7 +200,8 @@ public static unsafe class ModelLoader
                     indices.Add(face.MIndices[j]);
             }
 
-            var resultMesh = new Mesh(gl, [.. vertices], [.. indices]);
+            var resultMesh = new Mesh(gl, [.. vertices], [.. indices], null,
+                [new MeshPart(0, (uint)indices.Count, materialSlot)]);
 
             var collLineIndices = new List<uint>();
             int countMinus2 = indices.Count - 2;
@@ -216,6 +228,7 @@ public static unsafe class ModelLoader
                 ConvexCollMesh = resultConvexMesh,
                 CollVertices = [.. collVerts],
                 CollIndices = [.. indices],
+                MaterialSlotCount = materialSlot + 1,
             };
         }
 

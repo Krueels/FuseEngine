@@ -617,12 +617,16 @@ public unsafe class MasterRenderer
             SetupWorldUniforms(_shader, view, proj);
 
             Matrix4x4 cameraViewProjection = view * proj;
-            scene.Render(_shader, _crateTexture, cameraViewProjection);
+            scene.Render(
+                _shader,
+                _crateTexture,
+                cameraViewProjection,
+                materialShader => SetupWorldUniforms(materialShader, view, proj));
 
             // Skinned entities (main pass)
             _skinnedShader.Use();
             SetupWorldUniforms(_skinnedShader, view, proj);
-            RenderSkinned(scene, _skinnedShader, cameraViewProjection);
+            RenderSkinned(scene, _skinnedShader, cameraViewProjection, view, proj);
         }
 
         // ===== DECALS (Forward Lit in HDR FBO, after geometry) =====
@@ -1091,6 +1095,9 @@ public unsafe class MasterRenderer
 
         shader.SetVec3("uColor", Vector3.One);
         shader.SetBool("uUseTexture", true);
+        shader.SetInt("uMaterialAlphaMode", 0);
+        shader.SetFloat("uMaterialAlphaCutoff", 0.5f);
+        shader.SetBool("uMaterialReceiveShadows", true);
         shader.SetFloat("uIsViewmodel", 0.0f);
 
         shader.SetInt("uTexture", 0);
@@ -1130,9 +1137,18 @@ public unsafe class MasterRenderer
         _gl.BindBuffer(GLEnum.ShaderStorageBuffer, 0);
     }
 
-    private void RenderSkinned(Scene scene, Shader shader, Matrix4x4? cullMatrix = null, bool skipViewmodels = false)
+    private void RenderSkinned(
+        Scene scene,
+        Shader legacyShader,
+        Matrix4x4? cullMatrix = null,
+        Matrix4x4? view = null,
+        Matrix4x4? proj = null,
+        bool skipViewmodels = false)
     {
         ViewFrustum? frustum = cullMatrix.HasValue ? new ViewFrustum(cullMatrix.Value) : null;
+        Shader? activeShader = null;
+        bool cullEnabled = true;
+        bool blendEnabled = false;
         foreach (var e in scene.Entities)
         {
             if (!e.Visible || e.SkinnedModel == null || e.Animator == null) continue;
@@ -1140,34 +1156,80 @@ public unsafe class MasterRenderer
             if (!e.IsViewmodel && frustum.HasValue && !frustum.Value.Intersects(e.GetWorldRenderBounds()))
                 continue;
 
-            shader.Use();
-
             Matrix4x4 modelMatrix = e.RenderMatrix;
-            shader.SetMat4("uModel", modelMatrix);
-            shader.SetVec2("uUvScale", e.UvScale);
-            shader.SetVec2("uUvOffset", e.UvOffset);
-            shader.SetFloat("uUvRotation", e.UvRotation);
-            shader.SetFloat("uIsViewmodel", e.IsViewmodel ? 1.0f : 0.0f);
             UploadBones(e.Animator.FinalBoneMatrices);
 
-            foreach (var sub in e.SkinnedModel.Submeshes)
+            for (int submeshIndex = 0; submeshIndex < e.SkinnedModel.Submeshes.Length; submeshIndex++)
             {
+                var sub = e.SkinnedModel.Submeshes[submeshIndex];
                 if (e.SkinnedModel.HiddenSubmeshes.Contains(sub.Name))
                     continue;
 
-                var tex = sub.Texture ?? e.Texture ?? _crateTexture;
-                if (tex != null)
+                Materials.MaterialRuntime? material = sub.Material ?? e.ResolveMaterial(sub.MaterialSlot >= 0 ? sub.MaterialSlot : submeshIndex);
+                Shader shader = material?.SkinnedShader ?? legacyShader;
+                if (!ReferenceEquals(activeShader, shader))
                 {
-                    shader.SetBool("uUseTexture", true);
-                    tex.Bind(0);
+                    shader.Use();
+                    if (view.HasValue && proj.HasValue)
+                        SetupWorldUniforms(shader, view.Value, proj.Value);
+                    activeShader = shader;
+                }
+
+                bool wantsCull = material?.Asset.TwoSided != true;
+                if (wantsCull != cullEnabled)
+                {
+                    if (wantsCull) _gl.Enable(EnableCap.CullFace);
+                    else _gl.Disable(EnableCap.CullFace);
+                    cullEnabled = wantsCull;
+                }
+
+                bool wantsBlend = material?.Asset.AlphaMode == Materials.MaterialAlphaMode.Blend;
+                if (wantsBlend != blendEnabled)
+                {
+                    if (wantsBlend)
+                    {
+                        _gl.Enable(EnableCap.Blend);
+                        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                        _gl.DepthMask(false);
+                    }
+                    else
+                    {
+                        _gl.Disable(EnableCap.Blend);
+                        _gl.DepthMask(true);
+                    }
+                    blendEnabled = wantsBlend;
+                }
+
+                shader.SetMat4("uModel", modelMatrix);
+                shader.SetVec2("uUvScale", e.UvScale);
+                shader.SetVec2("uUvOffset", e.UvOffset);
+                shader.SetFloat("uUvRotation", e.UvRotation);
+                shader.SetFloat("uIsViewmodel", e.IsViewmodel ? 1.0f : 0.0f);
+
+                if (material != null)
+                {
+                    material.Bind(shader);
+                    shader.SetBool("uIsEmissive", false);
                 }
                 else
                 {
-                    shader.SetBool("uUseTexture", false);
+                    var tex = sub.Texture ?? e.Texture ?? _crateTexture;
+                    shader.SetBool("uUseTexture", tex != null);
+                    shader.SetInt("uMaterialAlphaMode", 0);
+                    shader.SetBool("uMaterialReceiveShadows", true);
+                    tex?.Bind(0);
                 }
 
                 sub.Mesh.Draw();
             }
+        }
+
+        if (!cullEnabled)
+            _gl.Enable(EnableCap.CullFace);
+        if (blendEnabled)
+        {
+            _gl.Disable(EnableCap.Blend);
+            _gl.DepthMask(true);
         }
     }
 
@@ -1191,10 +1253,21 @@ public unsafe class MasterRenderer
             shader.Use();
             shader.SetMat4("uLightSpaceMatrix", cullMatrix);
             shader.SetMat4("uModel", entity.RenderMatrix);
+            shader.SetVec2("uUvScale", entity.UvScale);
+            shader.SetVec2("uUvOffset", entity.UvOffset);
+            shader.SetFloat("uUvRotation", entity.UvRotation);
             UploadBones(entity.Animator.FinalBoneMatrices);
 
-            foreach (var submesh in entity.SkinnedModel.Submeshes)
+            for (int submeshIndex = 0; submeshIndex < entity.SkinnedModel.Submeshes.Length; submeshIndex++)
             {
+                var submesh = entity.SkinnedModel.Submeshes[submeshIndex];
+                var material = submesh.Material ?? entity.ResolveMaterial(submesh.MaterialSlot >= 0 ? submesh.MaterialSlot : submeshIndex);
+                if (material?.Asset.CastShadows == false)
+                    continue;
+                if (material != null)
+                    material.BindShadow(shader);
+                else
+                    shader.SetBool("uShadowAlphaMask", false);
                 if (!entity.SkinnedModel.HiddenSubmeshes.Contains(submesh.Name))
                     submesh.Mesh.Draw();
             }

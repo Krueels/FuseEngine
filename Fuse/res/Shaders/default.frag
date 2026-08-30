@@ -18,6 +18,40 @@ uniform samplerCube uPointShadowMap3;
 uniform bool uUseTexture;
 uniform vec3 uColor;
 
+struct MaterialSurface {
+    vec3 baseColor;
+    vec3 tangentNormal;
+    float roughness;
+    float metallic;
+    vec3 emission;
+    float alpha;
+    float hasNormalMap;
+    float legacyLighting;
+};
+
+uniform int uMaterialAlphaMode;
+uniform float uMaterialAlphaCutoff;
+uniform bool uMaterialReceiveShadows;
+
+#ifndef FUSE_CUSTOM_MATERIAL
+MaterialSurface EvaluateMaterial(vec2 materialUv)
+{
+    MaterialSurface surface;
+    vec4 texel = uUseTexture ? texture(uTexture, materialUv) : vec4(uColor, 1.0);
+    surface.baseColor = texel.rgb;
+    surface.tangentNormal = vec3(0.0, 0.0, 1.0);
+    surface.roughness = 0.5;
+    surface.metallic = 0.0;
+    surface.emission = vec3(0.0);
+    surface.alpha = texel.a;
+    surface.hasNormalMap = 0.0;
+    surface.legacyLighting = 1.0;
+    return surface;
+}
+#else
+/*__FUSE_MATERIAL_GRAPH__*/
+#endif
+
 uniform bool uIsEmissive;
 uniform vec3 uEmissiveColor;
 uniform float uEmissiveStrength;
@@ -168,23 +202,50 @@ float SpotShadow(int lightIndex, SpotLightData light, vec3 worldPos, vec3 normal
 
 void main()
 {
-    vec3 color = uUseTexture ? texture(uTexture, vTexCoord).rgb : uColor;
+    MaterialSurface material = EvaluateMaterial(vTexCoord);
+    if (uMaterialAlphaMode == 1 && material.alpha < uMaterialAlphaCutoff)
+        discard;
+
+    vec3 color = material.baseColor;
     vec3 normal = normalize(vWorldNormal);
+    if (material.hasNormalMap > 0.5) {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(vTexCoord);
+        vec2 duv2 = dFdy(vTexCoord);
+        vec3 dp2perp = cross(dp2, normal);
+        vec3 dp1perp = cross(normal, dp1);
+        vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+        vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+        float invMax = inversesqrt(max(max(dot(tangent, tangent), dot(bitangent, bitangent)), 0.000001));
+        mat3 tangentFrame = mat3(tangent * invMax, bitangent * invMax, normal);
+        normal = normalize(tangentFrame * material.tangentNormal);
+    }
+
     vec3 viewDir = normalize(uCameraPosition.xyz - vWorldPos);
     vec3 lightDir = normalize(uDirectionalDirectionAmbient.xyz);
     vec3 directionalColor = uDirectionalColorCascadeBlend.rgb;
+    float roughness = clamp(material.roughness, 0.02, 1.0);
+    float metallic = clamp(material.metallic, 0.0, 1.0);
+    float shininess = mix(128.0, 4.0, roughness * roughness);
+    float diffuseWeight = 1.0 - metallic;
+    vec3 specularColor = mix(vec3(0.04), color, metallic);
 
     vec3 ambient = uDirectionalDirectionAmbient.w * directionalColor;
     float diffuseAmount = max(dot(normal, lightDir), 0.0);
     vec3 halfDir = normalize(lightDir + viewDir);
-    float specularAmount = pow(max(dot(normal, halfDir), 0.0), 32.0);
+    float specularAmount = pow(max(dot(normal, halfDir), 0.0), shininess);
+    float legacySpecularAmount = pow(max(dot(normal, halfDir), 0.0), 32.0);
 
     float directionalShadow = 0.0;
-    if (DirectionalShadowsEnabled() && length(directionalColor) > 0.0001)
+    if (uMaterialReceiveShadows && DirectionalShadowsEnabled() && length(directionalColor) > 0.0001)
         directionalShadow = DirectionalShadow(vWorldPos, normal, lightDir);
 
-    vec3 result = (ambient + (1.0 - directionalShadow) *
-        (diffuseAmount + specularAmount * 0.5) * directionalColor) * color;
+    vec3 materialDirectional = ambient * color + (1.0 - directionalShadow) * directionalColor *
+        (diffuseAmount * color * diffuseWeight + specularAmount * specularColor);
+    vec3 legacyDirectional = (ambient + (1.0 - directionalShadow) *
+        (diffuseAmount + legacySpecularAmount * 0.5) * directionalColor) * color;
+    vec3 result = mix(materialDirectional, legacyDirectional, material.legacyLighting);
 
     for (int i = 0; i < PointLightCount(); i++) {
         PointLightData light = uPointLights[i];
@@ -198,10 +259,14 @@ void main()
         float attenuation = falloff * falloff;
         float diffuse = max(dot(normal, localLightDir), 0.0);
         vec3 localHalf = normalize(localLightDir + viewDir);
-        float specular = pow(max(dot(normal, localHalf), 0.0), 32.0);
-        float shadow = PointShadow(light, vWorldPos);
-        result += (1.0 - shadow) * (diffuse + specular * 0.5) *
+        float specular = pow(max(dot(normal, localHalf), 0.0), shininess);
+        float legacySpecular = pow(max(dot(normal, localHalf), 0.0), 32.0);
+        float shadow = uMaterialReceiveShadows ? PointShadow(light, vWorldPos) : 0.0;
+        vec3 materialContribution = (1.0 - shadow) * light.colorShadowIndex.rgb * attenuation *
+            (diffuse * color * diffuseWeight + specular * specularColor);
+        vec3 legacyContribution = (1.0 - shadow) * (diffuse + legacySpecular * 0.5) *
             light.colorShadowIndex.rgb * attenuation * color;
+        result += mix(materialContribution, legacyContribution, material.legacyLighting);
     }
 
     for (int i = 0; i < SpotLightCount(); i++) {
@@ -221,14 +286,25 @@ void main()
         float attenuation = falloff * falloff;
         float diffuse = max(dot(normal, localLightDir), 0.0);
         vec3 localHalf = normalize(localLightDir + viewDir);
-        float specular = pow(max(dot(normal, localHalf), 0.0), 32.0);
-        float shadow = SpotShadow(i, light, vWorldPos, normal, localLightDir);
-        result += (1.0 - shadow) * (diffuse + specular * 0.5) *
+        float specular = pow(max(dot(normal, localHalf), 0.0), shininess);
+        float legacySpecular = pow(max(dot(normal, localHalf), 0.0), 32.0);
+        float shadow = uMaterialReceiveShadows ? SpotShadow(i, light, vWorldPos, normal, localLightDir) : 0.0;
+        vec3 materialContribution = (1.0 - shadow) * light.colorOuterCos.rgb * attenuation * spotFactor *
+            (diffuse * color * diffuseWeight + specular * specularColor);
+        vec3 legacyContribution = (1.0 - shadow) * (diffuse + legacySpecular * 0.5) *
             light.colorOuterCos.rgb * attenuation * spotFactor * color;
+        result += mix(materialContribution, legacyContribution, material.legacyLighting);
     }
+
+    result += material.emission;
 
     if (uIsEmissive)
         result += uEmissiveColor * uEmissiveStrength;
 
-    fragColor = vec4(result, uIsViewmodel);
+    // Opaque and masked materials must write an opaque framebuffer alpha.
+    // Keeping alpha at zero made the ImGui material preview blend the lit RGB
+    // away as transparent, which looked like an unlit/black preview.
+    float outputAlpha = uMaterialAlphaMode == 2 ? material.alpha : 1.0;
+    outputAlpha = max(uIsViewmodel, outputAlpha);
+    fragColor = vec4(result, outputAlpha);
 }

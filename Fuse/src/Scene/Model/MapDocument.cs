@@ -110,6 +110,15 @@ public class MapDocument
         mo.UvScale = obj.TryGetPropertyValue("uv_scale", out var uvNode) ? Vec2FromJson(uvNode!.AsArray()) : Vector2.One;
         mo.UvOffset = obj.TryGetPropertyValue("uv_offset", out var uvOffNode) ? Vec2FromJson(uvOffNode!.AsArray()) : Vector2.Zero;
         mo.UvRotation = obj.TryGetPropertyValue("uv_rotation", out var uvRotNode) ? (float)uvRotNode! : 0f;
+        mo.MaterialPath = obj.TryGetPropertyValue("material", out var materialNode) ? (string)materialNode! : null;
+        if (obj.TryGetPropertyValue("material_slots", out var slotsNode) && slotsNode is JsonArray slotsArray)
+        {
+            foreach (JsonNode? slot in slotsArray)
+            {
+                if (slot != null)
+                    mo.MaterialSlots.Add(slot.GetValue<string>());
+            }
+        }
         mo.Texture = obj.TryGetPropertyValue("texture", out var texNode) ? (string)texNode! : null;
         mo.Interactable = obj.TryGetPropertyValue("interactable", out var interactNode) ? (string)interactNode! : null;
         if (obj.TryGetPropertyValue("behaviours", out var bArr) && bArr is JsonArray behavioursArray)
@@ -243,7 +252,17 @@ public class MapDocument
                 j["uv_rotation"] = obj.UvRotation;
         }
 
-        // fuck 
+        if (!string.IsNullOrEmpty(obj.MaterialPath))
+            j["material"] = obj.MaterialPath;
+        if (obj.MaterialSlots.Count > 0)
+        {
+            var materialSlots = new JsonArray();
+            foreach (string slot in obj.MaterialSlots)
+                materialSlots.Add(slot);
+            j["material_slots"] = materialSlots;
+        }
+
+        // Legacy compatibility. New objects normally use material/material_slots.
         if (!string.IsNullOrEmpty(obj.Texture))
             j["texture"] = obj.Texture;
         if (!string.IsNullOrEmpty(obj.Interactable))
@@ -329,6 +348,7 @@ public class MapDocument
         var face = new Face(new Plane(normal, d));
 
         if (fj.TryGetPropertyValue("texture", out var tNode)) face.Texture = (string)tNode!;
+        if (fj.TryGetPropertyValue("material_slot", out var materialSlotNode)) face.MaterialSlot = (int)materialSlotNode!;
         if (fj.TryGetPropertyValue("u_axis", out var uaNode)) face.UAxis = Vec3FromJson(uaNode!.AsArray());
         if (fj.TryGetPropertyValue("v_axis", out var vaNode)) face.VAxis = Vec3FromJson(vaNode!.AsArray());
         if (fj.TryGetPropertyValue("u_scale", out var usNode)) face.UScale = (float)usNode!;
@@ -342,7 +362,7 @@ public class MapDocument
 
     private static JsonObject SerializeFace(Face face)
     {
-        return new JsonObject
+        var result = new JsonObject
         {
             ["normal"] = Vec3ToJson(face.Plane.Normal),
             ["d"] = face.Plane.D,
@@ -355,6 +375,13 @@ public class MapDocument
             ["v_offset"] = face.VOffset,
             ["rotation"] = face.Rotation
         };
+
+        // Slot zero is the implicit/default material and does not need to make
+        // legacy map files noisy when they are saved by the new editor.
+        if (face.MaterialSlot != 0)
+            result["material_slot"] = face.MaterialSlot;
+
+        return result;
     }
 
     private static Vector3 Vec3FromJson(JsonArray arr) => new(

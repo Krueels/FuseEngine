@@ -70,9 +70,13 @@ public class EditorSceneService
 
             var entity = _scene.Add(mesh, mapObj.Id);
             entity.MeshKey = mapObj.Mesh ?? mapObj.Model ?? "";
-            entity.TexturePath = mapObj.Texture ?? "";
-            if (mapObj.Body?.IsTrigger == true)
-                entity.TexturePath = "Textures/tools/toolstrigger.bmp";
+            entity.MaterialPath = mapObj.MaterialPath ?? "";
+            entity.MaterialPaths = mapObj.MaterialSlots.ToList();
+            entity.Material = assetService.GetOrCreateMaterial(mapObj.MaterialPath);
+            foreach (string slot in mapObj.MaterialSlots)
+                entity.Materials.Add(assetService.GetOrCreateMaterial(slot));
+            bool isTrigger = mapObj.Body?.IsTrigger == true;
+            entity.TexturePath = isTrigger ? "Textures/tools/toolstrigger.bmp" : (mapObj.Texture ?? "");
             entity.Visible = mapObj.Visible;
             entity.ModelScale = mapObj.ModelScale;
             entity.UvScale = mapObj.UvScale;
@@ -111,9 +115,17 @@ public class EditorSceneService
                 entity.Transform.Scale = mapObj.ModelScale;
             }
 
-            if (!string.IsNullOrEmpty(mapObj.Texture))
+            if (isTrigger)
+            {
+                assetService.GetOrCreateTexture(entity.TexturePath);
+                entity.Material = assetService.AssetManager.GetLegacyMaterial(entity.TexturePath);
+                entity.Materials.Clear();
+            }
+            else if (!string.IsNullOrEmpty(mapObj.Texture))
             {
                 assetService.GetOrCreateTexture(mapObj.Texture);
+                if (entity.Material == null)
+                    entity.Material = assetService.AssetManager.GetLegacyMaterial(mapObj.Texture);
             }
         }
     }
@@ -124,5 +136,20 @@ public class EditorSceneService
         string json = _doc.Serialize();
         File.WriteAllText(_mapPath, json);
         Logger.Info($"Map saved to {_mapPath}");
+    }
+
+    public void RefreshMaterials(EditorAssetService assetService)
+    {
+        foreach (var entity in _scene.Entities)
+        {
+            entity.Material = !string.IsNullOrWhiteSpace(entity.MaterialPath)
+                ? assetService.GetOrCreateMaterial(entity.MaterialPath)
+                : (!string.IsNullOrWhiteSpace(entity.TexturePath)
+                    ? assetService.AssetManager.GetLegacyMaterial(entity.TexturePath)
+                    : null);
+            entity.Materials.Clear();
+            foreach (string slot in entity.MaterialPaths)
+                entity.Materials.Add(assetService.GetOrCreateMaterial(slot));
+        }
     }
 }
