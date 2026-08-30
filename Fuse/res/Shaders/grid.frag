@@ -45,7 +45,9 @@ void main() {
     float fadeMajor = 1.0 - smoothstep(0.1, 0.6, density10);
     
     // Combina as linhas aplicando seus respectivos LODs
-    float alphaLine = max(alphaMinor * 0.4 * fadeMinor, alphaMajor * 0.8 * fadeMajor);
+    // Keep the editor grid readable without competing with the scene. The
+    // previous values made the dense far grid look like a second surface.
+    float alphaLine = max(alphaMinor * 0.16 * fadeMinor, alphaMajor * 0.36 * fadeMajor);
     
     // Fade de Distância (Horizonte - max 1500 units)
     float depth = abs(vViewPos.z);
@@ -57,5 +59,5 @@ void main() {
         discard;
     }
     
-    fragColor = vec4(uColor * 1.5, finalAlpha);
+    fragColor = vec4(uColor, finalAlpha);
 }

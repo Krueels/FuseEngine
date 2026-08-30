@@ -1726,9 +1726,9 @@
         1
       ],
       "light_intensity": 80,
-      "light_radius": 14.4,
-      "light_inner_cone": 0.57595867,
-      "light_outer_cone": 0.79412484,
+      "light_radius": 13.8,
+      "light_inner_cone": 0.45378563,
+      "light_outer_cone": 0.70685834,
       "light_cast_shadows": true,
       "light_shadow_bias": 0.001,
       "light_dynamic": false,

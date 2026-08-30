@@ -5,6 +5,7 @@
       "id": "new_box",
       "visible": true,
       "mesh": "cube",
+      "material": "Materials/DevMeasureCrate.fmat",
       "body": {
         "shape": "box",
         "position": [
@@ -33,6 +34,7 @@
       "id": "new_box_copy",
       "visible": true,
       "mesh": "cube",
+      "material": "Materials/DevMeasureCrate.fmat",
       "body": {
         "shape": "box",
         "position": [
@@ -207,6 +209,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -382,6 +385,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -557,6 +561,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -732,6 +737,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -907,6 +913,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1082,6 +1089,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1257,6 +1265,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1432,6 +1441,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1607,6 +1617,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1782,6 +1793,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -1957,6 +1969,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2132,6 +2145,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2307,6 +2321,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2482,6 +2497,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2657,6 +2673,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -2832,6 +2849,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3007,6 +3025,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3182,6 +3201,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3357,6 +3377,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3532,6 +3553,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3707,6 +3729,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3882,6 +3905,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
@@ -3916,7 +3940,7 @@
         0,
         0
       ],
-      "light_intensity": 1.45,
+      "light_intensity": 30,
       "light_radius": 17.6,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -3951,7 +3975,7 @@
         0,
         0
       ],
-      "light_intensity": 0.7,
+      "light_intensity": 30,
       "light_radius": 17.4,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -4127,6 +4151,7 @@
           "rotation": 0
         }
       ],
+      "material": "Materials/Concrete003.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "trimesh",
@@ -4153,6 +4178,7 @@
       }
     }
   ],
+  "skybox": "Textures/Skybox/night.jpg",
   "player_spawn": {
     "position": [
       2,

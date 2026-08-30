@@ -45,7 +45,9 @@ public unsafe class EditorViewport : IDisposable
         _fbo = _gl.GenFramebuffer();
         _camera = new ViewportCamera { ViewType = viewType };
         _gridMesh = CreateGridMesh(_gl, 10000.0f);
-        _debugDrawer = new Fuse.Debug.DebugDrawer(_gl) { Enabled = true };
+        // Debug geometry is opt-in. The editor should start clean and only show
+        // hitboxes/light volumes when the user explicitly enables them.
+        _debugDrawer = new Fuse.Debug.DebugDrawer(_gl) { Enabled = false };
         _lightingSystem = new EditorLightingSystem(gl, viewType == CameraViewType.Perspective3D, imageBasedLighting);
         CreateFbo(800, 600);
     }
@@ -74,6 +76,12 @@ public unsafe class EditorViewport : IDisposable
             RequestRender();
         }
     }
+
+    /// <summary>
+    /// Only the selected light gets a volume overlay. This prevents a dense
+    /// scene from being covered by every point/spot light radius at once.
+    /// </summary>
+    public string? SelectedLightId { get; set; }
     public bool IsVisibleInUi { get; private set; }
     public int LastVisibleEntityCount { get; private set; }
     public int LastCulledEntityCount { get; private set; }
@@ -216,53 +224,15 @@ public unsafe class EditorViewport : IDisposable
 
         DrawSkybox(assetService, view, proj);
 
-        // Draw Grid
-        var gridShader = assetService.GridShader;
-        if (gridShader != null && gridShader.ID != 0)
-        {
-            gridShader.Use();
-            gridShader.SetMat4("uView", view);
-            gridShader.SetMat4("uProj", proj);
-            gridShader.SetVec3("uColor", new Vector3(0.35f, 0.35f, 0.4f));
-            
-            // Distância de Fade do Grid (infinita para 2D, 1500 unidades para 3D)
-            float fadeDist = _camera.IsOrthographic ? 10000.0f : 100.0f;
-            gridShader.SetFloat("uFadeDistance", fadeDist);
-            gridShader.SetFloat("uSnapGrid", snapGrid);
-            gridShader.SetVec3("uCameraPos", _camera.Position);
-
-            _gl.Disable(EnableCap.CullFace);
-            _gl.Enable(EnableCap.Blend);
-            _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-
-            Vector3 camPos = _camera.Position;
-            Matrix4x4 model = Matrix4x4.CreateTranslation(camPos.X, 0, camPos.Z);
-            
-            if (_camera.ViewType == CameraViewType.Front)
-            {
-                model = Matrix4x4.CreateRotationX(MathF.PI / 2.0f) * Matrix4x4.CreateTranslation(camPos.X, camPos.Y, 0);
-            }
-            else if (_camera.ViewType == CameraViewType.Side)
-            {
-                model = Matrix4x4.CreateRotationZ(MathF.PI / 2.0f) * Matrix4x4.CreateTranslation(0, camPos.Y, camPos.Z);
-            }
-            gridShader.SetMat4("uModel", model);
-            
-            // Agora desenhamos um plano usando triângulos
-            _gridMesh.Draw(PrimitiveType.Triangles);
-            
-            _gl.Disable(EnableCap.Blend);
-            _gl.Enable(EnableCap.CullFace);
-            
-            // Restaura o shader original para o resto da cena
-            shader.Use();
-        }
-
         // Draw Entities
         bool isWireframe = _camera.IsOrthographic;
         if (isWireframe)
         {
-            _gl.Disable(EnableCap.DepthTest);
+            // Orthographic views still need depth testing; disabling it makes
+            // hidden wireframe edges and objects draw through one another.
+            _gl.Enable(EnableCap.DepthTest);
+            _gl.DepthFunc(DepthFunction.Less);
+            _gl.DepthMask(true);
             _gl.LineWidth(2.0f);
             shader.SetBool("uUseTexture", false);
             shader.SetVec3("uColor", new Vector3(0.8f, 0.8f, 0.8f));
@@ -387,11 +357,72 @@ public unsafe class EditorViewport : IDisposable
             _gl.DepthMask(true);
         }
 
+        // Draw the grid after opaque scene geometry. This lets the ground
+        // depth already be present while the negative polygon offset makes a
+        // coplanar floor grid pass consistently instead of flickering.
+        DrawGrid(assetService, view, proj, snapGrid);
+
         if (isWireframe)
         {
             _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
-            _gl.Enable(EnableCap.DepthTest);
         }
+
+        // Leave the viewport in a predictable state for the next pass/frame.
+        _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.DepthFunc(DepthFunction.Less);
+        _gl.DepthMask(true);
+        _gl.Disable(EnableCap.PolygonOffsetFill);
+    }
+
+    private void DrawGrid(EditorAssetService assetService, Matrix4x4 view, Matrix4x4 proj, float snapGrid)
+    {
+        var gridShader = assetService.GridShader;
+        if (gridShader == null || gridShader.ID == 0)
+            return;
+
+        gridShader.Use();
+        gridShader.SetMat4("uView", view);
+        gridShader.SetMat4("uProj", proj);
+        gridShader.SetVec3("uColor", new Vector3(0.35f, 0.35f, 0.4f));
+
+        // Keep the 2D views effectively infinite, but avoid a distracting
+        // second surface in the perspective view.
+        float fadeDist = _camera.IsOrthographic ? 10000.0f : 80.0f;
+        gridShader.SetFloat("uFadeDistance", fadeDist);
+        gridShader.SetFloat("uSnapGrid", MathF.Max(0.001f, snapGrid));
+        gridShader.SetVec3("uCameraPos", _camera.Position);
+
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.Disable(EnableCap.CullFace);
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        _gl.Enable(EnableCap.PolygonOffsetFill);
+        _gl.PolygonOffset(-1.0f, -1.0f);
+        _gl.DepthFunc(DepthFunction.Lequal);
+        _gl.DepthMask(false);
+
+        Vector3 camPos = _camera.Position;
+        Matrix4x4 model = Matrix4x4.CreateTranslation(camPos.X, 0, camPos.Z);
+        if (_camera.ViewType == CameraViewType.Front)
+        {
+            model = Matrix4x4.CreateRotationX(MathF.PI / 2.0f) *
+                    Matrix4x4.CreateTranslation(camPos.X, camPos.Y, 0);
+        }
+        else if (_camera.ViewType == CameraViewType.Side)
+        {
+            model = Matrix4x4.CreateRotationZ(MathF.PI / 2.0f) *
+                    Matrix4x4.CreateTranslation(0, camPos.Y, camPos.Z);
+        }
+
+        gridShader.SetMat4("uModel", model);
+        _gridMesh.Draw(PrimitiveType.Triangles);
+
+        _gl.DepthMask(true);
+        _gl.DepthFunc(DepthFunction.Less);
+        _gl.Disable(EnableCap.PolygonOffsetFill);
+        _gl.Disable(EnableCap.Blend);
+        _gl.Enable(EnableCap.CullFace);
     }
 
     private void DrawSkybox(EditorAssetService assetService, Matrix4x4 view, Matrix4x4 proj)
@@ -429,79 +460,111 @@ public unsafe class EditorViewport : IDisposable
         var frustum = new ViewFrustum(view * proj);
         LastVisibleDebugCount = 0;
 
-        if (!_debugDrawer.Enabled) return;
+        bool drawDebugGeometry = _debugDrawer.Enabled;
         _debugDrawer.Clear();
 
         var doc = sceneService.Document;
         var assets = assetService.AssetManager;
         var fuseResPath = assetService.FuseResPath;
 
-        // Object shapes
-        foreach (var mapObj in doc.Objects)
+        if (drawDebugGeometry)
         {
-            if (mapObj.Body == null) continue;
-            if (TryGetDebugBounds(mapObj, sceneService.Scene, out AABB debugBounds) &&
-                !frustum.Intersects(debugBounds))
-                continue;
-            LastVisibleDebugCount++;
-
-            var body = mapObj.Body;
-            var color = body.Mass > 0 ? new Vector3(1, 1, 0) : new Vector3(1, 0, 0);
-
-            switch (body.Shape)
+            // Object shapes
+            foreach (var mapObj in doc.Objects)
             {
-                case MapShapeType.Box when body.HalfExtents.HasValue:
-                    _debugDrawer.DrawBox(body.Position, body.Rotation, body.HalfExtents.Value, color);
-                    break;
-                case MapShapeType.Sphere when body.Radius.HasValue:
-                    _debugDrawer.DrawSphere(body.Position, body.Rotation, body.Radius.Value, color);
-                    break;
-                case MapShapeType.Capsule when body.Radius.HasValue && body.Height.HasValue:
-                    _debugDrawer.DrawCapsule(body.Position, body.Rotation, body.Height.Value * 0.5f, body.Radius.Value, color);
-                    break;
-                case MapShapeType.Trimesh when mapObj.IsModel && mapObj.Model != null:
-                    string modelPath = Path.GetFullPath(Path.Combine(fuseResPath, mapObj.Model));
-                    var model = assets.GetModel(modelPath);
-                    if (model != null && model.CollMesh != null)
-                    {
-                        _debugDrawer.DrawCachedLineMesh(model.CollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
-                    }
-                    break;
-                case MapShapeType.ConvexHull when mapObj.IsModel && mapObj.Model != null:
-                    string modelPathHull = Path.GetFullPath(Path.Combine(fuseResPath, mapObj.Model));
-                    var modelHull = assets.GetModel(modelPathHull);
-                    if (modelHull != null)
-                    {
-                        if (modelHull.ConvexCollMesh != null)
-                            _debugDrawer.DrawCachedLineMesh(modelHull.ConvexCollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
-                        else if (modelHull.CollMesh != null)
-                            _debugDrawer.DrawCachedLineMesh(modelHull.CollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
-                    }
-                    break;
+                if (mapObj.Body == null) continue;
+                if (TryGetDebugBounds(mapObj, sceneService.Scene, out AABB debugBounds) &&
+                    !frustum.Intersects(debugBounds))
+                    continue;
+                LastVisibleDebugCount++;
+
+                var body = mapObj.Body;
+                var color = body.Mass > 0 ? new Vector3(1, 1, 0) : new Vector3(1, 0, 0);
+
+                switch (body.Shape)
+                {
+                    case MapShapeType.Box when body.HalfExtents.HasValue:
+                        _debugDrawer.DrawBox(body.Position, body.Rotation, body.HalfExtents.Value, color);
+                        break;
+                    case MapShapeType.Sphere when body.Radius.HasValue:
+                        _debugDrawer.DrawSphere(body.Position, body.Rotation, body.Radius.Value, color);
+                        break;
+                    case MapShapeType.Capsule when body.Radius.HasValue && body.Height.HasValue:
+                        _debugDrawer.DrawCapsule(body.Position, body.Rotation, body.Height.Value * 0.5f, body.Radius.Value, color);
+                        break;
+                    case MapShapeType.Trimesh when mapObj.IsModel && mapObj.Model != null:
+                        string modelPath = Path.GetFullPath(Path.Combine(fuseResPath, mapObj.Model));
+                        var model = assets.GetModel(modelPath);
+                        if (model != null && model.CollMesh != null)
+                        {
+                            _debugDrawer.DrawCachedLineMesh(model.CollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
+                        }
+                        break;
+                    case MapShapeType.ConvexHull when mapObj.IsModel && mapObj.Model != null:
+                        string modelPathHull = Path.GetFullPath(Path.Combine(fuseResPath, mapObj.Model));
+                        var modelHull = assets.GetModel(modelPathHull);
+                        if (modelHull != null)
+                        {
+                            if (modelHull.ConvexCollMesh != null)
+                                _debugDrawer.DrawCachedLineMesh(modelHull.ConvexCollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
+                            else if (modelHull.CollMesh != null)
+                                _debugDrawer.DrawCachedLineMesh(modelHull.CollMesh, body.Position, body.Rotation, mapObj.ModelScale, color, view, proj);
+                        }
+                        break;
+                }
+            }
+
+            if (doc.PlayerSpawn != null)
+            {
+                var sp = doc.PlayerSpawn;
+                _debugDrawer.DrawCapsule(sp.Position, Quaternion.Identity, 0.9f, 0.5f, new Vector3(0, 1, 0));
+
+                float yawRad = float.DegreesToRadians(sp.Yaw);
+                float pitchRad = float.DegreesToRadians(sp.Pitch);
+                var fwd = new Vector3(
+                    MathF.Cos(yawRad) * MathF.Cos(pitchRad),
+                    MathF.Sin(pitchRad),
+                    MathF.Sin(yawRad) * MathF.Cos(pitchRad)
+                );
+                Vector3 eyePos = sp.Position + new Vector3(0, 0.9f, 0);
+                _debugDrawer.PushLine(eyePos, eyePos + fwd * 1.5f, new Vector3(0, 1, 1));
             }
         }
 
-        if (doc.PlayerSpawn != null)
+        // Light icons are always available independently of the hitbox toggle.
+        // The volume itself remains contextual and is shown only for the
+        // selected light, which is exactly the case where it is useful.
+        foreach (var light in sceneService.Scene.Lights)
         {
-            var sp = doc.PlayerSpawn;
-            _debugDrawer.DrawCapsule(sp.Position, Quaternion.Identity, 0.9f, 0.5f, new Vector3(0, 1, 0));
+            if (!light.Enabled)
+                continue;
 
-            float yawRad = float.DegreesToRadians(sp.Yaw);
-            float pitchRad = float.DegreesToRadians(sp.Pitch);
-            var fwd = new Vector3(
-                MathF.Cos(yawRad) * MathF.Cos(pitchRad),
-                MathF.Sin(pitchRad),
-                MathF.Sin(yawRad) * MathF.Cos(pitchRad)
-            );
-            Vector3 eyePos = sp.Position + new Vector3(0, 0.9f, 0);
-            _debugDrawer.PushLine(eyePos, eyePos + fwd * 1.5f, new Vector3(0, 1, 1));
+            string iconPath = light.Type switch
+            {
+                LightType.Directional => "Textures/Icons/DirectionalLight.png",
+                LightType.Spot => "Textures/Icons/SpotLight.png",
+                _ => "Textures/Icons/PointLight.png"
+            };
+            uint iconTexture = assetService.GetOrCreateTexture(iconPath);
+            if (iconTexture != 0)
+            {
+                float iconSize = light.Type == LightType.Directional ? 0.85f : 0.75f;
+                _debugDrawer.DrawBillboard(
+                    iconTexture,
+                    light.Position,
+                    new Vector2(iconSize),
+                    new Vector4(1.0f, 1.0f, 1.0f, 0.98f));
+            }
+
+            if (!string.IsNullOrEmpty(SelectedLightId) &&
+                light.Id.Equals(SelectedLightId, StringComparison.OrdinalIgnoreCase))
+            {
+                _debugDrawer.DrawLight(light);
+            }
         }
 
-        // Lights
-        foreach (var light in sceneService.Scene.Lights)
-            _debugDrawer.DrawLight(light);
-
-        onDrawDebug?.Invoke(_debugDrawer, assetService);
+        if (drawDebugGeometry)
+            onDrawDebug?.Invoke(_debugDrawer, assetService);
 
         _debugDrawer.Render(view, proj);
     }

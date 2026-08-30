@@ -23,7 +23,7 @@ public unsafe class EditorUI : IDisposable
     private bool _focusCameraRequested;
     private bool _showSaveAsDialog;
     private bool _showHollowDialog;
-    private bool _showHitBoxes = true;
+    private bool _showHitBoxes = false;
     private float _hollowThickness = 0.5f;
     private string _saveMapName = "map.bth";
     private bool _showDiagnostics;
@@ -261,6 +261,12 @@ public unsafe class EditorUI : IDisposable
         viewportTop.ShowHitboxes = _showHitBoxes;
         viewportFront.ShowHitboxes = _showHitBoxes;
         viewportSide.ShowHitboxes = _showHitBoxes;
+
+        string? selectedLightId = _selectedObject?.IsLight == true ? _selectedObject.Id : null;
+        viewport3D.SelectedLightId = selectedLightId;
+        viewportTop.SelectedLightId = selectedLightId;
+        viewportFront.SelectedLightId = selectedLightId;
+        viewportSide.SelectedLightId = selectedLightId;
 
         if (_showMapWindow)
             DrawMapWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
@@ -1616,6 +1622,10 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.Image((IntPtr)viewport.ColorTexture, vpSize, new Vector2(0, 1), new Vector2(1, 0));
 
+        // Editor-only overlays stay outside the OpenGL scene texture, so they
+        // cannot affect picking or the scene depth buffer.
+        DrawViewportOverlays(viewport, vpPos, vpSize, assetService);
+
         HandleAssetDropOnViewport(viewport, vpPos, vpSize, sceneService, assetService, history);
         bool isHovered = ImGui.IsItemHovered() && inputService.IsMapContext;
 
@@ -1946,7 +1956,14 @@ public unsafe class EditorUI : IDisposable
             {
                 EditorGizmo.GetMouseRay(ImGui.GetIO().MousePos, viewport.Camera.ViewMatrix, viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y), vpPos, vpSize, out Vector3 rayOrigin, out Vector3 rayDir);
                 
-                var hitObjects = PickObjects(rayOrigin, rayDir, sceneService, assetService);
+                // Billboard icons are drawn as editor overlays, so give their
+                // screen-space hit area priority over geometry behind them.
+                var hitObjects = PickLightGizmos(ImGui.GetIO().MousePos, viewport, vpPos, vpSize, sceneService);
+                foreach (MapObject objectHit in PickObjects(rayOrigin, rayDir, sceneService, assetService))
+                {
+                    if (!hitObjects.Contains(objectHit))
+                        hitObjects.Add(objectHit);
+                }
                 if (hitObjects.Count > 0)
                 {
                     MapObject hitObj;
@@ -2383,6 +2400,38 @@ public unsafe class EditorUI : IDisposable
         }
 
         ImGui.EndChild();
+    }
+
+    private List<MapObject> PickLightGizmos(
+        Vector2 mousePosition,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorSceneService sceneService)
+    {
+        var hits = new List<(MapObject obj, float distance)>();
+        foreach (var light in sceneService.Scene.Lights)
+        {
+            if (!light.Enabled)
+                continue;
+
+            MapObject? mapObject = sceneService.Document.Objects.FirstOrDefault(obj =>
+                obj.IsLight && obj.Id.Equals(light.Id, StringComparison.OrdinalIgnoreCase));
+            if (mapObject == null || !mapObject.Visible)
+                continue;
+
+            if (!TryWorldToScreen(light.Position, viewport, vpPos, vpSize, out Vector2 screenPosition))
+                continue;
+
+            float distance = Vector2.Distance(mousePosition, screenPosition);
+            if (distance <= 18.0f)
+                hits.Add((mapObject, distance));
+        }
+
+        return hits
+            .OrderBy(hit => hit.distance)
+            .Select(hit => hit.obj)
+            .ToList();
     }
 
     private List<MapObject> PickObjects(Vector3 rayOrigin, Vector3 rayDir, EditorSceneService sceneService, EditorAssetService assetService)
@@ -4712,6 +4761,195 @@ public unsafe class EditorUI : IDisposable
             sceneService.MarkModified(post);
             history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         }
+    }
+
+    private void DrawViewportOverlays(
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorAssetService assetService)
+    {
+        if (vpSize.X < 8.0f || vpSize.Y < 8.0f)
+            return;
+
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        DrawWorldAxes(drawList, viewport, vpPos, vpSize);
+        DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, assetService);
+        DrawOrientationWidget(drawList, viewport, vpPos, vpSize);
+    }
+
+    private void DrawWorldAxes(ImDrawListPtr drawList, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)
+    {
+        if (!TryWorldToScreen(Vector3.Zero, viewport, vpPos, vpSize, out Vector2 origin))
+            return;
+
+        float axisLength = viewport.Camera.IsOrthographic
+            ? MathF.Max(viewport.Camera.OrthoSize * 0.16f, 1.0f)
+            : float.Clamp(Vector3.Distance(viewport.Camera.Position, Vector3.Zero) * 0.12f, 1.0f, 8.0f);
+
+        Vector3[] axes = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
+        string[] labels = ["X", "Y", "Z"];
+        Vector4[] colors =
+        [
+            new Vector4(0.95f, 0.20f, 0.20f, 0.95f),
+            new Vector4(0.25f, 0.90f, 0.35f, 0.95f),
+            new Vector4(0.25f, 0.55f, 1.00f, 0.95f)
+        ];
+
+        uint originColor = ImGui.GetColorU32(new Vector4(1.0f, 0.78f, 0.18f, 0.95f));
+        drawList.AddCircleFilled(origin, 4.5f, originColor, 16);
+        drawList.AddCircle(origin, 7.0f, ImGui.GetColorU32(new Vector4(0.05f, 0.05f, 0.05f, 0.85f)), 16, 1.5f);
+
+        for (int i = 0; i < axes.Length; i++)
+        {
+            if (!TryWorldToScreen(axes[i] * axisLength, viewport, vpPos, vpSize, out Vector2 endpoint))
+                continue;
+
+            uint color = ImGui.GetColorU32(colors[i]);
+            drawList.AddLine(origin, endpoint, ImGui.GetColorU32(new Vector4(0.02f, 0.02f, 0.02f, 0.9f)), 4.0f);
+            drawList.AddLine(origin, endpoint, color, 2.0f);
+            drawList.AddText(endpoint + new Vector2(4.0f, -8.0f), color, labels[i]);
+        }
+
+        drawList.AddText(origin + new Vector2(6.0f, 5.0f), originColor, "O");
+    }
+
+    private void DrawSelectionHighlight(
+        ImDrawListPtr drawList,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorAssetService assetService)
+    {
+        if (_currentMode != EditorMode.Select || _selectedObjects.Count == 0)
+            return;
+
+        if (GetSelectionAABB(assetService, out Vector3 min, out Vector3 max))
+        {
+            Vector3[] corners =
+            [
+                new Vector3(min.X, min.Y, min.Z), new Vector3(max.X, min.Y, min.Z),
+                new Vector3(min.X, max.Y, min.Z), new Vector3(max.X, max.Y, min.Z),
+                new Vector3(min.X, min.Y, max.Z), new Vector3(max.X, min.Y, max.Z),
+                new Vector3(min.X, max.Y, max.Z), new Vector3(max.X, max.Y, max.Z)
+            ];
+
+            Vector2 screenMin = new(float.MaxValue);
+            Vector2 screenMax = new(float.MinValue);
+            bool hasPoint = false;
+            foreach (Vector3 corner in corners)
+            {
+                if (!TryWorldToScreen(corner, viewport, vpPos, vpSize, out Vector2 point))
+                    continue;
+
+                screenMin = Vector2.Min(screenMin, point);
+                screenMax = Vector2.Max(screenMax, point);
+                hasPoint = true;
+            }
+
+            if (hasPoint && screenMax.X - screenMin.X > 1.0f && screenMax.Y - screenMin.Y > 1.0f)
+            {
+                screenMin -= new Vector2(3.0f);
+                screenMax += new Vector2(3.0f);
+                uint outline = ImGui.GetColorU32(new Vector4(0.02f, 0.02f, 0.02f, 0.9f));
+                uint selected = ImGui.GetColorU32(new Vector4(1.0f, 0.62f, 0.08f, 1.0f));
+                drawList.AddRect(screenMin, screenMax, outline, 3.0f, ImDrawFlags.None, 4.0f);
+                drawList.AddRect(screenMin, screenMax, selected, 3.0f, ImDrawFlags.None, 2.0f);
+
+                // Corner brackets make the active selection readable over bright
+                // materials without filling the selected object with a tint.
+                float bracket = MathF.Min(14.0f, MathF.Min(screenMax.X - screenMin.X, screenMax.Y - screenMin.Y) * 0.25f);
+                foreach ((Vector2 a, Vector2 b, Vector2 c, Vector2 d) in new[]
+                {
+                    (screenMin, screenMin + new Vector2(bracket, 0), screenMin, screenMin + new Vector2(0, bracket)),
+                    (new Vector2(screenMax.X, screenMin.Y), new Vector2(screenMax.X - bracket, screenMin.Y), new Vector2(screenMax.X, screenMin.Y), new Vector2(screenMax.X, screenMin.Y + bracket)),
+                    (new Vector2(screenMin.X, screenMax.Y), new Vector2(screenMin.X + bracket, screenMax.Y), new Vector2(screenMin.X, screenMax.Y), new Vector2(screenMin.X, screenMax.Y - bracket)),
+                    (screenMax, new Vector2(screenMax.X - bracket, screenMax.Y), screenMax, new Vector2(screenMax.X, screenMax.Y - bracket))
+                })
+                {
+                    drawList.AddLine(a, b, selected, 3.0f);
+                    drawList.AddLine(c, d, selected, 3.0f);
+                }
+            }
+        }
+
+        if (_selectedObject?.Body != null &&
+            TryWorldToScreen(_selectedObject.Body.Position, viewport, vpPos, vpSize, out Vector2 pivot))
+        {
+            uint pivotColor = ImGui.GetColorU32(new Vector4(1.0f, 0.78f, 0.18f, 1.0f));
+            drawList.AddCircleFilled(pivot, 4.0f, pivotColor, 12);
+            drawList.AddCircle(pivot, 8.0f, ImGui.GetColorU32(new Vector4(0.02f, 0.02f, 0.02f, 0.9f)), 16, 2.0f);
+        }
+    }
+
+    private static void DrawOrientationWidget(
+        ImDrawListPtr drawList,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize)
+    {
+        if (vpSize.X < 120.0f || vpSize.Y < 90.0f)
+            return;
+
+        Vector2 center = vpPos + new Vector2(vpSize.X - 58.0f, 52.0f);
+        drawList.AddCircleFilled(center, 34.0f, ImGui.GetColorU32(new Vector4(0.03f, 0.04f, 0.06f, 0.78f)), 24);
+        drawList.AddCircle(center, 34.0f, ImGui.GetColorU32(new Vector4(0.55f, 0.60f, 0.70f, 0.75f)), 24, 1.0f);
+
+        Vector3[] axes = [Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ];
+        string[] labels = ["X", "Y", "Z"];
+        Vector4[] colors =
+        [
+            new Vector4(0.95f, 0.20f, 0.20f, 1.0f),
+            new Vector4(0.25f, 0.90f, 0.35f, 1.0f),
+            new Vector4(0.25f, 0.55f, 1.00f, 1.0f)
+        ];
+
+        for (int i = 0; i < axes.Length; i++)
+        {
+            Vector3 axis = axes[i];
+            Vector2 direction = new(
+                Vector3.Dot(axis, viewport.Camera.Right),
+                -Vector3.Dot(axis, viewport.Camera.Up));
+            Vector2 endpoint = center + direction * 25.0f;
+            float alpha = Vector3.Dot(axis, viewport.Camera.Front) < 0.0f ? 1.0f : 0.45f;
+            Vector4 color = colors[i];
+            color.W = alpha;
+            uint axisColor = ImGui.GetColorU32(color);
+            drawList.AddLine(center, endpoint, axisColor, alpha > 0.9f ? 2.5f : 1.5f);
+            drawList.AddCircleFilled(endpoint, alpha > 0.9f ? 3.5f : 2.5f, axisColor, 12);
+            drawList.AddText(endpoint + new Vector2(4.0f, -7.0f), axisColor, labels[i]);
+        }
+
+        drawList.AddCircleFilled(center, 3.0f, ImGui.GetColorU32(new Vector4(1.0f, 0.78f, 0.18f, 1.0f)), 12);
+    }
+
+    private bool TryWorldToScreen(
+        Vector3 worldPos,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        out Vector2 screenPos)
+    {
+        var view = viewport.Camera.ViewMatrix;
+        var proj = viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y);
+        Vector4 clip = Vector4.Transform(new Vector4(worldPos, 1.0f), view * proj);
+        if (clip.W <= 0.0001f || !float.IsFinite(clip.W))
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+
+        Vector3 ndc = new Vector3(clip.X, clip.Y, clip.Z) / clip.W;
+        if (!float.IsFinite(ndc.X) || !float.IsFinite(ndc.Y))
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+
+        screenPos = new Vector2(
+            vpPos.X + (ndc.X + 1.0f) * 0.5f * vpSize.X,
+            vpPos.Y + (1.0f - ndc.Y) * 0.5f * vpSize.Y);
+        return true;
     }
 
     private Vector2 WorldToScreen(Vector3 worldPos, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)

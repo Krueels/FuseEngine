@@ -164,6 +164,9 @@ public unsafe class DebugDrawer : IDisposable
         _gl.DeleteProgram(_shader);
         _gl.DeleteBuffer(_vbo);
         _gl.DeleteVertexArray(_vao);
+        _gl.DeleteProgram(_billboardShader);
+        _gl.DeleteBuffer(_billboardVbo);
+        _gl.DeleteVertexArray(_billboardVao);
     }
 
     public bool Enabled
@@ -318,18 +321,69 @@ public unsafe class DebugDrawer : IDisposable
 
         if (light.Type == LightType.Point)
         {
-            DrawSphere(pos, Quaternion.Identity, 0.2f, color);
-            DrawCircle(pos, light.Radius, color * 0.3f);
+            // A small source marker plus a complete wire sphere makes the
+            // attenuation radius immediately readable from any viewport angle.
+            DrawSphere(pos, Quaternion.Identity, 0.2f, color, 8, 12);
+            DrawSphere(pos, Quaternion.Identity, MathF.Max(0.01f, light.Radius), color * 0.30f, 10, 16);
         }
-        else
+        else if (light.Type == LightType.Spot)
         {
             DrawSphere(pos, Quaternion.Identity, 0.15f, color);
             Vector3 dir = Vector3.Normalize(light.Direction);
-            Vector3 end = pos + dir * 1.5f;
+            float length = MathF.Max(0.25f, light.Radius);
+
+            // Outer cone = the complete influence boundary.
+            DrawCone(pos, dir, length, light.OuterConeAngle, color * 0.55f, 24);
+            // Inner cone = the high-intensity core, with a brighter accent.
+            Vector3 innerColor = Vector3.Min(color * 1.15f, Vector3.One);
+            DrawCone(pos, dir, length, light.InnerConeAngle, innerColor * 0.85f, 24);
+        }
+        else
+        {
+            Vector3 dir = light.Direction.LengthSquared() > 0.0001f
+                ? Vector3.Normalize(light.Direction)
+                : -Vector3.UnitY;
+            float length = 2.5f;
+            Vector3 end = pos + dir * length;
             PushLine(pos, end, color);
 
-            float coneRadius = 1.5f * MathF.Tan(light.OuterConeAngle);
-            DrawRing(pos + dir * 1.5f, dir, coneRadius, color * 0.4f);
+            // Directional/environment light arrowhead.
+            Vector3 reference = MathF.Abs(Vector3.Dot(dir, Vector3.UnitY)) < 0.9f
+                ? Vector3.UnitY
+                : Vector3.UnitX;
+            Vector3 right = Vector3.Normalize(Vector3.Cross(dir, reference));
+            Vector3 up = Vector3.Normalize(Vector3.Cross(right, dir));
+            float head = 0.28f;
+            PushLine(end, end - dir * head + right * head * 0.55f, color);
+            PushLine(end, end - dir * head - right * head * 0.55f, color);
+            PushLine(end, end - dir * head + up * head * 0.55f, color);
+            PushLine(end, end - dir * head - up * head * 0.55f, color);
+        }
+    }
+
+    private void DrawCone(Vector3 apex, Vector3 direction, float length, float angle, Vector3 color, int segments)
+    {
+        Vector3 dir = direction.LengthSquared() > 0.0001f
+            ? Vector3.Normalize(direction)
+            : -Vector3.UnitY;
+        Vector3 reference = MathF.Abs(Vector3.Dot(dir, Vector3.UnitY)) < 0.9f
+            ? Vector3.UnitY
+            : Vector3.UnitX;
+        Vector3 right = Vector3.Normalize(Vector3.Cross(dir, reference));
+        Vector3 up = Vector3.Normalize(Vector3.Cross(right, dir));
+        float safeAngle = float.Clamp(angle, 0.01f, 1.45f);
+        float ringRadius = length * MathF.Tan(safeAngle);
+        Vector3 ringCenter = apex + dir * length;
+
+        float step = MathF.PI * 2.0f / segments;
+        Vector3 previous = ringCenter + (right * MathF.Cos(0.0f) + up * MathF.Sin(0.0f)) * ringRadius;
+        for (int i = 1; i <= segments; i++)
+        {
+            float a = i * step;
+            Vector3 current = ringCenter + (right * MathF.Cos(a) + up * MathF.Sin(a)) * ringRadius;
+            PushLine(previous, current, color);
+            PushLine(apex, current, color);
+            previous = current;
         }
     }
 
@@ -411,6 +465,9 @@ public unsafe class DebugDrawer : IDisposable
     {
         if (_billboardQuads.Count == 0) return;
 
+        // Light icons are editor markers and must remain readable even when
+        // the light is behind a wall or another selected object.
+        _gl.Disable(GLEnum.DepthTest);
         _gl.Enable(GLEnum.Blend);
         _gl.BlendFunc(GLEnum.SrcAlpha, GLEnum.OneMinusSrcAlpha);
         _gl.DepthMask(false);
@@ -459,6 +516,7 @@ public unsafe class DebugDrawer : IDisposable
 
         _gl.DepthMask(true);
         _gl.Disable(GLEnum.Blend);
+        _gl.Enable(GLEnum.DepthTest);
         _gl.BindVertexArray(0);
     }
 
@@ -560,7 +618,11 @@ public unsafe class DebugDrawer : IDisposable
 
     public void Render(Matrix4x4 view, Matrix4x4 proj)
     {
-        if (_lines.Count == 0) return;
+        if (_lines.Count == 0)
+        {
+            FlushBillboards(view, proj);
+            return;
+        }
 
         var verts = new DebugVert[_lines.Count * 2];
         for (int i = 0; i < _lines.Count; i++)
