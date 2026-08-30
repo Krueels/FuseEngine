@@ -282,8 +282,19 @@ public class Player : IDisposable
         HandleSprint();
         if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
         HandleCrouch();
-        HandleFlashlightToggle();
         ApplyMovement(dt);
+    }
+
+    /// <summary>
+    /// Processes one-shot input that must be evaluated once per rendered frame,
+    /// rather than once per fixed-timestep simulation step.
+    /// </summary>
+    public void FrameInputUpdate()
+    {
+        if (_isDead || ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
+            return;
+
+        HandleFlashlightToggle();
     }
 
     private void HandleFlashlightToggle()

@@ -8,6 +8,7 @@ public sealed class AnimationNode
     public required string Name { get; init; }
     public int Parent { get; init; } = -1;
     public Matrix4x4 RestLocal;
+    public Matrix4x4 RestGlobal;
     public Matrix4x4 Local;
     public Matrix4x4 Global;
 }
@@ -31,9 +32,75 @@ public sealed class Skeleton
             n.Local = n.RestLocal;
             n.Global = Matrix4x4.Identity;
         }
+
+        // Save the bind-pose global transform. Runtime systems can use it to
+        // read animation markers without ever modifying the skeleton.
+        ComputeGlobalTransforms();
+        foreach (var n in Nodes)
+            n.RestGlobal = n.Global;
     }
 
-    public bool TryGetNodeIndex(string name, out int index) => _nodeMap.TryGetValue(name, out index);
+    public bool TryGetNodeIndex(string name, out int index)
+    {
+        if (_nodeMap.TryGetValue(name, out index))
+            return true;
+
+        for (int i = 0; i < Nodes.Length; i++)
+        {
+            if (Nodes[i].Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+                return true;
+            }
+        }
+
+        index = -1;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns only the rotational delta of an animated node relative to the
+    /// bind pose. Translation and scale are deliberately discarded.
+    /// </summary>
+    public bool TryGetNodeAnimationRotation(string name, out Quaternion delta)
+    {
+        delta = Quaternion.Identity;
+        if (!TryGetNodeIndex(name, out int index))
+            return false;
+
+        AnimationNode node = Nodes[index];
+        if (!TryExtractRotation(node.RestGlobal, out Quaternion restRotation) ||
+            !TryExtractRotation(node.Global, out Quaternion currentRotation))
+            return false;
+
+        // current = delta * rest in the animation convention used by the
+        // skeleton, therefore delta = current * inverse(rest).
+        delta = currentRotation * Quaternion.Inverse(restRotation);
+        if (delta.LengthSquared() < 0.000001f || !IsFinite(delta))
+        {
+            delta = Quaternion.Identity;
+            return true;
+        }
+
+        delta = Quaternion.Normalize(delta);
+        return IsFinite(delta);
+    }
+
+    private static bool TryExtractRotation(Matrix4x4 animationMatrix, out Quaternion rotation)
+    {
+        rotation = Quaternion.Identity;
+        Matrix4x4 standardMatrix = Matrix4x4.Transpose(animationMatrix);
+        if (!Matrix4x4.Decompose(standardMatrix, out _, out rotation, out _))
+            return false;
+        if (!IsFinite(rotation) || rotation.LengthSquared() < 0.000001f)
+        {
+            rotation = Quaternion.Identity;
+            return false;
+        }
+
+        rotation = Quaternion.Normalize(rotation);
+        return true;
+    }
 
     public void ComputeGlobalTransforms()
     {
@@ -109,4 +176,8 @@ public sealed class Skeleton
         float.IsFinite(m.M21) && float.IsFinite(m.M22) && float.IsFinite(m.M23) && float.IsFinite(m.M24) &&
         float.IsFinite(m.M31) && float.IsFinite(m.M32) && float.IsFinite(m.M33) && float.IsFinite(m.M34) &&
         float.IsFinite(m.M41) && float.IsFinite(m.M42) && float.IsFinite(m.M43) && float.IsFinite(m.M44);
+
+    private static bool IsFinite(in Quaternion q) =>
+        float.IsFinite(q.X) && float.IsFinite(q.Y) &&
+        float.IsFinite(q.Z) && float.IsFinite(q.W);
 }

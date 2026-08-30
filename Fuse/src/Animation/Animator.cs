@@ -91,6 +91,13 @@ public sealed class Animator
 
     internal SkinnedModel? Model { get; set; }
 
+    /// <summary>
+    /// Reads an animated marker's rotation without exposing or applying its
+    /// translation to gameplay transforms.
+    /// </summary>
+    public bool TryGetNodeAnimationRotation(string nodeName, out Quaternion delta) =>
+        _skeleton.TryGetNodeAnimationRotation(nodeName, out delta);
+
     public void Update(float dt)
     {
         //Logger.Info($"[AnimatorUpdate] clip={CurrentClip?.Name} playing={Playing} dt={dt:F4} bones={FinalBoneMatrices.Length}");

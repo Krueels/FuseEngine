@@ -63,9 +63,38 @@ public class Camera
 
     public Matrix4x4 GetViewMatrix()
     {
+        GetViewBasis(out Vector3 front, out Vector3 up);
+        return GetViewMatrix(front, up);
+    }
+
+    /// <summary>
+    /// Returns the basis used by the current view, including camera shake.
+    /// </summary>
+    public void GetViewBasis(out Vector3 front, out Vector3 up)
+    {
+        front = _front;
         float totalRoll = _roll + float.DegreesToRadians(_shakeTilt);
-        var rolledUp = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, totalRoll));
-        return Matrix4x4.CreateLookAt(_position, _position + _front, rolledUp);
+        up = Vector3.Transform(_up, Quaternion.CreateFromAxisAngle(_front, totalRoll));
+    }
+
+    /// <summary>
+    /// Builds a view matrix from an explicit orientation while preserving this
+    /// camera's position. Used for render-only animation poses.
+    /// </summary>
+    public Matrix4x4 GetViewMatrix(Vector3 front, Vector3 up)
+    {
+        if (front.LengthSquared() < 0.000001f)
+            front = _front;
+        else
+            front = Vector3.Normalize(front);
+
+        up -= front * Vector3.Dot(up, front);
+        if (up.LengthSquared() < 0.000001f)
+            up = _up;
+        else
+            up = Vector3.Normalize(up);
+
+        return Matrix4x4.CreateLookAt(_position, _position + front, up);
     }
 
     private float _nearPlane = 0.1f;

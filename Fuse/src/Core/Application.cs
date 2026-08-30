@@ -297,6 +297,12 @@ public unsafe class Application : IDisposable
                 if (!_paused)
                 {
                     UpdateUIFocus();
+
+                    // One-shot player input must be processed once per render frame.
+                    // In particular, flashlight toggling must not run once per fixed
+                    // physics step when a slow frame executes multiple steps.
+                    player.FrameInputUpdate();
+
                     _physicsAccumulator = System.Math.Min(
                         _physicsAccumulator + dt,
                         FixedPhysicsDelta * MaxPhysicsStepsPerFrame);
@@ -326,13 +332,15 @@ public unsafe class Application : IDisposable
                 // the camera and must be refreshed for every rendered frame.
                 _weaponSystem?.RenderUpdate(dt);
 
+                Matrix4x4 renderView = _weaponSystem?.RenderViewMatrix ?? camera.GetViewMatrix();
+
                 // Particle & Decal Updates
                 _weaponSystem?.Render(_renderer, camera, aspect);
                 _renderer.UpdateDecals(dt, _physics);
 
 
                 // World Render
-                _renderer.RenderFrame(_sceneManager.ActiveScene, camera, _physics);
+                _renderer.RenderFrame(_sceneManager.ActiveScene, camera, _physics, renderView);
 
                 //deathscren
                 _deathScreen?.Update(dt, _player.IsDead);
@@ -346,7 +354,7 @@ public unsafe class Application : IDisposable
 
                 // Debug Drawer (OrientationGizmo uses ImGui foreground draw list, must run before _imgui.Render)
                 if (_debugDrawer.Enabled)
-                    RenderDebug(aspect);
+                    RenderDebug(aspect, renderView);
 
                 if (_screenshotRequested)
                 {
@@ -538,13 +546,13 @@ public unsafe class Application : IDisposable
             ref _screenshotRequested,
             RequestMapReload);
     }
-    private void RenderDebug(float aspect)
+    private void RenderDebug(float aspect, Matrix4x4? renderViewOverride = null)
     {
         _debugDrawer.Clear();
         _debugDrawer.InvokeOnDrawGizmos();
         _sceneManager.DrawDebug(_debugDrawer);
         _debugDrawer.DrawPlayerDebug(_player);
-        _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect);
+        _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect, renderViewOverride);
 
         // Skinned model skeleton debug
         foreach (var e in _sceneManager.ActiveScene.Entities)
@@ -568,7 +576,9 @@ public unsafe class Application : IDisposable
             _debugDrawer.DrawLight(light);
 
         _debugDrawer.DrawDecalsDebug(_renderer.DecalQueue);
-        _debugDrawer.Render(_player.Camera.GetViewMatrix(), _player.Camera.GetProjectionMatrix(aspect));
+        _debugDrawer.Render(
+            renderViewOverride ?? _player.Camera.GetViewMatrix(),
+            _player.Camera.GetProjectionMatrix(aspect));
         OrientationGizmo.Draw(_player.Camera);
     }
 

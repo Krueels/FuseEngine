@@ -520,12 +520,16 @@ public unsafe class MasterRenderer
     }
 
 
-    public void RenderFrame(Scene scene, Camera camera, Physics.PhysicsWorld physics)
+    public void RenderFrame(
+        Scene scene,
+        Camera camera,
+        Physics.PhysicsWorld physics,
+        Matrix4x4? renderViewOverride = null)
     {
         using var mainRenderScope = _profiler.Measure(ProfilerSection.MainRender);
 
         float aspect = (float)_scrWidth / _scrHeight;
-        var view = camera.GetViewMatrix();
+        var view = renderViewOverride ?? camera.GetViewMatrix();
         var proj = camera.GetProjectionMatrix(aspect);
 
         // --- 0. Estado limpo no início do frame ---

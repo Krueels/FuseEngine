@@ -67,6 +67,17 @@ public class WeaponSystem : IDisposable
     private Vector3 _frozenPosition;
     private Quaternion _frozenRotation;
 
+    // Render-only camera pose. The gameplay camera itself is never modified.
+    private string? _cameraAnimationNode;
+    private Quaternion _cameraAnimationRotation = Quaternion.Identity;
+    private bool _cameraAnimationActive;
+    private Vector3 _renderFront;
+    private Vector3 _renderUp;
+    private Matrix4x4 _renderViewMatrix;
+
+    public Vector3 RenderFront => _renderFront;
+    public Matrix4x4 RenderViewMatrix => _renderViewMatrix;
+
     // Debug
     public Debug.DebugDrawer? DebugDrawer { get; set; }
     public bool DecalDebugEnabled { get; set; } = false;
@@ -80,6 +91,9 @@ public class WeaponSystem : IDisposable
         _assets = assets;
         _audio = audio;
         _sceneManager = sceneManager;
+
+        _camera.GetViewBasis(out _renderFront, out _renderUp);
+        _renderViewMatrix = _camera.GetViewMatrix(_renderFront, _renderUp);
     }
 
     public void RegisterWeapon(IWeapon weapon)
@@ -179,7 +193,11 @@ public class WeaponSystem : IDisposable
         if (_currentWeapon == null || !_currentWeapon.CanFire())
             return false;
 
-        _currentWeapon.Fire(_camera.Position, _camera.Front);
+        // Use the same render direction as the crosshair/world image. The
+        // origin remains the gameplay camera position and never moves.
+        UpdateCameraAnimationPose();
+        UpdateRenderCameraPose();
+        _currentWeapon.Fire(_camera.Position, _renderFront);
         return true;
     }
 
@@ -234,6 +252,8 @@ public class WeaponSystem : IDisposable
     /// </summary>
     public void RenderUpdate(float dt)
     {
+        UpdateCameraAnimationPose();
+        UpdateRenderCameraPose();
         UpdateViewmodelTransform(dt);
     }
 
@@ -241,7 +261,7 @@ public class WeaponSystem : IDisposable
     {
         if (_muzzleFlashVisible && _muzzleFlashTexture != null)
         {
-            var view = camera.GetViewMatrix();
+            var view = _renderViewMatrix;
             var proj = camera.GetProjectionMatrix(aspect);
             renderer.QueueBillboard(view, proj,
                 _muzzleFlashTexture.ID,
@@ -292,6 +312,11 @@ public class WeaponSystem : IDisposable
         _viewmodelAnimator = new Animator(model.Skeleton);
         model.Link(_viewmodelAnimator);
 
+        _cameraAnimationNode = model.Skeleton.Nodes
+            .FirstOrDefault(node => node.Name.Equals("camera", StringComparison.OrdinalIgnoreCase))?.Name;
+        _cameraAnimationRotation = Quaternion.Identity;
+        _cameraAnimationActive = false;
+
         _viewmodelEntity = _sceneManager.ActiveScene.Add(null, $"viewmodel_{weapon.Id}");
         _viewmodelEntity.SkinnedModel = model;
         _viewmodelEntity.Animator = _viewmodelAnimator;
@@ -321,6 +346,52 @@ public class WeaponSystem : IDisposable
         }
         _viewmodelAnimator = null;
         _viewmodelModel = null;
+        _cameraAnimationNode = null;
+        _cameraAnimationRotation = Quaternion.Identity;
+        _cameraAnimationActive = false;
+    }
+
+    private void UpdateCameraAnimationPose()
+    {
+        _cameraAnimationActive = false;
+        _cameraAnimationRotation = Quaternion.Identity;
+
+        if (_viewmodelAnimator == null || string.IsNullOrEmpty(_cameraAnimationNode))
+            return;
+
+        if (!_viewmodelAnimator.TryGetNodeAnimationRotation(
+                _cameraAnimationNode, out Quaternion rotation))
+            return;
+
+        _cameraAnimationRotation = rotation;
+        _cameraAnimationActive = true;
+    }
+
+    private void UpdateRenderCameraPose()
+    {
+        _camera.GetViewBasis(out Vector3 front, out Vector3 up);
+
+        if (_cameraAnimationActive)
+        {
+            front = Vector3.Transform(front, _cameraAnimationRotation);
+            up = Vector3.Transform(up, _cameraAnimationRotation);
+        }
+
+        if (front.LengthSquared() < 0.000001f)
+            front = _camera.Front;
+        else
+            front = Vector3.Normalize(front);
+
+        // Re-orthogonalize the basis so animation never introduces shear.
+        up -= front * Vector3.Dot(up, front);
+        if (up.LengthSquared() < 0.000001f)
+            up = _camera.Up;
+        else
+            up = Vector3.Normalize(up);
+
+        _renderFront = front;
+        _renderUp = up;
+        _renderViewMatrix = _camera.GetViewMatrix(front, up);
     }
 
     internal void UpdateViewmodelTransform(float dt)

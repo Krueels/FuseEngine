@@ -214,10 +214,14 @@ public sealed class EnemySystem : IDisposable
         return _spiderMovementBodiesForRaycast;
     }
 
-    public void DrawDebug(Renderer.MasterRenderer renderer, Camera camera, float aspect)
+    public void DrawDebug(
+        Renderer.MasterRenderer renderer,
+        Camera camera,
+        float aspect,
+        Matrix4x4? viewOverride = null)
     {
         var enemyTex = _assets.GetTexture(Core.Bible.Tex(Core.Bible.EnemyIcon));
-        var view = camera.GetViewMatrix();
+        var view = viewOverride ?? camera.GetViewMatrix();
         var proj = camera.GetProjectionMatrix(aspect);
 
         for (int i = 0; i < _enemies.Count; i++)
