@@ -223,10 +223,12 @@ public static class MapSerializer
         Renderer.Scene scene, PhysicsWorld physics,
         AssetManagement.AssetManager assets,
         out PlayerSpawn? playerSpawn,
+        out string? skyboxPath,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
+        skyboxPath = null;
         scene.Clear();
         var createdBodies = new List<RigidBody>();
 
@@ -256,6 +258,9 @@ public static class MapSerializer
             Logger.Error($"Unknown map version: {version}");
             return null;
         }
+
+        if (root.TryGetPropertyValue("skybox", out var skyboxNode) && skyboxNode != null)
+            skyboxPath = (string?)skyboxNode;
 
         if (root.TryGetPropertyValue("player_spawn", out var spawnNode))
         {
@@ -689,10 +694,12 @@ public static class MapSerializer
         Renderer.Scene scene, PhysicsWorld physics,
         AssetManagement.AssetManager assets,
         out PlayerSpawn? playerSpawn,
+        out string? skyboxPath,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
+        skyboxPath = null;
         if (!File.Exists(filepath))
         {
             Logger.Error($"Failed to load map: {filepath}");
@@ -700,6 +707,6 @@ public static class MapSerializer
         }
 
         string json = File.ReadAllText(filepath);
-        return DeserializeScene(json, scene, physics, assets, out playerSpawn, resPath, onProgress);
+        return DeserializeScene(json, scene, physics, assets, out playerSpawn, out skyboxPath, resPath, onProgress);
     }
 }

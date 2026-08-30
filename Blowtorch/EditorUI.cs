@@ -36,6 +36,7 @@ public unsafe class EditorUI : IDisposable
     private bool _resumePendingActionAfterSave;
     private bool _executePendingDocumentAction;
     private bool _initialMapStatusChecked;
+    private string? _previewSkyboxDocumentPath;
 
     private enum PendingDocumentAction { None, New, Open, Exit }
     private PendingDocumentAction _pendingDocumentAction;
@@ -231,6 +232,8 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.End();
 
+        SyncSkyboxPreview(sceneService, assetService, viewport3D, viewportTop, viewportFront, viewportSide);
+
         // Draw the graph before map input is processed so it can claim the
         // MaterialGraph context in the same frame when it has focus.
         _materialEditor.Draw(assetService, sceneService, inputService);
@@ -253,6 +256,52 @@ public unsafe class EditorUI : IDisposable
 
         HandleKeyboardShortcuts(sceneService, assetService, history, inputService);
         Undo.EndFrame(history, sceneService, assetService);
+    }
+
+    private void SyncSkyboxPreview(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide)
+    {
+        string configuredPath = sceneService.Document.SkyboxPath ?? "";
+        if (string.Equals(_previewSkyboxDocumentPath, configuredPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _previewSkyboxDocumentPath = configuredPath;
+        if (!assetService.SetSkyboxTexture(configuredPath))
+        {
+            Logger.Warn($"Skybox '{configuredPath}' could not be loaded in the editor. Using the default skybox.");
+            assetService.SetSkyboxTexture(null);
+        }
+
+        viewport3D.RequestRender();
+        viewportTop.RequestRender();
+        viewportFront.RequestRender();
+        viewportSide.RequestRender();
+    }
+
+    private void ApplySkyboxPreview(
+        string configuredPath,
+        EditorAssetService assetService,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide)
+    {
+        _previewSkyboxDocumentPath = configuredPath;
+        if (!assetService.SetSkyboxTexture(configuredPath))
+        {
+            Logger.Warn($"Skybox '{configuredPath}' could not be loaded in the editor. Using the default skybox.");
+            assetService.SetSkyboxTexture(null);
+        }
+
+        viewport3D.RequestRender();
+        viewportTop.RequestRender();
+        viewportFront.RequestRender();
+        viewportSide.RequestRender();
     }
 
     private void DuplicateObject(MapObject obj, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -303,16 +352,41 @@ public unsafe class EditorUI : IDisposable
 
     private void UpdateEntitiesVisibilityRecursive(MapDocument doc, Fuse.Renderer.Scene scene, MapObject obj)
     {
-        var children = doc.Objects.Where(o => o.ParentId == obj.Id);
-        foreach (var child in children)
+        // A group does not have a render entity of its own. Recalculate the
+        // complete sub-tree and update both mesh entities and light objects.
+        // The previous implementation only visited descendants and only
+        // touched Scene.Entities, so hidden groups could still render lights
+        // and some descendants could keep their old visibility state.
+        foreach (MapObject candidate in doc.Objects)
         {
-            var entity = scene.Entities.FirstOrDefault(e => e.Id == child.Id);
+            if (!candidate.Id.Equals(obj.Id, StringComparison.OrdinalIgnoreCase) &&
+                !IsDescendantOf(candidate, obj, doc))
+                continue;
+
+            bool isVisible = candidate.IsGloballyVisible(doc);
+            var entity = scene.Entities.FirstOrDefault(e => e.Id == candidate.Id);
             if (entity != null)
-            {
-                entity.Visible = child.IsGloballyVisible(doc);
-            }
-            UpdateEntitiesVisibilityRecursive(doc, scene, child);
+                entity.Visible = isVisible;
+
+            var light = scene.Lights.FirstOrDefault(l => l.Id == candidate.Id);
+            if (light != null)
+                light.Enabled = isVisible;
         }
+    }
+
+    private void ToggleObjectVisibility(
+        MapObject obj,
+        MapDocument doc,
+        Fuse.Renderer.Scene scene,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        Undo.RecordState(_frameBeginState);
+        obj.Visible = !obj.Visible;
+        UpdateEntitiesVisibilityRecursive(doc, scene, obj);
+        SyncLight(sceneService, obj);
+        Undo.ForceEnd(history, sceneService, assetService);
     }
 
     private void GroupSelected(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -396,6 +470,167 @@ public unsafe class EditorUI : IDisposable
         sceneService.PopulateScene(assetService);
     }
 
+    private enum HierarchyIconKind
+    {
+        Group,
+        Brush,
+        Model,
+        Box,
+        Sphere,
+        Capsule,
+        PointLight,
+        SpotLight,
+        DirectionalLight,
+        Other
+    }
+
+    private static HierarchyIconKind GetHierarchyIconKind(MapObject obj)
+    {
+        if (obj.IsLight)
+        {
+            return obj.LightType switch
+            {
+                "spot" => HierarchyIconKind.SpotLight,
+                "directional" => HierarchyIconKind.DirectionalLight,
+                _ => HierarchyIconKind.PointLight
+            };
+        }
+        if ((obj.Body == null || obj.Body.Shape == MapShapeType.None) &&
+            string.IsNullOrEmpty(obj.Mesh) && string.IsNullOrEmpty(obj.Model))
+            return HierarchyIconKind.Group;
+        if (obj.IsModel) return HierarchyIconKind.Model;
+        if (obj is Brush) return HierarchyIconKind.Brush;
+        return obj.Body?.Shape switch
+        {
+            MapShapeType.Sphere => HierarchyIconKind.Sphere,
+            MapShapeType.Capsule => HierarchyIconKind.Capsule,
+            MapShapeType.Box or MapShapeType.Trimesh => HierarchyIconKind.Box,
+            _ => HierarchyIconKind.Other
+        };
+    }
+
+    private static string GetHierarchyTypeLabel(MapObject obj)
+    {
+        return GetHierarchyIconKind(obj) switch
+        {
+            HierarchyIconKind.Group => "Group",
+            HierarchyIconKind.Brush => "Brush",
+            HierarchyIconKind.Model => "Model",
+            HierarchyIconKind.Box => "Box",
+            HierarchyIconKind.Sphere => "Sphere",
+            HierarchyIconKind.Capsule => "Capsule",
+            HierarchyIconKind.PointLight => "Point light",
+            HierarchyIconKind.SpotLight => "Spot light",
+            HierarchyIconKind.DirectionalLight => "Directional light",
+            _ => "Object"
+        };
+    }
+
+    private static Vector4 GetHierarchyIconColor(HierarchyIconKind kind)
+    {
+        return kind switch
+        {
+            HierarchyIconKind.PointLight or HierarchyIconKind.SpotLight or HierarchyIconKind.DirectionalLight
+                => new Vector4(1.0f, 0.78f, 0.22f, 1.0f),
+            HierarchyIconKind.Group => new Vector4(0.46f, 0.70f, 0.95f, 1.0f),
+            HierarchyIconKind.Model => new Vector4(0.70f, 0.52f, 0.95f, 1.0f),
+            HierarchyIconKind.Brush or HierarchyIconKind.Box => new Vector4(0.35f, 0.82f, 0.68f, 1.0f),
+            HierarchyIconKind.Sphere or HierarchyIconKind.Capsule => new Vector4(0.32f, 0.72f, 0.95f, 1.0f),
+            _ => new Vector4(0.70f, 0.72f, 0.76f, 1.0f)
+        };
+    }
+
+    // Small vector icons keep the hierarchy independent from emoji/icon fonts.
+    private static void DrawHierarchyIcon(ImDrawListPtr drawList, Vector2 center, HierarchyIconKind kind, uint color)
+    {
+        const float size = 6.0f;
+        switch (kind)
+        {
+            case HierarchyIconKind.Group:
+                drawList.AddRectFilled(center + new Vector2(-size, -size + 2), center + new Vector2(size, size), color, 1.5f);
+                drawList.AddRectFilled(center + new Vector2(-size + 1, -size), center + new Vector2(-1, -size + 2), color, 1.0f);
+                break;
+            case HierarchyIconKind.Sphere:
+                drawList.AddCircle(center, size, color, 12, 1.8f);
+                drawList.AddCircle(center - new Vector2(2, 2), 1.2f, color, 8, 1.2f);
+                break;
+            case HierarchyIconKind.Capsule:
+                drawList.AddLine(center - new Vector2(0, size), center + new Vector2(0, size), color, 2.5f);
+                drawList.AddCircle(center - new Vector2(0, size - 1), 3.0f, color, 10, 1.5f);
+                drawList.AddCircle(center + new Vector2(0, size - 1), 3.0f, color, 10, 1.5f);
+                break;
+            case HierarchyIconKind.Model:
+                drawList.AddLine(center + new Vector2(0, -size), center + new Vector2(size, 0), color, 1.8f);
+                drawList.AddLine(center + new Vector2(size, 0), center + new Vector2(0, size), color, 1.8f);
+                drawList.AddLine(center + new Vector2(0, size), center + new Vector2(-size, 0), color, 1.8f);
+                drawList.AddLine(center + new Vector2(-size, 0), center + new Vector2(0, -size), color, 1.8f);
+                drawList.AddLine(center + new Vector2(0, -size), center + new Vector2(0, 1), color, 1.2f);
+                break;
+            case HierarchyIconKind.PointLight:
+                drawList.AddCircle(center, 3.0f, color, 10, 1.8f);
+                drawList.AddLine(center - new Vector2(size, 0), center - new Vector2(4, 0), color, 1.5f);
+                drawList.AddLine(center + new Vector2(4, 0), center + new Vector2(size, 0), color, 1.5f);
+                drawList.AddLine(center - new Vector2(0, size), center - new Vector2(0, 4), color, 1.5f);
+                drawList.AddLine(center + new Vector2(0, 4), center + new Vector2(0, size), color, 1.5f);
+                break;
+            case HierarchyIconKind.SpotLight:
+                drawList.AddCircleFilled(center - new Vector2(0, 4), 2.2f, color);
+                drawList.AddLine(center - new Vector2(4, 1), center + new Vector2(-size, size), color, 1.5f);
+                drawList.AddLine(center + new Vector2(4, 1), center + new Vector2(size, size), color, 1.5f);
+                drawList.AddLine(center + new Vector2(-size, size), center + new Vector2(size, size), color, 1.5f);
+                break;
+            case HierarchyIconKind.DirectionalLight:
+                drawList.AddLine(center - new Vector2(size, size), center + new Vector2(size, size), color, 1.8f);
+                drawList.AddLine(center + new Vector2(size, size), center + new Vector2(size - 3, size - 1), color, 1.8f);
+                drawList.AddLine(center + new Vector2(size, size), center + new Vector2(size - 1, size - 3), color, 1.8f);
+                break;
+            default:
+                drawList.AddRect(center - new Vector2(size - 1), center + new Vector2(size - 1), color, 1.0f, ImDrawFlags.None, 1.8f);
+                break;
+        }
+    }
+
+    private static void DrawVisibilityIcon(ImDrawListPtr drawList, Vector2 center, bool visible, uint color)
+    {
+        if (visible)
+        {
+            drawList.AddLine(center + new Vector2(-8, 0), center + new Vector2(-3, -4), color, 1.5f);
+            drawList.AddLine(center + new Vector2(-3, -4), center + new Vector2(3, -4), color, 1.5f);
+            drawList.AddLine(center + new Vector2(3, -4), center + new Vector2(8, 0), color, 1.5f);
+            drawList.AddLine(center + new Vector2(-8, 0), center + new Vector2(-3, 4), color, 1.5f);
+            drawList.AddLine(center + new Vector2(-3, 4), center + new Vector2(3, 4), color, 1.5f);
+            drawList.AddLine(center + new Vector2(3, 4), center + new Vector2(8, 0), color, 1.5f);
+            drawList.AddCircleFilled(center, 2.2f, color);
+        }
+        else
+        {
+            drawList.AddLine(center - new Vector2(7, 7), center + new Vector2(7, 7), color, 1.8f);
+            drawList.AddCircle(center, 5.0f, color, 10, 1.2f);
+        }
+    }
+
+    private static void DrawInspectorObjectHeader(MapObject obj)
+    {
+        HierarchyIconKind iconKind = GetHierarchyIconKind(obj);
+        Vector2 iconStart = ImGui.GetCursorScreenPos();
+        ImGui.Dummy(new Vector2(28.0f, 30.0f));
+        DrawHierarchyIcon(ImGui.GetWindowDrawList(), iconStart + new Vector2(14.0f, 15.0f), iconKind,
+            ImGui.ColorConvertFloat4ToU32(GetHierarchyIconColor(iconKind)));
+        ImGui.SameLine();
+        ImGui.BeginGroup();
+        ImGui.TextColored(new Vector4(0.90f, 0.93f, 0.98f, 1.0f), obj.Id);
+        ImGui.TextDisabled(GetHierarchyTypeLabel(obj));
+        ImGui.EndGroup();
+        ImGui.Separator();
+    }
+
+    private static void DrawInspectorMultiHeader(int count)
+    {
+        ImGui.TextColored(new Vector4(0.38f, 0.78f, 0.98f, 1.0f), $"{count} objects selected");
+        ImGui.TextDisabled("Changes below apply to the whole selection.");
+        ImGui.Separator();
+    }
+
     private void DrawObjectNode(MapObject obj, MapDocument doc, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, string filter, ref MapObject? objectToDelete, ref MapObject? objectToDuplicate)
     {
         if (!HierarchyMatchesFilter(obj, doc, filter))
@@ -404,7 +639,8 @@ public unsafe class EditorUI : IDisposable
         bool isSelected = _selectedObjects.Contains(obj);
         bool hasChildren = children.Count > 0;
 
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.FramePadding | (isSelected ? ImGuiTreeNodeFlags.Selected : 0);
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.FramePadding | ImGuiTreeNodeFlags.SpanAvailWidth |
+                                   (isSelected ? ImGuiTreeNodeFlags.Selected : 0);
         if (!hasChildren)
         {
             flags |= ImGuiTreeNodeFlags.Leaf;
@@ -414,14 +650,19 @@ public unsafe class EditorUI : IDisposable
             flags |= ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.OpenOnDoubleClick;
         }
 
-        bool isEmptyGroup = (obj.Body == null || obj.Body.Shape == MapShapeType.None) && string.IsNullOrEmpty(obj.Mesh) && string.IsNullOrEmpty(obj.Model);
-        string typeEmoji = isEmptyGroup ? "📁" : (obj.IsModel ? "🗿" : (obj is Brush ? "📐" : (obj.Body?.Shape == MapShapeType.Sphere ? "🔮" : (obj.Body?.Shape == MapShapeType.Capsule ? "💊" : "📦"))));
-
         bool isGloballyVisible = obj.IsGloballyVisible(doc);
 
-        string label = $"{typeEmoji} {obj.Id}";
-
-        bool isOpen = ImGui.TreeNodeEx($"##node_{obj.Id}", flags, label);
+        bool isOpen = ImGui.TreeNodeEx($"##node_{obj.Id}", flags, "");
+        Vector2 nodeMin = ImGui.GetItemRectMin();
+        Vector2 nodeMax = ImGui.GetItemRectMax();
+        float labelStart = nodeMin.X + ImGui.GetTreeNodeToLabelSpacing();
+        HierarchyIconKind iconKind = GetHierarchyIconKind(obj);
+        uint iconColor = ImGui.ColorConvertFloat4ToU32(GetHierarchyIconColor(iconKind));
+        ImDrawListPtr nodeDrawList = ImGui.GetWindowDrawList();
+        Vector2 iconCenter = new(labelStart + 8.0f, (nodeMin.Y + nodeMax.Y) * 0.5f);
+        DrawHierarchyIcon(nodeDrawList, iconCenter, iconKind, iconColor);
+        nodeDrawList.AddText(ImGui.GetFont(), ImGui.GetFontSize(), new Vector2(labelStart + 20.0f, nodeMin.Y + ImGui.GetStyle().FramePadding.Y),
+            ImGui.GetColorU32(ImGuiCol.Text), obj.Id);
 
         if (ImGui.BeginDragDropSource())
         {
@@ -557,37 +798,32 @@ public unsafe class EditorUI : IDisposable
                 _selectedObject = obj;
             }
 
-            if (ImGui.MenuItem("🔍 Focus Camera"))
+            if (ImGui.MenuItem("Focus Camera"))
             {
                 FocusCameraOnObject(obj, viewport3D, viewportTop, viewportFront, viewportSide);
             }
-            if (ImGui.MenuItem("👁 Toggle Visibility"))
+            if (ImGui.MenuItem("Toggle Visibility"))
             {
-                Undo.RecordState(_frameBeginState);
-                obj.Visible = !obj.Visible;
-                var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                if (entity != null) entity.Visible = obj.IsGloballyVisible(doc);
-                UpdateEntitiesVisibilityRecursive(doc, sceneService.Scene, obj);
-                Undo.ForceEnd(history, sceneService, assetService);
+                ToggleObjectVisibility(obj, doc, sceneService.Scene, sceneService, assetService, history);
             }
             ImGui.Separator();
-            if (ImGui.MenuItem("📦 Group Selected"))
+            if (ImGui.MenuItem("Group Selected"))
             {
                 GroupSelected(sceneService, assetService, history);
             }
             if (_selectedObjects.Any(o => !string.IsNullOrEmpty(o.ParentId)))
             {
-                if (ImGui.MenuItem("📤 Ungroup Selected"))
+                if (ImGui.MenuItem("Ungroup Selected"))
                 {
                     UngroupSelected(sceneService, assetService, history);
                 }
             }
             ImGui.Separator();
-            if (ImGui.MenuItem("📋 Duplicate"))
+            if (ImGui.MenuItem("Duplicate"))
             {
                 objectToDuplicate = obj;
             }
-            if (ImGui.MenuItem("❌ Delete"))
+            if (ImGui.MenuItem("Delete"))
             {
                 objectToDelete = obj;
             }
@@ -598,32 +834,36 @@ public unsafe class EditorUI : IDisposable
         float rightAlignPos = ImGui.GetWindowWidth() - 35;
         ImGui.SetCursorPosX(rightAlignPos);
 
-        string visIcon = obj.Visible ? "👁" : "◌";
         bool inheritedHidden = !isGloballyVisible && obj.Visible;
-
-        if (inheritedHidden)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.5f, 0.5f, 0.5f, 0.5f));
-            visIcon = "👁";
-        }
 
         ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0, 0, 0, 0));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0, 0, 0, 0));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.2f, 0.2f, 0.2f, 0.5f));
 
-        if (ImGui.Button($"{visIcon}##visbtn_{obj.Id}", new Vector2(24, 20)))
+        ImGui.PushID($"visibility_{obj.Id}");
+        bool visibilityButtonClicked = ImGui.Button("##toggle", new Vector2(24, 20));
+        Vector2 visibilityMin = ImGui.GetItemRectMin();
+        Vector2 visibilityMax = ImGui.GetItemRectMax();
+        // Keep the icon clickable even when a tree row overlaps the right-side item.
+        bool visibilityHitClicked = !visibilityButtonClicked &&
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
+            ImGui.IsMouseHoveringRect(visibilityMin, visibilityMax);
+        ImGui.PopID();
+
+        if (visibilityButtonClicked || visibilityHitClicked)
         {
-            Undo.RecordState(_frameBeginState);
-            obj.Visible = !obj.Visible;
-            var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-            if (entity != null) entity.Visible = obj.IsGloballyVisible(doc);
-            UpdateEntitiesVisibilityRecursive(doc, sceneService.Scene, obj);
-            Undo.ForceEnd(history, sceneService, assetService);
+            ToggleObjectVisibility(obj, doc, sceneService.Scene, sceneService, assetService, history);
         }
         ImGui.PopStyleColor(3);
-        if (inheritedHidden)
+        uint visibilityColor = ImGui.ColorConvertFloat4ToU32(inheritedHidden
+            ? new Vector4(0.50f, 0.50f, 0.52f, 0.65f)
+            : new Vector4(0.78f, 0.82f, 0.88f, 1.0f));
+        DrawVisibilityIcon(ImGui.GetWindowDrawList(), (visibilityMin + visibilityMax) * 0.5f, obj.Visible && isGloballyVisible, visibilityColor);
+        if (ImGui.IsItemHovered())
         {
-            ImGui.PopStyleColor(1);
+            ImGui.BeginTooltip();
+            ImGui.TextUnformatted(obj.Visible ? (isGloballyVisible ? "Visible" : "Hidden by parent") : "Hidden");
+            ImGui.EndTooltip();
         }
 
         if (isOpen)
@@ -637,6 +877,46 @@ public unsafe class EditorUI : IDisposable
             }
             ImGui.TreePop();
         }
+    }
+
+    private void DrawHierarchyCategory(
+        string categoryId,
+        string label,
+        IEnumerable<MapObject> rootObjects,
+        MapDocument doc,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide,
+        string filter,
+        ref MapObject? objectToDelete,
+        ref MapObject? objectToDuplicate)
+    {
+        List<MapObject> matchingObjects = rootObjects
+            .Where(obj => HierarchyMatchesFilter(obj, doc, filter))
+            .ToList();
+        if (matchingObjects.Count == 0)
+            return;
+
+        ImGui.PushStyleColor(ImGuiCol.Header, new Vector4(0.10f, 0.15f, 0.22f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, new Vector4(0.15f, 0.23f, 0.33f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, new Vector4(0.18f, 0.29f, 0.40f, 1.0f));
+        bool isOpen = ImGui.CollapsingHeader($"{label}  ({matchingObjects.Count})##hierarchyCategory_{categoryId}", ImGuiTreeNodeFlags.DefaultOpen);
+        ImGui.PopStyleColor(3);
+
+        if (!isOpen)
+            return;
+
+        ImGui.PushStyleVar(ImGuiStyleVar.IndentSpacing, 18.0f);
+        foreach (MapObject obj in matchingObjects)
+        {
+            DrawObjectNode(obj, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide,
+                filter, ref objectToDelete, ref objectToDuplicate);
+        }
+        ImGui.PopStyleVar();
     }
 
     private static bool HierarchyMatchesFilter(MapObject obj, MapDocument doc, string filter)
@@ -976,6 +1256,74 @@ public unsafe class EditorUI : IDisposable
         }
     }
 
+    private bool DrawToolbarButton(string label, string shortcut, bool selected)
+    {
+        Vector2 textSize = ImGui.CalcTextSize(label);
+        float width = MathF.Max(62.0f, textSize.X + 24.0f);
+        ImGui.PushStyleColor(ImGuiCol.Button, selected
+            ? new Vector4(0.16f, 0.39f, 0.62f, 1.0f)
+            : new Vector4(0.10f, 0.12f, 0.16f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.22f, 0.48f, 0.70f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.12f, 0.32f, 0.52f, 1.0f));
+        bool clicked = ImGui.Button($"{label}##editorToolbar_{label}", new Vector2(width, 0));
+        ImGui.PopStyleColor(3);
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.BeginTooltip();
+            ImGui.TextUnformatted(label);
+            ImGui.TextDisabled($"Shortcut: {shortcut}");
+            ImGui.EndTooltip();
+        }
+        return clicked;
+    }
+
+    private void DrawEditorToolbar(EditorSceneService sceneService)
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 3.0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8.0f, 5.0f));
+        ImGui.BeginChild("EditorToolbar", new Vector2(0, 38), ImGuiChildFlags.Borders);
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextColored(new Vector4(0.55f, 0.75f, 0.95f, 1.0f), "TOOLS");
+        ImGui.SameLine();
+        ImGui.TextDisabled("MODE");
+        ImGui.SameLine();
+        if (DrawToolbarButton("Select", "Esc", _currentMode == EditorMode.Select))
+            _currentMode = EditorMode.Select;
+        ImGui.SameLine(0, 4);
+        if (DrawToolbarButton("Brush", "B", _currentMode == EditorMode.DrawBrush))
+            _currentMode = EditorMode.DrawBrush;
+
+        ImGui.SameLine(0, 12);
+        ImGui.TextDisabled("TRANSFORM");
+        ImGui.SameLine();
+        if (DrawToolbarButton("Move", "W", _gizmoOperation == GizmoOperation.Translate))
+            _gizmoOperation = GizmoOperation.Translate;
+        ImGui.SameLine(0, 4);
+        if (DrawToolbarButton("Rotate", "E", _gizmoOperation == GizmoOperation.Rotate))
+            _gizmoOperation = GizmoOperation.Rotate;
+        ImGui.SameLine(0, 4);
+        if (DrawToolbarButton("Scale", "R", _gizmoOperation == GizmoOperation.Scale))
+            _gizmoOperation = GizmoOperation.Scale;
+        ImGui.SameLine(0, 4);
+        if (DrawToolbarButton("Shear", "T", _gizmoOperation == GizmoOperation.Shear))
+            _gizmoOperation = GizmoOperation.Shear;
+
+        string toolbarStatus = _selectedObjects.Count == 0
+            ? (sceneService.IsDirty ? "Modified" : "Saved")
+            : $"{_selectedObjects.Count} selected  |  {(sceneService.IsDirty ? "Modified" : "Saved")}";
+        float rightEdge = ImGui.GetWindowSize().X - ImGui.GetStyle().WindowPadding.X - ImGui.CalcTextSize(toolbarStatus).X - 16.0f;
+        if (ImGui.GetCursorPosX() < rightEdge)
+        {
+            ImGui.SameLine(rightEdge);
+            ImGui.TextDisabled(toolbarStatus);
+        }
+
+        ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+    }
+
     private void DrawViewportWindow(
         EditorWindow window,
         EditorViewport viewport3D, 
@@ -991,19 +1339,7 @@ public unsafe class EditorUI : IDisposable
 
         if (ImGui.Begin("Scene Viewports", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
-            if (ImGui.RadioButton("Select (Esc)", _currentMode == EditorMode.Select)) _currentMode = EditorMode.Select;
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Brush (B)", _currentMode == EditorMode.DrawBrush)) _currentMode = EditorMode.DrawBrush;
-            ImGui.SameLine();
-            ImGui.Text("|");
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Translate (W)", _gizmoOperation == GizmoOperation.Translate)) _gizmoOperation = GizmoOperation.Translate;
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Rotate (E)", _gizmoOperation == GizmoOperation.Rotate)) _gizmoOperation = GizmoOperation.Rotate;
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Scale (R)", _gizmoOperation == GizmoOperation.Scale)) _gizmoOperation = GizmoOperation.Scale;
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Shear (T)", _gizmoOperation == GizmoOperation.Shear)) _gizmoOperation = GizmoOperation.Shear;
+            DrawEditorToolbar(sceneService);
 
             if (inputService.IsMapContext &&
                 !ImGui.IsMouseDown(ImGuiMouseButton.Right) &&
@@ -2072,6 +2408,57 @@ public unsafe class EditorUI : IDisposable
             ImGui.Text($"Total Objects: {doc.Objects.Count}");
         }
 
+        if (ImGui.CollapsingHeader("Environment", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            string currentSkyboxPath = doc.SkyboxPath ?? "";
+            string currentSkyboxLabel = string.IsNullOrWhiteSpace(currentSkyboxPath)
+                ? $"Default ({Path.GetFileName(EditorAssetService.DefaultSkyboxPath)})"
+                : currentSkyboxPath;
+            string selectedSkyboxPath = currentSkyboxPath;
+            bool skyboxChanged = false;
+
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.BeginCombo("Skybox##mapSkybox", currentSkyboxLabel))
+            {
+                if (ImGui.Selectable(
+                        $"Default ({Path.GetFileName(EditorAssetService.DefaultSkyboxPath)})##defaultSkybox",
+                        string.IsNullOrWhiteSpace(currentSkyboxPath)))
+                {
+                    selectedSkyboxPath = "";
+                    skyboxChanged = true;
+                }
+
+                foreach (string skyboxPath in assetService.EnumerateSkyboxes())
+                {
+                    bool selected = skyboxPath.Equals(currentSkyboxPath, StringComparison.OrdinalIgnoreCase);
+                    if (ImGui.Selectable(skyboxPath, selected))
+                    {
+                        selectedSkyboxPath = skyboxPath;
+                        skyboxChanged = true;
+                    }
+                    if (selected)
+                        ImGui.SetItemDefaultFocus();
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.TextDisabled("Use an equirectangular image from res/Textures/Skybox.");
+            if (skyboxChanged && !selectedSkyboxPath.Equals(currentSkyboxPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Undo.RecordState(_frameBeginState);
+                doc.SkyboxPath = selectedSkyboxPath;
+                ApplySkyboxPreview(
+                    selectedSkyboxPath,
+                    assetService,
+                    viewport3D,
+                    viewportTop,
+                    viewportFront,
+                    viewportSide);
+                Undo.ForceEnd(history, sceneService, assetService);
+            }
+        }
+
         if (doc.PlayerSpawn != null && ImGui.CollapsingHeader("Player Spawn", ImGuiTreeNodeFlags.None))
         {
             var sp = doc.PlayerSpawn;
@@ -2112,10 +2499,15 @@ public unsafe class EditorUI : IDisposable
 
         // --- Scene Hierarchy Outliner ---
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Scene Hierarchy");
+        ImGui.TextColored(new Vector4(0.82f, 0.87f, 0.94f, 1.0f), "Scene Hierarchy");
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{doc.Objects.Count} objects  |  {_selectedObjects.Count} selected");
         ImGui.Separator();
-        ImGui.SetNextItemWidth(-1);
+        ImGui.SetNextItemWidth(-34);
         ImGui.InputTextWithHint("##HierarchyFilter", "Search objects, lights, models...", ref _hierarchyFilter, 128);
+        ImGui.SameLine();
+        if (ImGui.Button("X##ClearHierarchyFilter", new Vector2(26, 0)))
+            _hierarchyFilter = "";
 
         float listHeight = ImGui.GetContentRegionAvail().Y * 0.5f - 10;
         if (listHeight < 150f) listHeight = 150f; // Ensure minimum height
@@ -2123,22 +2515,33 @@ public unsafe class EditorUI : IDisposable
         ImGui.BeginChild("HierarchyTree", new Vector2(0, listHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.HorizontalScrollbar);
         
         var rootObjects = doc.Objects.Where(o => string.IsNullOrEmpty(o.ParentId)).ToList();
-        foreach (var obj in rootObjects)
-        {
-            DrawObjectNode(obj, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter, ref objectToDelete, ref objectToDuplicate);
-        }
+        DrawHierarchyCategory("groups", "Groups", rootObjects.Where(o => GetHierarchyIconKind(o) == HierarchyIconKind.Group), doc,
+            sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
+            ref objectToDelete, ref objectToDuplicate);
+        DrawHierarchyCategory("geometry", "Geometry", rootObjects.Where(o => GetHierarchyIconKind(o) is HierarchyIconKind.Brush or HierarchyIconKind.Box or HierarchyIconKind.Sphere or HierarchyIconKind.Capsule), doc,
+            sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
+            ref objectToDelete, ref objectToDuplicate);
+        DrawHierarchyCategory("models", "Models", rootObjects.Where(o => GetHierarchyIconKind(o) == HierarchyIconKind.Model), doc,
+            sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
+            ref objectToDelete, ref objectToDuplicate);
+        DrawHierarchyCategory("lights", "Lights", rootObjects.Where(o => o.IsLight), doc,
+            sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
+            ref objectToDelete, ref objectToDuplicate);
+        DrawHierarchyCategory("other", "Other", rootObjects.Where(o => GetHierarchyIconKind(o) == HierarchyIconKind.Other), doc,
+            sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
+            ref objectToDelete, ref objectToDuplicate);
         
         if (ImGui.BeginPopupContextWindow("hierarchy_tree_context", ImGuiPopupFlags.MouseButtonRight | ImGuiPopupFlags.NoOpenOverItems))
         {
             if (_selectedObjects.Count > 0)
             {
-                if (ImGui.MenuItem("📦 Group Selected"))
+                if (ImGui.MenuItem("Group Selected"))
                 {
                     GroupSelected(sceneService, assetService, history);
                 }
                 if (_selectedObjects.Any(o => !string.IsNullOrEmpty(o.ParentId)))
                 {
-                    if (ImGui.MenuItem("📤 Ungroup Selected"))
+                    if (ImGui.MenuItem("Ungroup Selected"))
                     {
                         UngroupSelected(sceneService, assetService, history);
                     }
@@ -2177,18 +2580,27 @@ public unsafe class EditorUI : IDisposable
 
         // --- Inspector / Properties Window ---
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Inspector");
+        ImGui.TextColored(new Vector4(0.82f, 0.87f, 0.94f, 1.0f), "Inspector");
+        ImGui.SameLine();
+        ImGui.TextDisabled(_selectedObjects.Count == 0 ? "No selection" : "Properties");
         ImGui.Separator();
 
         ImGui.BeginChild("InspectorSection", new Vector2(0, 0), ImGuiChildFlags.Borders);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8.0f, 6.0f));
+        ImGui.PushStyleColor(ImGuiCol.Header, new Vector4(0.10f, 0.15f, 0.22f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, new Vector4(0.15f, 0.23f, 0.33f, 1.0f));
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, new Vector4(0.18f, 0.29f, 0.40f, 1.0f));
         if (_selectedObjects.Count == 0)
         {
-            ImGui.TextDisabled("Select an object to inspect properties.");
+            ImGui.Spacing();
+            ImGui.TextDisabled("Nothing selected");
+            ImGui.TextWrapped("Select an object in the hierarchy or a viewport to inspect and edit its properties.");
+            ImGui.Spacing();
+            ImGui.TextDisabled("Tip: Ctrl-click adds objects to the selection.");
         }
         else if (_selectedObjects.Count > 1)
         {
-            ImGui.TextColored(new Vector4(0.3f, 0.8f, 0.8f, 1f), $"Multiple Selection ({_selectedObjects.Count} objects)");
-            ImGui.Separator();
+            DrawInspectorMultiHeader(_selectedObjects.Count);
 
             bool allVisible = _selectedObjects.All(o => o.Visible);
             bool multiVis = allVisible;
@@ -2200,6 +2612,7 @@ public unsafe class EditorUI : IDisposable
                     obj.Visible = multiVis;
                     var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                     if (entity != null) entity.Visible = multiVis;
+                    UpdateEntitiesVisibilityRecursive(doc, scene, obj);
                 }
                 Undo.ForceEnd(history, sceneService, assetService);
             }
@@ -2323,6 +2736,10 @@ public unsafe class EditorUI : IDisposable
             var obj = _selectedObject;
             if (obj != null)
             {
+                DrawInspectorObjectHeader(obj);
+
+                if (ImGui.CollapsingHeader("Object", ImGuiTreeNodeFlags.DefaultOpen))
+                {
                 // ID
                 string id = obj.Id;
                 bool idChanged = ImGui.InputText("ID##inspectId", ref id, 64);
@@ -2354,6 +2771,7 @@ public unsafe class EditorUI : IDisposable
                     obj.Visible = visible;
                     var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                     if (entity != null) entity.Visible = visible;
+                    UpdateEntitiesVisibilityRecursive(doc, scene, obj);
                     SyncLight(sceneService, obj);
                     Undo.ForceEnd(history, sceneService, assetService);
                 }
@@ -2400,6 +2818,8 @@ public unsafe class EditorUI : IDisposable
                         }
                     }
                     ImGui.EndCombo();
+                }
+
                 }
 
                 // Transform
@@ -2927,6 +3347,8 @@ public unsafe class EditorUI : IDisposable
                 }
             }
         }
+        ImGui.PopStyleColor(3);
+        ImGui.PopStyleVar();
         ImGui.EndChild();
 
         // Apply Deletion or Duplication
@@ -3031,7 +3453,7 @@ public unsafe class EditorUI : IDisposable
         light.Type = obj.LightType == "directional" ? LightType.Directional : (obj.LightType == "spot" ? LightType.Spot : LightType.Point);
         light.Position = obj.Body.Position;
         light.Direction = Vector3.Transform(-Vector3.UnitY, obj.Body.Rotation);
-        light.Enabled = obj.Visible;
+        light.Enabled = obj.IsGloballyVisible(sceneService.Document);
         light.Color = obj.LightColor;
         light.Intensity = obj.LightIntensity;
         light.Radius = obj.LightRadius;

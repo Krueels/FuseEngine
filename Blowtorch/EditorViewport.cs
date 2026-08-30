@@ -170,6 +170,11 @@ public unsafe class EditorViewport : IDisposable
         LastVisibleEntityCount = 0;
         LastCulledEntityCount = 0;
 
+        // The map can replace the skybox while the editor is running. Keep the
+        // viewport lighting bound to the current IBL instead of the one that
+        // existed when this viewport was created.
+        _lightingSystem.SetImageBasedLighting(assetService.ImageBasedLighting);
+
         _lightingSystem.Prepare(
             scene,
             _camera,
@@ -208,6 +213,8 @@ public unsafe class EditorViewport : IDisposable
         }
 
         PrepareMaterialShader(shader);
+
+        DrawSkybox(assetService, view, proj);
 
         // Draw Grid
         var gridShader = assetService.GridShader;
@@ -385,6 +392,34 @@ public unsafe class EditorViewport : IDisposable
             _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
             _gl.Enable(EnableCap.DepthTest);
         }
+    }
+
+    private void DrawSkybox(EditorAssetService assetService, Matrix4x4 view, Matrix4x4 proj)
+    {
+        if (_camera.IsOrthographic || assetService.SkyboxTexture is not { ID: not 0 })
+            return;
+
+        Shader skyboxShader = assetService.SkyboxShader;
+        Mesh skyboxMesh = assetService.SkyboxMesh;
+        if (skyboxShader.ID == 0 || skyboxMesh == null)
+            return;
+
+        _gl.DepthMask(false);
+        _gl.DepthFunc(DepthFunction.Lequal);
+        _gl.CullFace(GLEnum.Front);
+
+        skyboxShader.Use();
+        Matrix4x4 skyView = Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromRotationMatrix(view));
+        skyboxShader.SetMat4("uView", skyView);
+        skyboxShader.SetMat4("uProj", proj);
+        skyboxShader.SetBool("uOutputSrgb", true);
+        skyboxShader.SetInt("uSkyTexture", 0);
+        assetService.SkyboxTexture.Bind(0);
+        skyboxMesh.Draw();
+
+        _gl.CullFace(GLEnum.Back);
+        _gl.DepthFunc(DepthFunction.Less);
+        _gl.DepthMask(true);
     }
 
     public void RenderDebug(EditorAssetService assetService, EditorSceneService sceneService, Action<Fuse.Debug.DebugDrawer, EditorAssetService>? onDrawDebug = null)

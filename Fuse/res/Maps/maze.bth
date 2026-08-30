@@ -2,21 +2,163 @@
   "version": 1,
   "objects": [
     {
-      "id": "ground",
+      "id": "brush_eb1240f0",
       "visible": true,
-      "mesh": "ground",
-      "uv_scale": [
-        100,
-        100
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -30,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -30,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
       ],
-      "material": "Materials/GRASS.fmat",
-      "texture": "Textures/grassfloor002a.bmp",
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
         "position": [
-          0,
-          0,
-          0
+          36,
+          -0.5,
+          26
         ],
         "rotation": [
           1,
@@ -25,29 +167,174 @@
           0
         ],
         "mass": 0,
-        "friction": 2,
-        "restitution": 0.3,
+        "friction": 0,
+        "restitution": 0,
         "is_trigger": false,
         "half_extents": [
-          100,
-          0.001,
-          100
+          40,
+          0.5,
+          30
         ]
       }
     },
     {
-      "id": "cube",
+      "id": "brush_1fe66a2b",
       "visible": true,
-      "mesh": "cube",
-      "material": "Materials/NewMaterial.fmat",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
-      "interactable": "CubeInteract",
       "body": {
         "shape": "box",
         "position": [
-          -1,
-          0.5000005,
-          5
+          36,
+          3.5,
+          -3.5
         ],
         "rotation": [
           1,
@@ -55,106 +342,351 @@
           0,
           0
         ],
-        "mass": 10,
-        "friction": 0.5,
-        "restitution": 0.4,
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
         "is_trigger": false,
         "half_extents": [
-          0.5,
-          0.5,
+          40,
+          3.5,
           0.5
         ]
       }
     },
     {
-      "id": "ramp",
+      "id": "brush_1fe66a2b_copy",
       "visible": true,
-      "model": "Models/prototype.obj",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -40,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
       "material": "Materials/DevMeasureCrate.fmat",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          3,
-          0,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "block",
-      "visible": true,
-      "model": "Models/block.obj",
-      "material": "Materials/DevMeasureCrate.fmat",
-      "interactable": "ButtonInteract",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          0,
-          0,
-          -10
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "new_box",
-      "visible": true,
-      "mesh": "cube",
-      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
         "position": [
-          -10,
-          2,
-          -5
+          36,
+          3.5,
+          55.5
         ],
         "rotation": [
           1,
-          2.9102038E-11,
+          0,
           0,
           0
         ],
-        "mass": 10,
-        "friction": 0.5,
+        "mass": 0,
+        "friction": 0,
         "restitution": 0,
         "is_trigger": false,
         "half_extents": [
-          0.5,
-          0.5,
+          40,
+          3.5,
           0.5
         ]
       }
     },
     {
-      "id": "new_box02",
+      "id": "brush_1fe66a2b_copy_copy",
       "visible": true,
-      "mesh": "cube",
-      "material": "Materials/REFLECT.fmat",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -29.000011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -29.000011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.49999985,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.49999985,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
         "position": [
-          -1,
-          1,
-          -6
+          75.5,
+          3.5,
+          26.000006
         ],
         "rotation": [
           1,
@@ -162,21 +694,196 @@
           0,
           0
         ],
-        "mass": 10,
-        "friction": 0.5,
+        "mass": 0,
+        "friction": 0,
         "restitution": 0,
         "is_trigger": false,
         "half_extents": [
           0.5,
+          3.5,
+          29.000006
+        ]
+      }
+    },
+    {
+      "id": "brush_1fe66a2b_copy_copy_copy",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -29.000011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -29.000011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.4999998,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.49999985,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.49999985,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          -3.5,
+          3.5,
+          26.000006
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
           0.5,
-          0.5
+          3.5,
+          29.000006
         ]
       }
     },
     {
-      "id": "brush_c7a1e5a7",
+      "id": "brush_50361ac4",
       "visible": true,
-      "parent": "group_1",
       "type": "brush",
       "faces": [
         {
@@ -184,286 +891,13 @@
             0,
             0,
             1
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -6.611111,
-          2.0042536,
-          5.25
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          0.25,
-          2,
-          2
-        ]
-      }
-    },
-    {
-      "id": "brush_c7a1e5adwa7_copy_copy",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
           ],
           "d": -2.5,
           "texture": "default",
           "u_axis": [
+            1,
             0,
-            0,
-            1
+            0
           ],
           "v_axis": [
             -0,
@@ -478,94 +912,13 @@
         },
         {
           "normal": [
-            -1,
             0,
-            0
+            0,
+            -1
           ],
           "d": -2.5,
           "texture": "default",
           "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -4.361111,
-          2.0042536,
-          7.5
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          2.5,
-          2,
-          0.25
-        ]
-      }
-    },
-    {
-      "id": "brush_c7a1e5adwa7_copy_copy_copy",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
             1,
             0,
             0
@@ -587,7 +940,7 @@
             1,
             0
           ],
-          "d": -2,
+          "d": -3.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -611,361 +964,7 @@
             -1,
             0
           ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -5.861111,
-          2.0042536,
-          3
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1,
-          2,
-          0.25
-        ]
-      }
-    },
-    {
-      "id": "brush_c7a1e5adwa7_copy_copy_copy_copy",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.37712675,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.37712675,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -3.8611112,
-          3.6271267,
-          3
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1,
-          0.37712678,
-          0.25
-        ]
-      }
-    },
-    {
-      "id": "brush_c7a1e5adwa7_copy_copy_copy_copy_1",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -2,
+          "d": -3.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -1032,14 +1031,14 @@
           "rotation": 0
         }
       ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
         "position": [
-          -2.3611112,
-          2.0042536,
-          3
+          4.5,
+          3.5,
+          -0.5
         ],
         "rotation": [
           1,
@@ -1053,1733 +1052,13 @@
         "is_trigger": false,
         "half_extents": [
           0.5,
-          2,
-          0.25
-        ]
-      }
-    },
-    {
-      "id": "brush_c7a1e5a7_copy",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -2,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -0.25,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -2.1111112,
-          2.0042536,
-          5.25
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          0.25,
-          2,
-          2
-        ]
-      }
-    },
-    {
-      "id": "monkey",
-      "visible": true,
-      "model": "Models/monkey.obj",
-      "texture": "Textures/monkey.jpg",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          -1.0039704,
-          1.3628951,
-          4.953116
-        ],
-        "rotation": [
-          0.9721033,
-          -0.23455325,
-          0,
-          0
-        ],
-        "mass": 10,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "brush_e3575f76",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -4.736111,
-          1.5042536,
-          3
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          0.125,
-          1.5,
-          0.125
-        ]
-      }
-    },
-    {
-      "id": "brush_e3575f76_copy_2",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -1.4978733,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -1.4978733,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -2.9861112,
-          1.5021268,
-          3
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          0.125,
-          1.4978732,
-          0.125
-        ]
-      }
-    },
-    {
-      "id": "door",
-      "visible": true,
-      "model": "Models/door.obj",
-      "material": "Materials/Door01a_skin3.fmat",
-      "texture": "Textures/door01a_skin3.bmp",
-      "interactable": "Door",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          9.248073,
-          0,
-          0.5250764
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "door_copy",
-      "visible": true,
-      "model": "Models/door.obj",
-      "material": "Materials/door01a_skin14.fmat",
-      "texture": "Textures/door01a_skin14.bmp",
-      "interactable": "Door",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          14,
-          0,
-          0.5250764
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "door_copy_copy",
-      "visible": true,
-      "parent": "group_1",
-      "model": "Models/door.obj",
-      "material": "Materials/Door01a_skin3.fmat",
-      "texture": "Textures/door01a_skin14.bmp",
-      "interactable": "Door",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          -3.1111112,
-          0.004253626,
-          3
-        ],
-        "rotation": [
-          -4.371139E-08,
-          0,
-          -1,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0.3,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "monkey_1",
-      "visible": true,
-      "model": "Models/monkey.obj",
-      "texture": "Textures/monkey.jpg",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          3,
-          2,
-          -7
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 10,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "new_spot_light",
-      "visible": true,
-      "light_type": "spot",
-      "light_color": [
-        0.7058821,
-        0,
-        1
-      ],
-      "light_intensity": 80,
-      "light_radius": 14.4,
-      "light_inner_cone": 0.57595867,
-      "light_outer_cone": 0.79412484,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.001,
-      "light_dynamic": false,
-      "body": {
-        "shape": "none",
-        "position": [
-          10,
-          3.9218373,
-          2.2483387
-        ],
-        "rotation": [
-          0.98803306,
-          0.15424235,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "group_1",
-      "visible": true,
-      "body": {
-        "shape": "none",
-        "position": [
-          -4,
-          1.8410592,
-          4
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "new_point_light",
-      "visible": true,
-      "interactable": "Door",
-      "light_type": "point",
-      "light_color": [
-        1,
-        0.125,
-        0
-      ],
-      "light_intensity": 50,
-      "light_radius": 7.1,
-      "light_inner_cone": 0.2617994,
-      "light_outer_cone": 0.5235988,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.001,
-      "light_dynamic": false,
-      "body": {
-        "shape": "none",
-        "position": [
-          -1.4326644,
-          3.4481769,
-          4.890121
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "brush_38a45b71_copy",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "behaviours": [
-        {
-          "type": "MovingFloor",
-          "properties": {
-            "DistanceZ": -16,
-            "Speed": 2
-          }
-        }
-      ],
-      "body": {
-        "shape": "box",
-        "position": [
-          -15.5,
-          2.125,
-          -11.5
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.8,
-        "restitution": 0.3,
-        "is_trigger": false,
-        "half_extents": [
-          1,
-          0.5,
-          1
-        ]
-      }
-    },
-    {
-      "id": "brush_38a45b71",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "behaviours": [
-        {
-          "type": "MovingFloor",
-          "properties": {
-            "DistanceZ": -4,
-            "Speed": 2
-          }
-        }
-      ],
-      "body": {
-        "shape": "box",
-        "position": [
-          -19.5,
-          2.125,
-          -11.5
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.8,
-        "restitution": 0.3,
-        "is_trigger": false,
-        "half_extents": [
-          1,
-          0.5,
-          1
-        ]
-      }
-    },
-    {
-      "id": "stairs",
-      "visible": true,
-      "model": "Models/stairs.obj",
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          -16.5,
-          0,
-          -7
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "brush_e3575f76_copy_2_copy",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -0.125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.12499999,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.12499999,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1.0069447,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1.0069447,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -3.8680556,
-          3.125,
-          3
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1.0069447,
-          0.12500003,
-          0.125
-        ]
-      }
-    },
-    {
-      "id": "new_point_light_copy",
-      "visible": true,
-      "parent": "group_1",
-      "interactable": "Door",
-      "light_type": "point",
-      "light_color": [
-        0.67647064,
-        1,
-        0
-      ],
-      "light_intensity": 30,
-      "light_radius": 11.2,
-      "light_inner_cone": 0.2617994,
-      "light_outer_cone": 0.5235988,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.001,
-      "light_dynamic": false,
-      "body": {
-        "shape": "none",
-        "position": [
-          -5.375,
-          3.4481769,
-          6.25
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "new_point_light_1",
-      "visible": true,
-      "parent": "brush_38a45b71_copy",
-      "light_type": "point",
-      "light_color": [
-        0.82352924,
-        0,
-        1
-      ],
-      "light_intensity": 6.65,
-      "light_radius": 11.1,
-      "light_inner_cone": 0.2617994,
-      "light_outer_cone": 0.5235988,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.0005,
-      "light_dynamic": true,
-      "body": {
-        "shape": "none",
-        "position": [
-          -18,
-          2.999999,
-          -13
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2",
-      "visible": true,
-      "body": {
-        "shape": "none",
-        "position": [
-          9.003007,
-          0,
-          1.7287331
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2_NalaTribalFreeSampleV2-0",
-      "visible": true,
-      "parent": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2",
-      "model": "Models/nala-the-lion-king-tribal-free/source/Nala_Tribal_SFW_SampleV1.glb#0",
-      "model_scale": [
-        0.014273126,
-        0.014273126,
-        0.014273126
-      ],
-      "texture": "Textures/Nala_Tribal_SFW_SampleV1/tex_0.png",
-      "body": {
-        "shape": "convexhull",
-        "position": [
-          9.003007,
-          0,
-          1.7287331
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2_NalaTribalFreeSampleV2-1",
-      "visible": true,
-      "parent": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2",
-      "model": "Models/nala-the-lion-king-tribal-free/source/Nala_Tribal_SFW_SampleV1.glb#1",
-      "model_scale": [
-        0.014273126,
-        0.014273126,
-        0.014273126
-      ],
-      "texture": "Textures/Nala_Tribal_SFW_SampleV1/tex_3.png",
-      "body": {
-        "shape": "none",
-        "position": [
-          9.003007,
-          0,
-          1.7287331
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2_NalaTribalFreeSampleV2-2",
-      "visible": true,
-      "parent": "Nala_Tribal_SFW_SampleV1_NalaTribalFreeSampleV2",
-      "model": "Models/nala-the-lion-king-tribal-free/source/Nala_Tribal_SFW_SampleV1.glb#2",
-      "model_scale": [
-        0.014273126,
-        0.014273126,
-        0.014273126
-      ],
-      "texture": "Textures/Nala_Tribal_SFW_SampleV1/tex_6.png",
-      "body": {
-        "shape": "none",
-        "position": [
-          9.003007,
-          0,
-          1.7287331
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "new_directional_light",
-      "visible": true,
-      "light_type": "directional",
-      "light_color": [
-        0.89705884,
-        0.89705884,
-        0.35178778
-      ],
-      "light_intensity": 1,
-      "light_radius": 15,
-      "light_inner_cone": 0.2617994,
-      "light_outer_cone": 0.5235988,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.001,
-      "light_dynamic": false,
-      "body": {
-        "shape": "none",
-        "position": [
-          0,
-          7.9271665,
-          0
-        ],
-        "rotation": [
-          0.8660254,
-          0.5,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "brush_3a0220d4",
-      "visible": true,
-      "parent": "group_1",
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -2.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -2.5,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -0.3125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -0.3125,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -2.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -2.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/brickwall001a.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          -4.375,
-          4.3125,
-          5.25
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          2.5,
-          0.3125,
+          3.5,
           2.5
         ]
       }
     },
     {
-      "id": "brush_0afa2306",
+      "id": "brush_7716516c",
       "visible": true,
       "type": "brush",
       "faces": [
@@ -2789,7 +1068,7 @@
             0,
             1
           ],
-          "d": -0.0625,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -2813,7 +1092,7 @@
             0,
             -1
           ],
-          "d": -0.0625,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -2837,7 +1116,7 @@
             1,
             0
           ],
-          "d": -0.0625,
+          "d": -3.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -2861,7 +1140,7 @@
             -1,
             0
           ],
-          "d": -0.0625,
+          "d": -3.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -2885,7 +1164,7 @@
             0,
             0
           ],
-          "d": -1,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             0,
@@ -2909,7 +1188,7 @@
             0,
             0
           ],
-          "d": -1,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             0,
@@ -2928,365 +1207,14 @@
           "rotation": 0
         }
       ],
-      "material": "Materials/EMI_BLUE.fmat",
-      "texture": "Textures/emi_blue.png",
-      "body": {
-        "shape": "box",
-        "position": [
-          10,
-          3.9375,
-          1.0625
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1,
-          0.0625,
-          0.0625
-        ]
-      }
-    },
-    {
-      "id": "brush_896c9cdb",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -0.44721362,
-            0.89442724,
-            0
-          ],
-          "d": -0.89442724,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0.44721362,
-            -0.89442724,
-            0
-          ],
-          "d": -0.89442724,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          40,
-          4,
-          20
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          10,
-          6,
-          10
-        ]
-      }
-    },
-    {
-      "id": "brush_980c0d84",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -4.5000005,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -4.5000005,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
+      "material": "Materials/DevMeasureCrate.fmat",
       "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
         "shape": "box",
         "position": [
-          21.5,
           4.5,
-          20
+          3.5,
+          4.5
         ],
         "rotation": [
           1,
@@ -3296,419 +1224,173 @@
         ],
         "mass": 0,
         "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1.5,
-          4.5,
-          10
-        ]
-      }
-    },
-    {
-      "id": "brush_dd1a4cb1",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -4.5000005,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -4.5000005,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -1.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          11.5,
-          4.5,
-          20
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          1.5,
-          4.5,
-          10
-        ]
-      }
-    },
-    {
-      "id": "brush_f3addf7d",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -10,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -1,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -6.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -6.5,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "material": "Materials/Concrete003.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "box",
-        "position": [
-          16.5,
-          10,
-          20
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          6.5,
-          1,
-          10
-        ]
-      }
-    },
-    {
-      "id": "new_box_1",
-      "visible": true,
-      "mesh": "cube",
-      "material": "Materials/EMI_WHITE.fmat",
-      "body": {
-        "shape": "box",
-        "position": [
-          0,
-          1,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 10,
-        "friction": 0.5,
         "restitution": 0,
         "is_trigger": false,
         "half_extents": [
           0.5,
-          0.5,
+          3.5,
           0.5
         ]
       }
     },
     {
-      "id": "new_point_light_2",
+      "id": "brush_7ad06ea2",
       "visible": true,
-      "parent": "new_box_1",
-      "light_type": "point",
-      "light_color": [
-        1,
-        1,
-        1
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -4,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -4,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
       ],
-      "light_intensity": 5,
-      "light_radius": 15,
-      "light_inner_cone": 0.2617994,
-      "light_outer_cone": 0.5235988,
-      "light_cast_shadows": true,
-      "light_shadow_bias": 0.001,
-      "light_dynamic": true,
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
       "body": {
-        "shape": "none",
+        "shape": "box",
         "position": [
-          0,
           1,
-          0
+          3.5,
+          5.5
         ],
         "rotation": [
           1,
@@ -3717,20 +1399,1609 @@
           0
         ],
         "mass": 0,
-        "friction": 0.5,
+        "friction": 0,
         "restitution": 0,
-        "is_trigger": false
+        "is_trigger": false,
+        "half_extents": [
+          4,
+          3.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "brush_848a8583",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -1,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -1,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          6,
+          3.5,
+          4.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          1,
+          3.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "brush_c64579f6",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -1,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -1,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          6,
+          3.5,
+          1.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          1,
+          3.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "brush_06ccac08",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -5.0000005,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -5.0000005,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          12.5,
+          3.5,
+          15.000001
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          5.000001
+        ]
+      }
+    },
+    {
+      "id": "brush_306a3287",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          2,
+          3.5,
+          19.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          5,
+          3.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "brush_e3e377c3",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -2.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -2.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          7.5,
+          3.5,
+          -0.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          2.5
+        ]
+      }
+    },
+    {
+      "id": "brush_06ccac08_copy",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -8,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -8,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          7.5,
+          3.5,
+          12
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          8
+        ]
+      }
+    },
+    {
+      "id": "brush_06ccac08_copy_1",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -4.4999995,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -4.4999995,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          12.5,
+          3.5,
+          1.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          4.5
+        ]
+      }
+    },
+    {
+      "id": "brush_b56c597e",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          13.5,
+          3.5,
+          5.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "brush_b56c597e_copy",
+      "visible": true,
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -3.5,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -0.5,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "box",
+        "position": [
+          13.5,
+          3.5,
+          10.5
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          3.5,
+          0.5
+        ]
       }
     }
   ],
-  "skybox": "Textures/Skybox/skybox_3.png",
+  "skybox": "Textures/Skybox/night.jpg",
   "player_spawn": {
     "position": [
-      9.3,
-      1.4000001,
-      10.2
+      0,
+      1.4,
+      0
     ],
-    "yaw": -90,
+    "yaw": 0,
     "pitch": 0
   }
 }

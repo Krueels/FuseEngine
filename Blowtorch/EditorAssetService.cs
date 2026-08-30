@@ -16,13 +16,19 @@ namespace Blowtorch;
 
 public class EditorAssetService : IDisposable
 {
+    public const string DefaultSkyboxPath = "Textures/" + Bible.Skybox;
+
     private readonly GL _gl;
     private readonly AssetManager _assets;
     private Shader _shader = null!;
     private Shader _gridShader = null!;
     private Shader _shadowShader = null!;
     private Shader _pointShadowShader = null!;
+    private Shader _skyboxShader = null!;
+    private Mesh _skyboxMesh = null!;
     private uint _defaultTex;
+    private Texture? _skyboxTexture;
+    private string _skyboxPath = "";
     private ImageBasedLighting? _imageBasedLighting;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, Mesh?> _meshCache = [];
@@ -48,9 +54,13 @@ public class EditorAssetService : IDisposable
     public Shader GridShader => _gridShader;
     public Shader ShadowShader => _shadowShader;
     public Shader PointShadowShader => _pointShadowShader;
+    public Shader SkyboxShader => _skyboxShader;
+    public Mesh SkyboxMesh => _skyboxMesh;
     public uint DefaultTexture => _defaultTex;
     public AssetManager AssetManager => _assets;
     public ImageBasedLighting? ImageBasedLighting => _imageBasedLighting;
+    public Texture? SkyboxTexture => _skyboxTexture;
+    public string SkyboxPath => _skyboxPath;
     public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
 
     public MaterialRuntime? GetOrCreateMaterial(string? materialRelPath) =>
@@ -105,6 +115,11 @@ public class EditorAssetService : IDisposable
         return _textureCatalog;
     }
 
+    public IReadOnlyList<string> EnumerateSkyboxes() =>
+        EnumerateTextures()
+            .Where(path => path.StartsWith("Textures/Skybox/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
     public void Initialize(string baseDirectory)
     {
         //_fuseResPath = Path.GetFullPath(Path.Combine(baseDirectory, @"..\..\..\..\Fuse\res"));
@@ -126,21 +141,13 @@ public class EditorAssetService : IDisposable
             Path.Combine(_fuseResPath, "Shaders", "point_shadow.vert"),
             Path.Combine(_fuseResPath, "Shaders", "point_shadow.frag"));
 
-        _shader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
+        _skyboxShader = _assets.GetShader(
+            Path.Combine(_fuseResPath, "Shaders", "skybox.vert"),
+            Path.Combine(_fuseResPath, "Shaders", "skybox.frag"));
+        _skyboxMesh = _assets.GetMesh("cube")!;
 
-        string skyboxPath = Path.Combine(_fuseResPath, "Textures", "skybox_1.png");
-        if (File.Exists(skyboxPath))
-        {
-            try
-            {
-                _imageBasedLighting = new ImageBasedLighting(_gl,
-                    _assets.GetTexture(skyboxPath, TextureColorSpace.Srgb));
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn($"Blowtorch IBL disabled: {ex.Message}");
-            }
-        }
+        _shader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
+        SetSkyboxTexture(null);
 
         string crateTexPath = Path.Combine(_fuseResPath, "Textures", "dev_measurecrate01.bmp");
         if (File.Exists(crateTexPath))
@@ -150,6 +157,56 @@ public class EditorAssetService : IDisposable
         }
 
         StartAssetWatchers();
+    }
+
+    public bool SetSkyboxTexture(string? texturePath)
+    {
+        string normalizedPath = NormalizeSkyboxPath(texturePath);
+        if (normalizedPath.Equals(_skyboxPath, StringComparison.OrdinalIgnoreCase) &&
+            _skyboxTexture?.ID != 0)
+            return true;
+
+        string fullPath = Path.GetFullPath(Path.Combine(_fuseResPath, normalizedPath));
+        if (!File.Exists(fullPath))
+        {
+            Logger.Warn($"Skybox texture not found: {fullPath}");
+            return false;
+        }
+
+        Texture texture;
+        try
+        {
+            texture = _assets.GetTexture(fullPath, TextureColorSpace.Srgb);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Blowtorch skybox load failed: {ex.Message}");
+            return false;
+        }
+
+        if (texture.ID == 0)
+            return false;
+
+        _gl.BindTexture(TextureTarget.Texture2D, texture.ID);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        ImageBasedLighting? replacement = null;
+        try
+        {
+            replacement = new ImageBasedLighting(_gl, texture);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Blowtorch IBL disabled for '{normalizedPath}': {ex.Message}");
+        }
+
+        _imageBasedLighting?.Dispose();
+        _imageBasedLighting = replacement;
+        _skyboxTexture = texture;
+        _skyboxPath = normalizedPath;
+        System.Threading.Interlocked.Increment(ref _assetRevision);
+        return true;
     }
 
     public void UpdateFileChanges(EditorSceneService? sceneService = null)
@@ -342,5 +399,18 @@ public class EditorAssetService : IDisposable
         if (Path.IsPathRooted(relative))
             relative = Path.GetRelativePath(_fuseResPath, relative).Replace('\\', '/');
         return relative;
+    }
+
+    private static string NormalizeSkyboxPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return DefaultSkyboxPath;
+
+        string normalized = path.Replace('\\', '/').TrimStart('/');
+        if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+        if (normalized.StartsWith("Textures/", StringComparison.OrdinalIgnoreCase))
+            return normalized;
+        return $"Textures/{normalized}";
     }
 }

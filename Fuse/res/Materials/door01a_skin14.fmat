@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "name": "door01a_skin14",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "13399ef8578d4f4589034e32405b5973",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          141,
+          162
+        ],
+        "properties": {
+          "path": "Textures/doors/door01a_skin3.bmp",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "e49b85e556e740bb9d39b5505984deca",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          259,
+          280
+        ],
+        "properties": {
+          "strength": 1
+        }
+      },
+      {
+        "id": "c7ee728cd78a43a0bd54f2ab07d9094f",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          16,
+          311
+        ],
+        "properties": {
+          "path": "Textures/doors/door01a_skin3_normal.bmp",
+          "color_space": "linear"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "13399ef8578d4f4589034e32405b5973",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "e49b85e556e740bb9d39b5505984deca",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "c7ee728cd78a43a0bd54f2ab07d9094f",
+        "from_socket": "Color",
+        "to_node": "e49b85e556e740bb9d39b5505984deca",
+        "to_socket": "Color"
+      }
+    ]
+  }
+}

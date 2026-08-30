@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "name": "TV_SCREEN",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "18824a9dab4b40ddb406bae8f6e4ca04",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          100,
+          176
+        ],
+        "properties": {
+          "path": "Textures/monkey.jpg",
+          "color_space": "sRGB"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "18824a9dab4b40ddb406bae8f6e4ca04",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Emission"
+      },
+      {
+        "from_node": "18824a9dab4b40ddb406bae8f6e4ca04",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      }
+    ]
+  }
+}

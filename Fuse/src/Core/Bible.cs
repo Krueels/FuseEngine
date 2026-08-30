@@ -28,7 +28,7 @@ public static class Bible
     public const string MuzzleFlash = "FX/muzzle_flash_{0}.png";
     
     // Textures - Environment
-    public const string Skybox = "night.jpg";
+    public const string Skybox = "Skybox/skybox_1.png";
     public const string Crate = "dev_measurecrate01.bmp";
 
     // Textures - Decals

@@ -7,6 +7,7 @@ namespace Fuse.Scene.Model;
 public class MapDocument
 {
     public int Version { get; set; } = 1;
+    public string SkyboxPath { get; set; } = "";
     public List<MapObject> Objects { get; set; } = [];
     public MapPlayerSpawn? PlayerSpawn { get; set; }
     public List<string> ValidationWarnings { get; } = [];
@@ -62,7 +63,10 @@ public class MapDocument
 
             var doc = new MapDocument
             {
-                Version = root.TryGetPropertyValue("version", out var verNode) ? (int)verNode! : 1
+                Version = root.TryGetPropertyValue("version", out var verNode) ? (int)verNode! : 1,
+                SkyboxPath = root.TryGetPropertyValue("skybox", out var skyboxNode)
+                    ? (string?)skyboxNode ?? ""
+                    : ""
             };
 
             if (root.TryGetPropertyValue("player_spawn", out var spawnNode) && spawnNode != null)
@@ -106,6 +110,9 @@ public class MapDocument
             ["version"] = Version,
             ["objects"] = new JsonArray()
         };
+
+        if (!string.IsNullOrWhiteSpace(SkyboxPath))
+            root["skybox"] = SkyboxPath.Replace('\\', '/');
 
         if (PlayerSpawn != null)
         {

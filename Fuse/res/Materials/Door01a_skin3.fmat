@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "name": "Door01a_skin3",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "cdf0b5d31c6146a188e43f7899b71906",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          110,
+          125
+        ],
+        "properties": {
+          "path": "Textures/doors/door01a_skin14.bmp",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "f9e701252db64bb2b6dd448a59a3c13e",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          -36,
+          272
+        ],
+        "properties": {
+          "path": "Textures/doors/door01a_skin14_normal.bmp",
+          "color_space": "linear"
+        }
+      },
+      {
+        "id": "6243d436cb6a45a7b2d27811df417e71",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          266,
+          286
+        ],
+        "properties": {
+          "strength": 1
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "cdf0b5d31c6146a188e43f7899b71906",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "f9e701252db64bb2b6dd448a59a3c13e",
+        "from_socket": "Color",
+        "to_node": "6243d436cb6a45a7b2d27811df417e71",
+        "to_socket": "Color"
+      },
+      {
+        "from_node": "6243d436cb6a45a7b2d27811df417e71",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      }
+    ]
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "name": "WOOD_FLOOR",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "95b9eb7099554c9286f12e54ea36e5af",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          146,
+          38
+        ],
+        "properties": {
+          "path": "Textures/hl2/wood/woodfloor005a.bmp",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "a90b02e427bd4bb1b2659ff0ea6f9f6c",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          19,
+          251
+        ],
+        "properties": {
+          "path": "Textures/hl2/wood/woodfloor005a_normal.bmp",
+          "color_space": "linear"
+        }
+      },
+      {
+        "id": "f99b951a812040fb9e858f4fe9333900",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          268,
+          258
+        ],
+        "properties": {
+          "strength": 1
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "95b9eb7099554c9286f12e54ea36e5af",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "f99b951a812040fb9e858f4fe9333900",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "a90b02e427bd4bb1b2659ff0ea6f9f6c",
+        "from_socket": "Color",
+        "to_node": "f99b951a812040fb9e858f4fe9333900",
+        "to_socket": "Color"
+      }
+    ]
+  }
+}

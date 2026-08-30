@@ -60,12 +60,15 @@ public class SceneManager
 
         onProgress?.Invoke(0.05f, "Loading map data...");
         var loaded = MapSerializer.LoadFromFile(
-            loadPath, _scene, _physics, _assets, out var spawn, Fuse.ResPath.Path, onProgress);
+            loadPath, _scene, _physics, _assets, out var spawn, out var skyboxPath, Fuse.ResPath.Path, onProgress);
 
         if (loaded != null)
         {
             _bodies.AddRange(loaded);
         }
+
+        onProgress?.Invoke(0.82f, "Loading skybox...");
+        ApplyMapSkybox(skyboxPath);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");
         RegisterInteractablesAndBehaviours();
@@ -88,12 +91,15 @@ public class SceneManager
 
         onProgress?.Invoke(0.05f, "Loading map data...");
         var loaded = MapSerializer.LoadFromFile(
-            CurrentMapPath, _scene, _physics, _assets, out var spawn, Fuse.ResPath.Path, onProgress);
+            CurrentMapPath, _scene, _physics, _assets, out var spawn, out var skyboxPath, Fuse.ResPath.Path, onProgress);
             
         if (loaded != null)
         {
             _bodies.AddRange(loaded);
         }
+
+        onProgress?.Invoke(0.82f, "Loading skybox...");
+        ApplyMapSkybox(skyboxPath);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");
         RegisterInteractablesAndBehaviours();
@@ -102,6 +108,38 @@ public class SceneManager
 
         _renderer?.ClearBillboardQueue();
         return spawn;
+    }
+
+    private void ApplyMapSkybox(string? configuredPath)
+    {
+        string skyboxPath = ResolveMapSkyboxPath(configuredPath);
+        if (!File.Exists(skyboxPath))
+        {
+            Logger.Warn($"Map skybox not found: {skyboxPath}. Falling back to the default skybox.");
+            skyboxPath = Bible.Tex(Bible.Skybox);
+        }
+
+        Texture texture = _assets.GetTexture(skyboxPath, TextureColorSpace.Srgb);
+        if (texture.ID == 0)
+        {
+            Logger.Error($"Failed to load map skybox: {skyboxPath}");
+            return;
+        }
+
+        _renderer?.SetSkyboxTexture(texture);
+    }
+
+    private static string ResolveMapSkyboxPath(string? configuredPath)
+    {
+        if (string.IsNullOrWhiteSpace(configuredPath))
+            return Bible.Tex(Bible.Skybox);
+
+        string normalized = configuredPath.Replace('\\', '/').TrimStart('/');
+        if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+        if (normalized.StartsWith("Textures/", StringComparison.OrdinalIgnoreCase))
+            return Path.GetFullPath(Path.Combine(Fuse.ResPath.Path, normalized));
+        return Path.GetFullPath(Path.Combine(Fuse.ResPath.Path, "Textures", normalized));
     }
 
 private void ClearCurrentMap()

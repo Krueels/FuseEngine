@@ -28,7 +28,7 @@ public sealed class EditorLightingSystem : IDisposable
     private readonly GL _gl;
     private readonly LightingBuffer _lightingBuffer;
     private readonly bool _supportsShadows;
-    private readonly ImageBasedLighting? _imageBasedLighting;
+    private ImageBasedLighting? _imageBasedLighting;
     private readonly ShadowMap? _directionalShadowMap;
     private readonly ShadowMap? _spotShadowMap;
     private readonly PointShadowMap[] _pointShadowMaps = [];
@@ -92,6 +92,11 @@ public sealed class EditorLightingSystem : IDisposable
         _pointShadowMaps = new PointShadowMap[MaxShadowedPointLights];
         for (int i = 0; i < _pointShadowMaps.Length; i++)
             _pointShadowMaps[i] = new PointShadowMap(gl, ShadowResolution);
+    }
+
+    public void SetImageBasedLighting(ImageBasedLighting? imageBasedLighting)
+    {
+        _imageBasedLighting = imageBasedLighting;
     }
 
     public void Prepare(
