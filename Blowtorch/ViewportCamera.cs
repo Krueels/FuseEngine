@@ -41,6 +41,8 @@ public class ViewportCamera
 
     public void Zoom(float delta, Vector2 mousePos, Vector2 viewportSize)
     {
+        if (viewportSize.X <= 1.0f || viewportSize.Y <= 1.0f || !float.IsFinite(delta))
+            return;
         if (IsOrthographic)
         {
             // Zoom to mouse logic

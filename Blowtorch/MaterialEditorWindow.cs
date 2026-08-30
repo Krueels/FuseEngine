@@ -44,6 +44,11 @@ public sealed class MaterialEditorWindow : IDisposable
     private bool _marqueeAdditive;
     private Vector2 _marqueeStart;
     private Vector2 _marqueeCurrent;
+    private bool _showUnsavedMaterialDialog;
+    private string _pendingMaterialPath = "";
+    private enum PendingMaterialAction { None, Open, Reload, Close }
+    private PendingMaterialAction _pendingMaterialAction;
+    private readonly Dictionary<string, (long Stamp, Vector4 Color)> _materialSwatches = new(StringComparer.OrdinalIgnoreCase);
 
     public bool IsOpen { get; private set; }
     public string CurrentPath => _path;
@@ -57,6 +62,26 @@ public sealed class MaterialEditorWindow : IDisposable
     }
 
     public void Open(string materialPath)
+    {
+        string fullPath = MaterialRuntime.ResolveAssetPath(materialPath);
+        if (_dirty && fullPath.Equals(_path, StringComparison.OrdinalIgnoreCase))
+        {
+            IsOpen = true;
+            return;
+        }
+        if (_dirty)
+        {
+            _pendingMaterialAction = PendingMaterialAction.Open;
+            _pendingMaterialPath = fullPath;
+            _showUnsavedMaterialDialog = true;
+            IsOpen = true;
+            return;
+        }
+
+        OpenImmediate(fullPath);
+    }
+
+    private void OpenImmediate(string materialPath)
     {
         string fullPath = MaterialRuntime.ResolveAssetPath(materialPath);
         try
@@ -105,11 +130,30 @@ public sealed class MaterialEditorWindow : IDisposable
             IsInputContextActive = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
             if (IsInputContextActive)
                 inputService.SetContext(EditorInputContext.MaterialGraph);
-            IsOpen = open;
+            if (!open && _dirty)
+            {
+                _pendingMaterialAction = PendingMaterialAction.Close;
+                _showUnsavedMaterialDialog = true;
+                IsOpen = true;
+            }
+            else
+            {
+                IsOpen = open;
+            }
             ImGui.End();
+            DrawUnsavedMaterialDialog(assetService, sceneService);
             return;
         }
-        IsOpen = open;
+        if (!open && _dirty)
+        {
+            _pendingMaterialAction = PendingMaterialAction.Close;
+            _showUnsavedMaterialDialog = true;
+            IsOpen = true;
+        }
+        else
+        {
+            IsOpen = open;
+        }
 
         IsInputContextActive = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
         if (IsInputContextActive)
@@ -120,7 +164,7 @@ public sealed class MaterialEditorWindow : IDisposable
         DrawMenu(assetService, sceneService);
 
         Vector2 available = ImGui.GetContentRegionAvail();
-        const float galleryWidth = 235.0f;
+        float galleryWidth = Math.Clamp(available.X * 0.20f, 180.0f, 280.0f);
         ImGui.BeginChild("MaterialGallery", new Vector2(galleryWidth, available.Y), ImGuiChildFlags.Borders);
         DrawMaterialGallery(assetService);
         ImGui.EndChild();
@@ -137,7 +181,7 @@ public sealed class MaterialEditorWindow : IDisposable
         }
         else
         {
-            float inspectorWidth = 300.0f;
+            float inspectorWidth = Math.Clamp(available.X * 0.25f, 250.0f, 360.0f);
             ImGui.BeginChild("MaterialGraphCanvas", new Vector2(MathF.Max(200, available.X - galleryWidth - inspectorWidth - 16), available.Y), ImGuiChildFlags.Borders,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
             DrawCanvas();
@@ -150,6 +194,7 @@ public sealed class MaterialEditorWindow : IDisposable
         }
 
         ImGui.End();
+        DrawUnsavedMaterialDialog(assetService, sceneService);
     }
 
     private void DrawMaterialGallery(EditorAssetService assetService)
@@ -171,7 +216,12 @@ public sealed class MaterialEditorWindow : IDisposable
             any = true;
             bool selected = MaterialRuntime.ResolveAssetPath(material)
                 .Equals(_path, StringComparison.OrdinalIgnoreCase);
-            if (ImGui.Selectable(fileName, selected))
+            Vector4 swatch = GetMaterialSwatch(material);
+            if (ImGui.ColorButton($"##swatch_{material}", swatch,
+                    ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoDragDrop, new Vector2(22, 22)))
+                Open(material);
+            ImGui.SameLine();
+            if (ImGui.Selectable(fileName, selected, ImGuiSelectableFlags.None, new Vector2(0, 22)))
                 Open(material);
             if (selected)
                 ImGui.SetItemDefaultFocus();
@@ -182,6 +232,30 @@ public sealed class MaterialEditorWindow : IDisposable
             ImGui.TextDisabled(materials.Count == 0 ? "No .fmat materials found." : "No materials match the filter.");
     }
 
+    private Vector4 GetMaterialSwatch(string materialPath)
+    {
+        try
+        {
+            string fullPath = MaterialRuntime.ResolveAssetPath(materialPath);
+            long stamp = File.GetLastWriteTimeUtc(fullPath).Ticks;
+            if (_materialSwatches.TryGetValue(fullPath, out var cached) && cached.Stamp == stamp)
+                return cached.Color;
+
+            MaterialAsset asset = MaterialAsset.Load(fullPath);
+            MaterialGraphNode? output = asset.Graph.FindOutput();
+            Vector3 baseColor = output == null
+                ? Vector3.One
+                : MaterialAsset.GetVector3(output.Properties, "base_color", Vector3.One);
+            Vector4 color = new(Vector3.Clamp(baseColor, Vector3.Zero, Vector3.One), 1.0f);
+            _materialSwatches[fullPath] = (stamp, color);
+            return color;
+        }
+        catch
+        {
+            return new Vector4(0.35f, 0.35f, 0.35f, 1.0f);
+        }
+    }
+
     private void DrawMenu(EditorAssetService assetService, EditorSceneService sceneService)
     {
         if (!ImGui.BeginMenuBar())
@@ -190,7 +264,17 @@ public sealed class MaterialEditorWindow : IDisposable
         if (ImGui.MenuItem("Save", "Ctrl+S", false, _asset != null))
             Save(assetService, sceneService);
         if (ImGui.MenuItem("Reload", "", false, _asset != null))
-            Open(_path);
+        {
+            if (_dirty)
+            {
+                _pendingMaterialAction = PendingMaterialAction.Reload;
+                _showUnsavedMaterialDialog = true;
+            }
+            else
+            {
+                OpenImmediate(_path);
+            }
+        }
 
         if (ImGui.BeginMenu("Add Node", _asset != null))
         {
@@ -206,6 +290,10 @@ public sealed class MaterialEditorWindow : IDisposable
                 ZoomFromMenu(_canvasZoom / CanvasZoomStep);
             if (ImGui.MenuItem("Reset Zoom"))
                 ZoomFromMenu(1.0f);
+            if (ImGui.MenuItem("Frame All", "Home"))
+                FrameNodes(_asset!.Graph.Nodes);
+            if (ImGui.MenuItem("Frame Selected", "F", false, _selectedNodeIds.Count > 0))
+                FrameNodes(_asset!.Graph.Nodes.Where(node => _selectedNodeIds.Contains(node.Id)));
             ImGui.Separator();
             ImGui.TextDisabled($"Zoom: {_canvasZoom * 100.0f:0}%");
             ImGui.TextDisabled("Mouse wheel over canvas");
@@ -233,6 +321,12 @@ public sealed class MaterialEditorWindow : IDisposable
 
         if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.A) && _asset != null)
             SetSelection(_asset.Graph.Nodes.Select(node => node.Id), false);
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Home) && _asset != null)
+            FrameNodes(_asset.Graph.Nodes);
+
+        if (ImGui.IsKeyPressed(ImGuiKey.F) && _asset != null && _selectedNodeIds.Count > 0)
+            FrameNodes(_asset.Graph.Nodes.Where(node => _selectedNodeIds.Contains(node.Id)));
 
         if (ImGui.IsKeyPressed(ImGuiKey.Delete))
             DeleteSelectedNode();
@@ -916,24 +1010,128 @@ public sealed class MaterialEditorWindow : IDisposable
         _previewMaterial = null;
     }
 
-    private void Save(EditorAssetService assetService, EditorSceneService sceneService)
+    private bool Save(EditorAssetService assetService, EditorSceneService sceneService)
     {
-        string? previousFile = File.Exists(_path) ? File.ReadAllText(_path) : null;
+        string? previousFile = null;
         try
         {
+            previousFile = File.Exists(_path) ? File.ReadAllText(_path) : null;
             _asset!.Save(_path);
             assetService.ReloadMaterial(_path);
             sceneService.RefreshMaterials(assetService);
             _dirty = false;
             _status = "Saved and recompiled.";
+            return true;
         }
         catch (Exception ex)
         {
-            if (previousFile != null)
-                File.WriteAllText(_path, previousFile);
+            try
+            {
+                if (previousFile != null)
+                {
+                    File.WriteAllText(_path, previousFile);
+                    assetService.ReloadMaterial(_path);
+                    sceneService.RefreshMaterials(assetService);
+                }
+            }
+            catch (Exception restoreEx)
+            {
+                Logger.Error($"Material rollback failed: {restoreEx.Message}");
+            }
             _status = ex.Message;
             Logger.Error($"Material save failed: {ex.Message}");
+            return false;
         }
+    }
+
+    private void DrawUnsavedMaterialDialog(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!_showUnsavedMaterialDialog)
+            return;
+
+        ImGui.OpenPopup("Unsaved Material Changes");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Unsaved Material Changes", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextUnformatted("This material contains unsaved graph changes.");
+            ImGui.TextUnformatted("Save them before continuing?");
+            ImGui.Separator();
+            if (ImGui.Button("Save", new Vector2(105, 0)))
+            {
+                if (Save(assetService, sceneService))
+                    CompletePendingMaterialAction();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Discard", new Vector2(105, 0)))
+            {
+                _dirty = false;
+                CompletePendingMaterialAction();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(105, 0)))
+            {
+                CancelPendingMaterialAction();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!open)
+            CancelPendingMaterialAction();
+    }
+
+    private void CompletePendingMaterialAction()
+    {
+        PendingMaterialAction action = _pendingMaterialAction;
+        string path = _pendingMaterialPath;
+        CancelPendingMaterialAction();
+        switch (action)
+        {
+            case PendingMaterialAction.Open:
+                OpenImmediate(path);
+                break;
+            case PendingMaterialAction.Reload:
+                OpenImmediate(_path);
+                break;
+            case PendingMaterialAction.Close:
+                IsOpen = false;
+                IsInputContextActive = false;
+                break;
+        }
+    }
+
+    private void CancelPendingMaterialAction()
+    {
+        _showUnsavedMaterialDialog = false;
+        _pendingMaterialAction = PendingMaterialAction.None;
+        _pendingMaterialPath = "";
+    }
+
+    private void FrameNodes(IEnumerable<MaterialGraphNode> nodes)
+    {
+        MaterialGraphNode[] selection = nodes.ToArray();
+        Vector2 canvasSize = _lastCanvasMax - _lastCanvasMin;
+        if (selection.Length == 0 || canvasSize.X <= 1 || canvasSize.Y <= 1)
+            return;
+
+        Vector2 min = new(float.MaxValue);
+        Vector2 max = new(float.MinValue);
+        foreach (MaterialGraphNode node in selection)
+        {
+            MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
+            int rows = Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0);
+            Vector2 nodeSize = new(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing);
+            min = Vector2.Min(min, node.Position);
+            max = Vector2.Max(max, node.Position + nodeSize);
+        }
+
+        Vector2 graphSize = Vector2.Max(max - min, new Vector2(1));
+        float zoom = Math.Clamp(MathF.Min((canvasSize.X - 80) / graphSize.X, (canvasSize.Y - 80) / graphSize.Y),
+            MinCanvasZoom, MaxCanvasZoom);
+        _canvasZoom = zoom;
+        _canvasPan = canvasSize * 0.5f - (min + graphSize * 0.5f) * zoom;
     }
 
     private Vector2 GetInputPin(MaterialGraphNode node, string socket, Vector2 canvasMin)

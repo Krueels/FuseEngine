@@ -10,6 +10,8 @@ public unsafe class EditorWindow : IDisposable
     private readonly Glfw _glfw;
     private readonly WindowHandle* _handle;
     private readonly GL _gl;
+    private bool _forceClose;
+    private bool _closeRequested;
 
     public EditorWindow(string title, int width, int height)
     {
@@ -54,10 +56,34 @@ public unsafe class EditorWindow : IDisposable
     public WindowHandle* Handle => _handle;
     public GL GL => _gl;
 
-    public bool ShouldClose => _glfw.WindowShouldClose(_handle);
+    public bool ShouldClose
+    {
+        get
+        {
+            if (_forceClose)
+                return true;
+            if (_glfw.WindowShouldClose(_handle))
+            {
+                _glfw.SetWindowShouldClose(_handle, false);
+                _closeRequested = true;
+            }
+            return false;
+        }
+    }
     public void SwapBuffers() => _glfw.SwapBuffers(_handle);
     public void PollEvents() => _glfw.PollEvents();
-    public void Close() => _glfw.SetWindowShouldClose(_handle, true);
+    public bool ConsumeCloseRequest()
+    {
+        bool requested = _closeRequested;
+        _closeRequested = false;
+        return requested;
+    }
+
+    public void Close()
+    {
+        _forceClose = true;
+        _glfw.SetWindowShouldClose(_handle, true);
+    }
 
     private void SetWindowIcon()
     {

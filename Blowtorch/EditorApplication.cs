@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using Fuse.Imgui;
+using Fuse.Core;
 
 namespace Blowtorch;
 
@@ -22,111 +24,118 @@ public unsafe class EditorApplication : IDisposable
         try
         {
             _window = new EditorWindow("Blowtorch", 1280, 800);
-        }
-        catch (Exception ex)
-        {
-            System.Console.Error.WriteLine(ex.Message);
-            return false;
-        }
+            var gl = _window.GL;
+            var handle = _window.Handle;
+            var glfw = _window.Glfw;
 
-        var gl = _window.GL;
-        var handle = _window.Handle;
-        var glfw = _window.Glfw;
+            // Initialize Services
+            _inputService = new EditorInputService();
+            _inputService.Initialize(glfw, handle);
 
-        // Initialize Services
-        _inputService = new EditorInputService();
-        _inputService.Initialize(glfw, handle);
-
-        _imgui = new ImGuiBackEnd(gl);
-        _imgui.Init();
+            _imgui = new ImGuiBackEnd(gl);
+            _imgui.Init();
 
         // The material graph uses custom-drawn nodes and pins. Restrict window
         // movement to title bars so dragging graph elements never drags the
         // containing ImGui window as well.
-        ImGuiNET.ImGui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
+            ImGuiNET.ImGui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
 
-        _assetService = new EditorAssetService(gl);
-        _assetService.Initialize(AppContext.BaseDirectory);
+            _assetService = new EditorAssetService(gl);
+            _assetService.Initialize(AppContext.BaseDirectory);
 
-        _sceneService = new EditorSceneService();
-        _sceneService.LoadMap(_assetService.FuseResPath);
-        _sceneService.PopulateScene(_assetService);
+            _sceneService = new EditorSceneService();
+            _sceneService.LoadMap(_assetService.FuseResPath);
+            _sceneService.PopulateScene(_assetService);
 
-        _viewport3D = new EditorViewport(gl, CameraViewType.Perspective3D, _assetService.ImageBasedLighting);
-        _viewportTop = new EditorViewport(gl, CameraViewType.Top, _assetService.ImageBasedLighting);
-        _viewportFront = new EditorViewport(gl, CameraViewType.Front, _assetService.ImageBasedLighting);
-        _viewportSide = new EditorViewport(gl, CameraViewType.Side, _assetService.ImageBasedLighting);
-        _ui = new EditorUI();
-        _history = new CommandHistory();
+            _viewport3D = new EditorViewport(gl, CameraViewType.Perspective3D, _assetService.ImageBasedLighting);
+            _viewportTop = new EditorViewport(gl, CameraViewType.Top, _assetService.ImageBasedLighting);
+            _viewportFront = new EditorViewport(gl, CameraViewType.Front, _assetService.ImageBasedLighting);
+            _viewportSide = new EditorViewport(gl, CameraViewType.Side, _assetService.ImageBasedLighting);
+            _ui = new EditorUI();
+            _history = new CommandHistory();
 
-        return true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Console.Error.WriteLine($"Blowtorch initialization failed: {ex}");
+            return false;
+        }
     }
 
     public void Run()
     {
         double lastTime = _window.Glfw.GetTime();
 
-        while (!_window.ShouldClose)
+        try
         {
-            double now = _window.Glfw.GetTime();
-            float dt = (float)(now - lastTime);
-            lastTime = now;
-
-            _window.Glfw.GetFramebufferSize(_window.Handle, out int fbWidth, out int fbHeight);
-            if (fbWidth <= 0 || fbHeight <= 0)
+            while (!_window.ShouldClose)
             {
+                double now = _window.Glfw.GetTime();
+                float dt = (float)(now - lastTime);
+                lastTime = now;
+
+                _window.Glfw.GetFramebufferSize(_window.Handle, out int fbWidth, out int fbHeight);
+                if (fbWidth <= 0 || fbHeight <= 0)
+                {
+                    _window.PollEvents();
+                    System.Threading.Thread.Sleep(16);
+                    continue;
+                }
+                var gl = _window.GL;
+                gl.Viewport(0, 0, (uint)fbWidth, (uint)fbHeight);
+                gl.ClearColor(0.12f, 0.12f, 0.14f, 1.0f);
+                gl.Clear(Silk.NET.OpenGL.ClearBufferMask.ColorBufferBit | Silk.NET.OpenGL.ClearBufferMask.DepthBufferBit);
+
+                _inputService.Update();
+                _inputService.BeginFrame();
+                _assetService.UpdateFileChanges(_sceneService);
+                _imgui.NewFrame(dt, fbWidth, fbHeight);
+
+                // Build the UI first. It records which viewport images are actually visible.
+                _ui.Draw(_window, _viewport3D, _viewportTop, _viewportFront, _viewportSide, _sceneService, _assetService, _history, _inputService);
+
+                bool continuousViewportRender = _ui.RequiresContinuousViewportRender;
+                RenderViewportIfNeeded(_viewport3D, fbWidth, fbHeight, continuousViewportRender);
+                RenderViewportIfNeeded(_viewportTop, fbWidth, fbHeight, continuousViewportRender);
+                RenderViewportIfNeeded(_viewportFront, fbWidth, fbHeight, continuousViewportRender);
+                RenderViewportIfNeeded(_viewportSide, fbWidth, fbHeight, continuousViewportRender);
+
+                _imgui.Render();
+                _window.SwapBuffers();
                 _window.PollEvents();
-                System.Threading.Thread.Sleep(16);
-                continue;
             }
-            var gl = _window.GL;
-            gl.Viewport(0, 0, (uint)fbWidth, (uint)fbHeight);
-            gl.ClearColor(0.12f, 0.12f, 0.14f, 1.0f);
-            gl.Clear(Silk.NET.OpenGL.ClearBufferMask.ColorBufferBit | Silk.NET.OpenGL.ClearBufferMask.DepthBufferBit);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Blowtorch stopped after an unrecoverable frame error: {ex}");
+            System.Console.Error.WriteLine(ex);
+        }
 
-            _inputService.Update();
-            _inputService.BeginFrame();
-            _imgui.NewFrame(dt, fbWidth, fbHeight);
+        void RenderViewportIfNeeded(EditorViewport viewport, int fbWidth, int fbHeight, bool forceContinuous)
+        {
+            if (!viewport.ShouldRender(_sceneService.Revision, _assetService.AssetRevision, forceContinuous))
+                return;
 
-            // Render Viewports
-            _viewport3D.BeginRender();
-            _viewport3D.RenderScene(_assetService, _sceneService, _ui.SnapGrid);
-            _viewport3D.RenderDebug(_assetService, _sceneService, _ui.DrawPreviewDebug);
-            _viewport3D.EndRender(fbWidth, fbHeight);
-
-            _viewportTop.BeginRender();
-            _viewportTop.RenderScene(_assetService, _sceneService, _ui.SnapGrid);
-            _viewportTop.RenderDebug(_assetService, _sceneService, _ui.DrawPreviewDebug);
-            _viewportTop.EndRender(fbWidth, fbHeight);
-
-            _viewportFront.BeginRender();
-            _viewportFront.RenderScene(_assetService, _sceneService, _ui.SnapGrid);
-            _viewportFront.RenderDebug(_assetService, _sceneService, _ui.DrawPreviewDebug);
-            _viewportFront.EndRender(fbWidth, fbHeight);
-
-            _viewportSide.BeginRender();
-            _viewportSide.RenderScene(_assetService, _sceneService, _ui.SnapGrid);
-            _viewportSide.RenderDebug(_assetService, _sceneService, _ui.DrawPreviewDebug);
-            _viewportSide.EndRender(fbWidth, fbHeight);
-
-            // Render UI
-            _ui.Draw(_window, _viewport3D, _viewportTop, _viewportFront, _viewportSide, _sceneService, _assetService, _history, _inputService);
-
-            _imgui.Render();
-            _window.SwapBuffers();
-            _window.PollEvents();
+            long start = Stopwatch.GetTimestamp();
+            viewport.BeginRender();
+            viewport.RenderScene(_assetService, _sceneService, _ui.SnapGrid);
+            viewport.RenderDebug(_assetService, _sceneService, _ui.DrawPreviewDebug);
+            viewport.EndRender(fbWidth, fbHeight);
+            viewport.LastRenderMilliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            viewport.MarkRendered(_sceneService.Revision, _assetService.AssetRevision);
         }
     }
 
     public void Dispose()
     {
-        _viewport3D.Dispose();
-        _viewportTop.Dispose();
-        _viewportFront.Dispose();
-        _viewportSide.Dispose();
+        _viewport3D?.Dispose();
+        _viewportTop?.Dispose();
+        _viewportFront?.Dispose();
+        _viewportSide?.Dispose();
         _ui?.Dispose();
-        _assetService.Dispose();
-        _imgui.Dispose();
-        _window.Dispose();
+        _assetService?.Dispose();
+        _imgui?.Dispose();
+        _window?.Dispose();
     }
 }

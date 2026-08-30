@@ -20,6 +20,7 @@ public class AssetManager
     private readonly Dictionary<string, Renderer.Mesh> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Renderer.LoadedModel> _models = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loadedCleanPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _missingModels = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Animation.SkinnedModel> _skinnedModels = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MaterialRuntime> _materials = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MaterialRuntime> _legacyMaterials = new(StringComparer.OrdinalIgnoreCase);
@@ -180,39 +181,65 @@ public class AssetManager
 
     public Renderer.LoadedModel? GetModel(string path)
     {
-        if (_models.TryGetValue(path, out var model))
-            return model;
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
 
         int hashIdx = path.IndexOf('#');
+        string cleanPath = Path.GetFullPath(hashIdx >= 0 ? path[..hashIdx] : path);
+        string key = hashIdx >= 0 ? cleanPath + path[hashIdx..] : cleanPath;
+
+        if (_models.TryGetValue(key, out var model))
+            return model;
+        if (_missingModels.Contains(key))
+            return null;
+
         if (hashIdx != -1)
         {
-            string cleanPath = path.Substring(0, hashIdx);
-
-            if (_loadedCleanPaths.Contains(cleanPath))
+            if (!_loadedCleanPaths.Contains(cleanPath))
             {
-                return null;
-            }
-
-            _loadedCleanPaths.Add(cleanPath);
-
-            var submeshes = Renderer.ModelLoader.LoadAllSubmeshes(_gl, cleanPath);
-            for (int i = 0; i < submeshes.Length; i++)
-            {
-                if (submeshes[i] != null)
+                try
                 {
-                    _models[$"{cleanPath}#{i}"] = submeshes[i]!;
+                    var submeshes = Renderer.ModelLoader.LoadAllSubmeshes(_gl, cleanPath);
+                    for (int i = 0; i < submeshes.Length; i++)
+                    {
+                        if (submeshes[i] != null)
+                            _models[$"{cleanPath}#{i}"] = submeshes[i]!;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Failed to load model submeshes '{cleanPath}': {ex.Message}");
+                }
+                finally
+                {
+                    _loadedCleanPaths.Add(cleanPath);
                 }
             }
 
-            if (_models.TryGetValue(path, out var found))
+            if (_models.TryGetValue(key, out var found))
                 return found;
 
+            _missingModels.Add(key);
             return null;
         }
 
-        var loaded = Renderer.ModelLoader.Load(_gl, path);
-        _models[path] = loaded!;
-        return loaded;
+        try
+        {
+            var loaded = Renderer.ModelLoader.Load(_gl, cleanPath);
+            if (loaded == null)
+            {
+                _missingModels.Add(key);
+                return null;
+            }
+            _models[key] = loaded;
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            _missingModels.Add(key);
+            Logger.Error($"Failed to load model '{cleanPath}': {ex.Message}");
+            return null;
+        }
     }
 
     public Animation.SkinnedModel? GetSkinnedModel(string path)
@@ -255,6 +282,7 @@ public class AssetManager
         _shaders.Clear();
         _meshes.Clear();
         _models.Clear();
+        _missingModels.Clear();
         _skinnedModels.Clear();
         _loadedCleanPaths.Clear();
     }

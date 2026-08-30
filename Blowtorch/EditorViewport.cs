@@ -10,6 +10,7 @@ using Fuse.Core;
 using Shader = Fuse.Renderer.Shader;
 using Mesh = Fuse.Renderer.Mesh;
 using System.Security.Cryptography.X509Certificates;
+using Fuse.Math;
 
 namespace Blowtorch;
 
@@ -30,6 +31,12 @@ public unsafe class EditorViewport : IDisposable
     private bool _isOrbiting;
     private bool _isPanning;
     private bool _firstMove;
+    private bool _renderRequested = true;
+    private ulong _lastSceneRevision = ulong.MaxValue;
+    private ulong _lastAssetRevision = ulong.MaxValue;
+    private Matrix4x4 _lastViewMatrix;
+    private Matrix4x4 _lastProjectionMatrix;
+    private bool _shadowsEnabled = true;
     public static EditorViewport? ActiveViewport;
 
     public EditorViewport(GL gl, CameraViewType viewType, ImageBasedLighting? imageBasedLighting = null)
@@ -45,14 +52,62 @@ public unsafe class EditorViewport : IDisposable
     public bool ShowHitboxes
     {
         get => _debugDrawer.Enabled;
-        set => _debugDrawer.Enabled = value;
+        set
+        {
+            if (_debugDrawer.Enabled == value) return;
+            _debugDrawer.Enabled = value;
+            RequestRender();
+        }
     }
 
     public uint ColorTexture => _colorTex;
     public int Width => _width;
     public int Height => _height;
     public ViewportCamera Camera => _camera;
-    public bool ShadowsEnabled { get; set; } = true;
+    public bool ShadowsEnabled
+    {
+        get => _shadowsEnabled;
+        set
+        {
+            if (_shadowsEnabled == value) return;
+            _shadowsEnabled = value;
+            RequestRender();
+        }
+    }
+    public bool IsVisibleInUi { get; private set; }
+    public int LastVisibleEntityCount { get; private set; }
+    public int LastCulledEntityCount { get; private set; }
+    public int LastVisibleDebugCount { get; private set; }
+    public double LastRenderMilliseconds { get; internal set; }
+
+    public void SetUiVisible(bool visible)
+    {
+        if (visible && !IsVisibleInUi)
+            RequestRender();
+        IsVisibleInUi = visible;
+    }
+
+    public void RequestRender() => _renderRequested = true;
+
+    public bool ShouldRender(ulong sceneRevision, ulong assetRevision, bool forceContinuous)
+    {
+        if (!IsVisibleInUi)
+            return false;
+        Matrix4x4 view = _camera.ViewMatrix;
+        Matrix4x4 projection = _camera.ProjectionMatrix((float)_width / _height);
+        return forceContinuous || _renderRequested ||
+               sceneRevision != _lastSceneRevision || assetRevision != _lastAssetRevision ||
+               !_lastViewMatrix.Equals(view) || !_lastProjectionMatrix.Equals(projection);
+    }
+
+    public void MarkRendered(ulong sceneRevision, ulong assetRevision)
+    {
+        _renderRequested = false;
+        _lastSceneRevision = sceneRevision;
+        _lastAssetRevision = assetRevision;
+        _lastViewMatrix = _camera.ViewMatrix;
+        _lastProjectionMatrix = _camera.ProjectionMatrix((float)_width / _height);
+    }
 
     public void CreateFbo(int w, int h)
     {
@@ -84,6 +139,7 @@ public unsafe class EditorViewport : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _width = w;
         _height = h;
+        RequestRender();
     }
 
     public void BeginRender()
@@ -110,6 +166,9 @@ public unsafe class EditorViewport : IDisposable
         var scene = sceneService.Scene;
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
+        var frustum = new ViewFrustum(view * proj);
+        LastVisibleEntityCount = 0;
+        LastCulledEntityCount = 0;
 
         _lightingSystem.Prepare(
             scene,
@@ -133,7 +192,7 @@ public unsafe class EditorViewport : IDisposable
         void PrepareMaterialShader(Shader target)
         {
             target.Use();
-            target.SetFloat("uIsViewmodel", 1.0f);
+            target.SetFloat("uIsViewmodel", 0.0f);
             target.SetBool("uOutputSrgb", true);
             target.SetMat4("uView", view);
             target.SetMat4("uProj", proj);
@@ -214,6 +273,12 @@ public unsafe class EditorViewport : IDisposable
         foreach (var entity in scene.Entities)
         {
             if (!entity.Visible || entity.Mesh == null) continue;
+            if (!frustum.Intersects(entity.GetWorldRenderBounds()))
+            {
+                LastCulledEntityCount++;
+                continue;
+            }
+            LastVisibleEntityCount++;
 
             if (!isWireframe)
             {
@@ -252,7 +317,7 @@ public unsafe class EditorViewport : IDisposable
                         blendEnabled = wantsBlend;
                     }
 
-                    targetShader.SetMat4("uModel", entity.Transform.Matrix);
+                    targetShader.SetMat4("uModel", entity.RenderMatrix);
                     targetShader.SetVec2("uUvScale", entity.UvScale);
                     targetShader.SetVec2("uUvOffset", entity.UvOffset);
                     targetShader.SetFloat("uUvRotation", entity.UvRotation);
@@ -290,7 +355,7 @@ public unsafe class EditorViewport : IDisposable
                     shader.SetVec3("uColor", new Vector3(0.8f, 0.8f, 0.8f));
                     activeShader = shader;
                 }
-                shader.SetMat4("uModel", entity.Transform.Matrix);
+                shader.SetMat4("uModel", entity.RenderMatrix);
                 shader.SetVec2("uUvScale", entity.UvScale);
                 shader.SetVec2("uUvOffset", entity.UvOffset);
                 shader.SetFloat("uUvRotation", entity.UvRotation);
@@ -326,6 +391,8 @@ public unsafe class EditorViewport : IDisposable
     {
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
+        var frustum = new ViewFrustum(view * proj);
+        LastVisibleDebugCount = 0;
 
         if (!_debugDrawer.Enabled) return;
         _debugDrawer.Clear();
@@ -338,6 +405,10 @@ public unsafe class EditorViewport : IDisposable
         foreach (var mapObj in doc.Objects)
         {
             if (mapObj.Body == null) continue;
+            if (TryGetDebugBounds(mapObj, sceneService.Scene, out AABB debugBounds) &&
+                !frustum.Intersects(debugBounds))
+                continue;
+            LastVisibleDebugCount++;
 
             var body = mapObj.Body;
             var color = body.Mass > 0 ? new Vector3(1, 1, 0) : new Vector3(1, 0, 0);
@@ -398,6 +469,45 @@ public unsafe class EditorViewport : IDisposable
         onDrawDebug?.Invoke(_debugDrawer, assetService);
 
         _debugDrawer.Render(view, proj);
+    }
+
+    private static bool TryGetDebugBounds(MapObject mapObj, Scene scene, out AABB bounds)
+    {
+        bounds = new AABB();
+        MapBody? body = mapObj.Body;
+        if (body == null)
+            return false;
+
+        Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(body.Rotation) *
+                              Matrix4x4.CreateTranslation(body.Position);
+        switch (body.Shape)
+        {
+            case MapShapeType.Box when body.HalfExtents.HasValue:
+                Vector3 half = body.HalfExtents.Value;
+                bounds = new AABB(-half, half).Transformed(transform);
+                return true;
+            case MapShapeType.Sphere when body.Radius.HasValue:
+                Vector3 radius = new(body.Radius.Value);
+                bounds = new AABB(body.Position - radius, body.Position + radius);
+                return true;
+            case MapShapeType.Capsule when body.Radius.HasValue && body.Height.HasValue:
+                Vector3 capsuleHalf = new(body.Radius.Value,
+                    body.Height.Value * 0.5f + body.Radius.Value,
+                    body.Radius.Value);
+                bounds = new AABB(-capsuleHalf, capsuleHalf).Transformed(transform);
+                return true;
+            case MapShapeType.Trimesh:
+            case MapShapeType.ConvexHull:
+                Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == mapObj.Id);
+                if (entity != null)
+                {
+                    bounds = entity.GetWorldRenderBounds();
+                    return bounds.IsValid;
+                }
+                return false;
+            default:
+                return false;
+        }
     }
 
     public void HandleInput(ImGuiNET.ImGuiIOPtr io, float dt, Silk.NET.GLFW.Glfw? glfw = null, Silk.NET.GLFW.WindowHandle* win = null, System.Numerics.Vector2 vpPos = default, System.Numerics.Vector2 vpSize = default)

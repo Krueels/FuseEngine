@@ -52,6 +52,8 @@ public class CommandHistory
     private readonly List<ICommand> _undoStack = new();
     private readonly List<ICommand> _redoStack = new();
     private const int MaxHistorySize = 50;
+    public bool CanUndo => _undoStack.Count > 0;
+    public bool CanRedo => _redoStack.Count > 0;
 
     public void PushCommand(ICommand command)
     {
@@ -91,5 +93,11 @@ public class CommandHistory
                 _undoStack.RemoveAt(0);
             }
         }
+    }
+
+    public void Clear()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
     }
 }

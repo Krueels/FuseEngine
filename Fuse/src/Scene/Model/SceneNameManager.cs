@@ -5,6 +5,56 @@ namespace Fuse.Scene.Model;
 
 public static class SceneNameManager
 {
+    public static IReadOnlyList<string> ValidateAndRepairHierarchy(MapDocument doc)
+    {
+        var warnings = new List<string>();
+        var byId = doc.Objects
+            .GroupBy(obj => obj.Id, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), System.StringComparer.OrdinalIgnoreCase);
+
+        foreach (MapObject obj in doc.Objects)
+        {
+            if (string.IsNullOrWhiteSpace(obj.ParentId))
+            {
+                obj.ParentId = null;
+                continue;
+            }
+
+            obj.ParentId = obj.ParentId.Trim();
+            if (obj.Id.Equals(obj.ParentId, System.StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add($"Object '{obj.Id}' could not be its own parent; the parent link was removed.");
+                obj.ParentId = null;
+            }
+            else if (!byId.ContainsKey(obj.ParentId))
+            {
+                warnings.Add($"Object '{obj.Id}' referenced missing parent '{obj.ParentId}'; the parent link was removed.");
+                obj.ParentId = null;
+            }
+        }
+
+        foreach (MapObject obj in doc.Objects)
+        {
+            var visited = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            MapObject? current = obj;
+            while (current != null)
+            {
+                if (!visited.Add(current.Id))
+                {
+                    warnings.Add($"Hierarchy cycle involving '{obj.Id}' was repaired by detaching it from its parent.");
+                    obj.ParentId = null;
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(current.ParentId))
+                    break;
+                current = byId.GetValueOrDefault(current.ParentId);
+            }
+        }
+
+        return warnings;
+    }
+
     /// <summary>
     /// Gets a unique name for an object by appending a suffix (e.g. _1, _2) if there is a conflict.
     /// </summary>

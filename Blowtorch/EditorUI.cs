@@ -8,7 +8,6 @@ using Fuse.Renderer;
 using Fuse.Core;
 using Fuse;
 using Fuse.Renderer.Materials;
-using System.Windows.Media.Animation;
 
 namespace Blowtorch;
 
@@ -27,7 +26,21 @@ public unsafe class EditorUI : IDisposable
     private bool _showHitBoxes = true;
     private float _hollowThickness = 0.5f;
     private string _saveMapName = "map.bth";
-    private bool _showLaunchError;
+    private bool _showDiagnostics;
+    private string _hierarchyFilter = "";
+    private string _documentError = "";
+    private bool _showUnsavedChangesDialog;
+    private bool _showOverwriteDialog;
+    private string _pendingOpenPath = "";
+    private string _pendingSavePath = "";
+    private bool _resumePendingActionAfterSave;
+    private bool _executePendingDocumentAction;
+    private bool _initialMapStatusChecked;
+
+    private enum PendingDocumentAction { None, New, Open, Exit }
+    private PendingDocumentAction _pendingDocumentAction;
+    private enum ViewportLayout { Quad, PerspectiveOnly }
+    private ViewportLayout _viewportLayout = ViewportLayout.Quad;
 
     private bool _showMapWindow = true;
     private bool _showJsonWindow = false;
@@ -114,6 +127,8 @@ public unsafe class EditorUI : IDisposable
 
     public bool ShowMapWindow => _showMapWindow;
     public bool ShowJsonWindow => _showJsonWindow;
+    public bool RequiresContinuousViewportRender =>
+        _currentMode == EditorMode.DrawBrush || _isDraggingHandle || EditorGizmo.IsUsing() || ImGui.IsAnyItemActive();
 
     public void Dispose() => _materialEditor.Dispose();
 
@@ -128,6 +143,20 @@ public unsafe class EditorUI : IDisposable
         CommandHistory history,
         EditorInputService inputService)
     {
+        viewport3D.SetUiVisible(false);
+        viewportTop.SetUiVisible(false);
+        viewportFront.SetUiVisible(false);
+        viewportSide.SetUiVisible(false);
+
+        if (window.ConsumeCloseRequest())
+            RequestDocumentAction(PendingDocumentAction.Exit, sceneService);
+        if (!_initialMapStatusChecked)
+        {
+            _initialMapStatusChecked = true;
+            if (!string.IsNullOrEmpty(sceneService.LastError))
+                ShowDocumentError(sceneService.LastError);
+        }
+
         if (_currentMode != EditorMode.DrawBrush)
         {
             _previewManager.Reset();
@@ -138,8 +167,12 @@ public unsafe class EditorUI : IDisposable
         {
             _lastSelectionTime = ImGui.GetTime();
             _lastSelectedObjectIds = currentIds;
+            viewport3D.RequestRender();
+            viewportTop.RequestRender();
+            viewportFront.RequestRender();
+            viewportSide.RequestRender();
         }
-        _frameBeginState = sceneService.Document.Serialize();
+        _frameBeginState = sceneService.CaptureSnapshot();
 
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
@@ -176,8 +209,13 @@ public unsafe class EditorUI : IDisposable
 
         DrawMenuBar(window, sceneService, assetService, history, viewport3D);
 
-        DrawOpenDialog(sceneService, assetService);
-        DrawSaveAsDialog(sceneService);
+        DrawOpenDialog(window, sceneService, assetService, history);
+        DrawSaveAsDialog(window, sceneService, assetService, history);
+        DrawUnsavedChangesDialog(window, sceneService, assetService, history);
+        DrawOverwriteDialog(window, sceneService, assetService, history);
+        DrawDocumentErrorDialog();
+        if (_executePendingDocumentAction)
+            ExecutePendingDocumentAction(window, sceneService, assetService, history);
         DrawHollowDialog(sceneService, assetService, history);
         DrawNewMaterialDialog(sceneService, assetService, history);
         //DrawLaunchErrorDialog();
@@ -208,9 +246,13 @@ public unsafe class EditorUI : IDisposable
             DrawMapWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
 
         if (_showJsonWindow)
-            DrawJsonWindow(sceneService.Document);
+            DrawJsonWindow(sceneService);
+
+        if (_showDiagnostics)
+            DrawDiagnosticsWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
 
         HandleKeyboardShortcuts(sceneService, assetService, history, inputService);
+        Undo.EndFrame(history, sceneService, assetService);
     }
 
     private void DuplicateObject(MapObject obj, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -248,10 +290,12 @@ public unsafe class EditorUI : IDisposable
     private bool IsDescendantOf(MapObject potentialDescendant, MapObject potentialAncestor, MapDocument doc)
     {
         string? parentId = potentialDescendant.ParentId;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (!string.IsNullOrEmpty(parentId))
         {
-            if (parentId == potentialAncestor.Id) return true;
-            var parent = doc.Objects.FirstOrDefault(o => o.Id == parentId);
+            if (!visited.Add(parentId)) return false;
+            if (parentId.Equals(potentialAncestor.Id, StringComparison.OrdinalIgnoreCase)) return true;
+            var parent = doc.Objects.FirstOrDefault(o => o.Id.Equals(parentId, StringComparison.OrdinalIgnoreCase));
             parentId = parent?.ParentId;
         }
         return false;
@@ -324,6 +368,7 @@ public unsafe class EditorUI : IDisposable
         SceneNameManager.EnsureAllUnique(doc);
 
         var post = doc.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
 
@@ -346,12 +391,15 @@ public unsafe class EditorUI : IDisposable
         }
 
         var post = doc.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
 
-    private void DrawObjectNode(MapObject obj, MapDocument doc, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, ref MapObject? objectToDelete, ref MapObject? objectToDuplicate)
+    private void DrawObjectNode(MapObject obj, MapDocument doc, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, string filter, ref MapObject? objectToDelete, ref MapObject? objectToDuplicate)
     {
+        if (!HierarchyMatchesFilter(obj, doc, filter))
+            return;
         var children = doc.Objects.Where(o => o.ParentId == obj.Id).ToList();
         bool isSelected = _selectedObjects.Contains(obj);
         bool hasChildren = children.Count > 0;
@@ -461,6 +509,7 @@ public unsafe class EditorUI : IDisposable
                     }
 
                     var post = doc.Serialize();
+                    sceneService.MarkModified(post);
                     history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
                     sceneService.PopulateScene(assetService);
                 }
@@ -583,11 +632,39 @@ public unsafe class EditorUI : IDisposable
             {
                 foreach (var child in children)
                 {
-                    DrawObjectNode(child, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, ref objectToDelete, ref objectToDuplicate);
+                    DrawObjectNode(child, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, filter, ref objectToDelete, ref objectToDuplicate);
                 }
             }
             ImGui.TreePop();
         }
+    }
+
+    private static bool HierarchyMatchesFilter(MapObject obj, MapDocument doc, string filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            return true;
+
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool Matches(MapObject candidate)
+        {
+            if (!visited.Add(candidate.Id))
+                return false;
+            if (candidate.Id.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                (candidate.LightType?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (candidate.Model?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (candidate.MaterialPath?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false))
+                return true;
+
+            foreach (MapObject child in doc.Objects.Where(child =>
+                         string.Equals(child.ParentId, candidate.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (Matches(child))
+                    return true;
+            }
+            return false;
+        }
+
+        return Matches(obj);
     }
 
     private void DuplicateObjects(List<MapObject> objs, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -639,6 +716,7 @@ public unsafe class EditorUI : IDisposable
         _selectedObject = duplicates.LastOrDefault();
         
         var post = doc.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
@@ -672,6 +750,7 @@ public unsafe class EditorUI : IDisposable
                 _selectedObject = _selectedObjects.FirstOrDefault();
             }
             var post = doc.Serialize();
+            sceneService.MarkModified(post);
             history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
             sceneService.PopulateScene(assetService);
         }
@@ -692,9 +771,21 @@ public unsafe class EditorUI : IDisposable
             _saveMapName = "map.bth";
             return;
         }
-        sceneService.SaveMap();
-        string mapFile = Path.GetFileName(sceneService.MapPath);
-        System.Diagnostics.Process.Start("Fuse.exe", mapFile);
+        if (!sceneService.SaveMap())
+        {
+            ShowDocumentError(sceneService.LastError);
+            return;
+        }
+
+        try
+        {
+            string mapFile = Path.GetFileName(sceneService.MapPath);
+            System.Diagnostics.Process.Start("Fuse.exe", mapFile);
+        }
+        catch (Exception ex)
+        {
+            ShowDocumentError($"Could not launch Fuse: {ex.Message}");
+        }
     }
 
     private void SaveMapOrPrompt(EditorSceneService sceneService)
@@ -706,7 +797,8 @@ public unsafe class EditorUI : IDisposable
         }
         else
         {
-            sceneService.SaveMap();
+            if (!sceneService.SaveMap())
+                ShowDocumentError(sceneService.LastError);
         }
     }
 
@@ -730,13 +822,15 @@ public unsafe class EditorUI : IDisposable
             return;
         
         // Handle shortcuts only if we're not typing in text inputs
-        if (io.WantTextInput) return;
+        if (io.WantTextInput || (io.WantCaptureKeyboard && ImGui.IsAnyItemActive())) return;
 
         if (io.KeyCtrl)
         {
             if (ImGui.IsKeyPressed(ImGuiKey.Z)) history.Undo();
             if (ImGui.IsKeyPressed(ImGuiKey.Y)) history.Redo();
             if (ImGui.IsKeyPressed(ImGuiKey.S)) SaveMapOrPrompt(sceneService);
+            if (ImGui.IsKeyPressed(ImGuiKey.N)) RequestDocumentAction(PendingDocumentAction.New, sceneService);
+            if (ImGui.IsKeyPressed(ImGuiKey.O)) OpenMapDialog();
             if (ImGui.IsKeyPressed(ImGuiKey.D) && _selectedObjects.Count > 0)
             {
                 DuplicateObjects(_selectedObjects.ToList(), sceneService, assetService, history);
@@ -789,27 +883,11 @@ public unsafe class EditorUI : IDisposable
             {
                 if (ImGui.MenuItem("New", "Ctrl+N"))
                 {
-                    _selectedObjects.Clear();
-                    sceneService.SetDocument(new MapDocument
-                    {
-                        PlayerSpawn = new MapPlayerSpawn
-                        {
-                            Position = Vector3.Zero,
-                            Yaw = 0,
-                            Pitch = 0,
-                        }
-                    });
-                    sceneService.SetMapPath("");
-                    sceneService.PopulateScene(assetService);
-                    _newDocumentRequested = true;
+                    RequestDocumentAction(PendingDocumentAction.New, sceneService);
                 }
                 if (ImGui.MenuItem("Open...", "Ctrl+O"))
                 {
-                    string mapsDir = Path.Combine(ResPath.Path, "Maps");
-                    if (Directory.Exists(mapsDir))
-                        _availableMaps = Directory.GetFiles(mapsDir, "*.bth");
-                    _selectedOpenMapIndex = -1;
-                    _showOpenDialog = true;
+                    OpenMapDialog();
                 }
                 if (ImGui.MenuItem("Save", "Ctrl+S"))
                 {
@@ -828,13 +906,14 @@ public unsafe class EditorUI : IDisposable
                     LaunchGame(sceneService);
                 }
                 ImGui.Separator();
-                if (ImGui.MenuItem("Exit")) window.Close();
+                if (ImGui.MenuItem("Exit"))
+                    RequestDocumentAction(PendingDocumentAction.Exit, sceneService);
                 ImGui.EndMenu();
             }
             if (ImGui.BeginMenu("Edit"))
             {
-                if (ImGui.MenuItem("Undo", "Ctrl+Z")) history.Undo();
-                if (ImGui.MenuItem("Redo", "Ctrl+Y")) history.Redo();
+                if (ImGui.MenuItem("Undo", "Ctrl+Z", false, history.CanUndo)) history.Undo();
+                if (ImGui.MenuItem("Redo", "Ctrl+Y", false, history.CanRedo)) history.Redo();
                 ImGui.EndMenu();
             }
             if (ImGui.BeginMenu("CSG"))
@@ -879,12 +958,20 @@ public unsafe class EditorUI : IDisposable
             {
                 ImGui.MenuItem("Map Objects", "", ref _showMapWindow);
                 ImGui.MenuItem("Raw JSON", "", ref _showJsonWindow);
+                ImGui.MenuItem("Diagnostics", "", ref _showDiagnostics);
                 ImGui.MenuItem("Show hitboxes", "", ref _showHitBoxes);
+                ImGui.Separator();
+                if (ImGui.MenuItem("Quad View", "", _viewportLayout == ViewportLayout.Quad))
+                    _viewportLayout = ViewportLayout.Quad;
+                if (ImGui.MenuItem("3D View Only", "", _viewportLayout == ViewportLayout.PerspectiveOnly))
+                    _viewportLayout = ViewportLayout.PerspectiveOnly;
                 ImGui.Separator();
                 if (ImGui.MenuItem("3D Viewport Shadows", "", viewport3D.ShadowsEnabled))
                     viewport3D.ShadowsEnabled = !viewport3D.ShadowsEnabled;
                 ImGui.EndMenu();
             }
+            ImGui.Separator();
+            ImGui.TextDisabled(sceneService.IsDirty ? "Modified" : "Saved");
             ImGui.EndMainMenuBar();
         }
     }
@@ -949,17 +1036,24 @@ public unsafe class EditorUI : IDisposable
             }
 
             var availSize = ImGui.GetContentRegionAvail();
-            var size = new Vector2(availSize.X / 2f - 4, availSize.Y / 2f - 4);
+            if (_viewportLayout == ViewportLayout.PerspectiveOnly || availSize.X < 700 || availSize.Y < 450)
+            {
+                DrawSubViewport(window, viewport3D, "Camera 3D", availSize, sceneService, assetService, history, inputService);
+            }
+            else
+            {
+                var size = new Vector2(availSize.X / 2f - 4, availSize.Y / 2f - 4);
 
-            // Row 1: Top & Front
-            DrawSubViewport(window, viewportTop, "Top (X/Z)", size, sceneService, assetService, history);
-            ImGui.SameLine();
-            DrawSubViewport(window, viewportFront, "Front (X/Y)", size, sceneService, assetService, history);
+                // Row 1: Top & Front
+                DrawSubViewport(window, viewportTop, "Top (X/Z)", size, sceneService, assetService, history, inputService);
+                ImGui.SameLine();
+                DrawSubViewport(window, viewportFront, "Front (X/Y)", size, sceneService, assetService, history, inputService);
 
-            // Row 2: Side & 3D Perspective
-            DrawSubViewport(window, viewportSide, "Side (Z/Y)", size, sceneService, assetService, history);
-            ImGui.SameLine();
-            DrawSubViewport(window, viewport3D, "Camera 3D", size, sceneService, assetService, history);
+                // Row 2: Side & 3D Perspective
+                DrawSubViewport(window, viewportSide, "Side (Z/Y)", size, sceneService, assetService, history, inputService);
+                ImGui.SameLine();
+                DrawSubViewport(window, viewport3D, "Camera 3D", size, sceneService, assetService, history, inputService);
+            }
         }
         ImGui.End();
         ImGui.PopStyleVar(1);
@@ -972,7 +1066,8 @@ public unsafe class EditorUI : IDisposable
         Vector2 size, 
         EditorSceneService sceneService, 
         EditorAssetService assetService, 
-        CommandHistory history)
+        CommandHistory history,
+        EditorInputService inputService)
     {
         ImGui.BeginChild(title, size, ImGuiChildFlags.Borders, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         
@@ -980,6 +1075,7 @@ public unsafe class EditorUI : IDisposable
 
         var vpPos = ImGui.GetCursorScreenPos();
         var vpSize = ImGui.GetContentRegionAvail();
+        viewport.SetUiVisible(vpSize.X >= 8 && vpSize.Y >= 8);
 
         int targetWidth = Math.Max(8, ((int)vpSize.X + 3) & ~3);
         int targetHeight = Math.Max(8, ((int)vpSize.Y + 3) & ~3);
@@ -991,14 +1087,14 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.Image((IntPtr)viewport.ColorTexture, vpSize, new Vector2(0, 1), new Vector2(1, 0));
 
-        bool isHovered = ImGui.IsItemHovered();
+        bool isHovered = ImGui.IsItemHovered() && inputService.IsMapContext;
 
         // 2D Handle Detection & State Setup
         bool showHandles = false;
         Vector3 boxMin = Vector3.Zero;
         Vector3 boxMax = Vector3.Zero;
         bool isPreview = false;
-        Vector2[] handlePositions = new Vector2[10];
+        Span<Vector2> handlePositions = stackalloc Vector2[10];
 
         if (viewport.Camera.IsOrthographic)
         {
@@ -1023,7 +1119,7 @@ public unsafe class EditorUI : IDisposable
 
         if (showHandles)
         {
-            Vector3[] corners = new Vector3[8]
+            Span<Vector3> corners = stackalloc Vector3[8]
             {
                 new Vector3(boxMin.X, boxMin.Y, boxMin.Z),
                 new Vector3(boxMax.X, boxMin.Y, boxMin.Z),
@@ -1272,7 +1368,6 @@ public unsafe class EditorUI : IDisposable
 
                 if (!isUsingNow && _wasUsingGizmo)
                 {
-                    var postEditState = sceneService.Document.Serialize();
                     Undo.ForceEnd(history, sceneService, assetService);
                 }
                 _wasUsingGizmo = isUsingNow;
@@ -1452,20 +1547,20 @@ public unsafe class EditorUI : IDisposable
 
                         foreach (Brush brush in _selectedObjects)
                         {
+                            if (brush.Body == null)
+                                continue;
+                            MapBody brushBody = brush.Body;
                             brush.ApplyTransformMatrix(shearMat);
-                            if (brush.Body != null)
-                            {
-                                float localFixedV = fixedV - GetComp(brush.Body.Position, vAxis);
-                                float shiftH = -k * localFixedV;
-                                var pos = brush.Body.Position;
-                                SetComponent(ref pos, hAxis, GetComp(pos, hAxis) + shiftH);
-                                brush.Body.Position = pos;
-                            }
+                            float localFixedV = fixedV - GetComp(brushBody.Position, vAxis);
+                            float shiftH = -k * localFixedV;
+                            var pos = brushBody.Position;
+                            SetComponent(ref pos, hAxis, GetComp(pos, hAxis) + shiftH);
+                            brushBody.Position = pos;
                             assetService.InvalidateMesh(brush.Id);
                             var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == brush.Id);
                             if (entity != null)
                             {
-                                entity.Transform.Position = brush.Body.Position;
+                                entity.Transform.Position = brushBody.Position;
                                 entity.Transform.Scale = Vector3.One;
                                 entity.Mesh = assetService.GetOrCreateMesh(brush);
                             }
@@ -1480,8 +1575,8 @@ public unsafe class EditorUI : IDisposable
                                     min = System.Numerics.Vector3.Min(min, v.Position);
                                     max = System.Numerics.Vector3.Max(max, v.Position);
                                 }
-                                brush.Body.HalfExtents = (max - min) / 2f;
-                                brush.Body.Shape = Fuse.Scene.Model.MapShapeType.Trimesh;
+                                brushBody.HalfExtents = (max - min) / 2f;
+                                brushBody.Shape = Fuse.Scene.Model.MapShapeType.Trimesh;
                             }
                         }
                     }
@@ -1506,20 +1601,20 @@ public unsafe class EditorUI : IDisposable
 
                         foreach (Brush brush in _selectedObjects)
                         {
+                            if (brush.Body == null)
+                                continue;
+                            MapBody brushBody = brush.Body;
                             brush.ApplyTransformMatrix(shearMat);
-                            if (brush.Body != null)
-                            {
-                                float localFixedH = fixedH - GetComp(brush.Body.Position, hAxis);
-                                float shiftV = -k * localFixedH;
-                                var pos = brush.Body.Position;
-                                SetComponent(ref pos, vAxis, GetComp(pos, vAxis) + shiftV);
-                                brush.Body.Position = pos;
-                            }
+                            float localFixedH = fixedH - GetComp(brushBody.Position, hAxis);
+                            float shiftV = -k * localFixedH;
+                            var pos = brushBody.Position;
+                            SetComponent(ref pos, vAxis, GetComp(pos, vAxis) + shiftV);
+                            brushBody.Position = pos;
                             assetService.InvalidateMesh(brush.Id);
                             var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == brush.Id);
                             if (entity != null)
                             {
-                                entity.Transform.Position = brush.Body.Position;
+                                entity.Transform.Position = brushBody.Position;
                                 entity.Mesh = assetService.GetOrCreateMesh(brush);
                             }
                                 
@@ -1533,8 +1628,8 @@ public unsafe class EditorUI : IDisposable
                                     min = System.Numerics.Vector3.Min(min, v.Position);
                                     max = System.Numerics.Vector3.Max(max, v.Position);
                                 }
-                                brush.Body.HalfExtents = (max - min) / 2f;
-                                brush.Body.Shape = Fuse.Scene.Model.MapShapeType.Trimesh;
+                                brushBody.HalfExtents = (max - min) / 2f;
+                                brushBody.Shape = Fuse.Scene.Model.MapShapeType.Trimesh;
                             }
                         }
                     }
@@ -1598,7 +1693,6 @@ public unsafe class EditorUI : IDisposable
                 
                 if (!_previewManager.IsDraggingHandle)
                 {
-                    var postEditState = sceneService.Document.Serialize();
                     Undo.ForceEnd(history, sceneService, assetService);
                 }
                 _previewManager.IsDraggingHandle = false;
@@ -1615,6 +1709,7 @@ public unsafe class EditorUI : IDisposable
             {
                 if (selObj == _selectedObject) continue;
                 if (selObj.Body == null || !selObj.Visible) continue;
+                MapBody selectedBody = selObj.Body;
 
                 Vector3 sMin = Vector3.Zero;
                 Vector3 sMax = Vector3.Zero;
@@ -1628,8 +1723,8 @@ public unsafe class EditorUI : IDisposable
                     {
                         for (int i = 0; i < meshData.LineIndices.Length; i += 2)
                         {
-                            var v1 = meshData.Vertices[meshData.LineIndices[i]].Position + selBrush.Body.Position;
-                            var v2 = meshData.Vertices[meshData.LineIndices[i + 1]].Position + selBrush.Body.Position;
+                            var v1 = meshData.Vertices[meshData.LineIndices[i]].Position + selectedBody.Position;
+                            var v2 = meshData.Vertices[meshData.LineIndices[i + 1]].Position + selectedBody.Position;
                             var p1 = WorldToScreen(v1, viewport, vpPos, vpSize);
                             var p2 = WorldToScreen(v2, viewport, vpPos, vpSize);
                             if (p1.X > 0 && p2.X > 0)
@@ -1639,24 +1734,24 @@ public unsafe class EditorUI : IDisposable
                         }
                     }
                 }
-                else if ((selObj.Body.Shape == MapShapeType.Box || selObj.Body.Shape == MapShapeType.Trimesh) && selObj.Body.HalfExtents.HasValue)
+                else if ((selectedBody.Shape == MapShapeType.Box || selectedBody.Shape == MapShapeType.Trimesh) && selectedBody.HalfExtents.HasValue)
                 {
-                    sMin = selObj.Body.Position - selObj.Body.HalfExtents.Value;
-                    sMax = selObj.Body.Position + selObj.Body.HalfExtents.Value;
+                    sMin = selectedBody.Position - selectedBody.HalfExtents.Value;
+                    sMax = selectedBody.Position + selectedBody.HalfExtents.Value;
                 }
-                else if (selObj.Body.Shape == MapShapeType.Sphere && selObj.Body.Radius.HasValue)
+                else if (selectedBody.Shape == MapShapeType.Sphere && selectedBody.Radius.HasValue)
                 {
-                    float r = selObj.Body.Radius.Value;
-                    sMin = selObj.Body.Position - new Vector3(r);
-                    sMax = selObj.Body.Position + new Vector3(r);
+                    float r = selectedBody.Radius.Value;
+                    sMin = selectedBody.Position - new Vector3(r);
+                    sMax = selectedBody.Position + new Vector3(r);
                 }
                 else
                 {
                     float r = 1.0f;
-                    if (selObj.Body.Shape == MapShapeType.Capsule && selObj.Body.Height.HasValue) r = selObj.Body.Height.Value;
+                    if (selectedBody.Shape == MapShapeType.Capsule && selectedBody.Height.HasValue) r = selectedBody.Height.Value;
                     if (selObj.IsModel) r = selObj.ModelScale.Length() * 1.5f;
-                    sMin = selObj.Body.Position - new Vector3(r);
-                    sMax = selObj.Body.Position + new Vector3(r);
+                    sMin = selectedBody.Position - new Vector3(r);
+                    sMax = selectedBody.Position + new Vector3(r);
                 }
 
                 if (drawAABB)
@@ -2019,6 +2114,8 @@ public unsafe class EditorUI : IDisposable
         ImGui.Spacing();
         ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Scene Hierarchy");
         ImGui.Separator();
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##HierarchyFilter", "Search objects, lights, models...", ref _hierarchyFilter, 128);
 
         float listHeight = ImGui.GetContentRegionAvail().Y * 0.5f - 10;
         if (listHeight < 150f) listHeight = 150f; // Ensure minimum height
@@ -2028,7 +2125,7 @@ public unsafe class EditorUI : IDisposable
         var rootObjects = doc.Objects.Where(o => string.IsNullOrEmpty(o.ParentId)).ToList();
         foreach (var obj in rootObjects)
         {
-            DrawObjectNode(obj, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, ref objectToDelete, ref objectToDuplicate);
+            DrawObjectNode(obj, doc, sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter, ref objectToDelete, ref objectToDuplicate);
         }
         
         if (ImGui.BeginPopupContextWindow("hierarchy_tree_context", ImGuiPopupFlags.MouseButtonRight | ImGuiPopupFlags.NoOpenOverItems))
@@ -2067,6 +2164,7 @@ public unsafe class EditorUI : IDisposable
                         entity.ParentId = "";
                     }
                     var post = doc.Serialize();
+                    sceneService.MarkModified(post);
                     history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
                     sceneService.PopulateScene(assetService);
                 }
@@ -2538,7 +2636,9 @@ public unsafe class EditorUI : IDisposable
                                         }
                                         else if (prop.PropertyType == typeof(string))
                                         {
-                                            string val = behaviour.Properties.TryGetPropertyValue(pName, out var v) && v != null ? (string)v : "";
+                                            string val = behaviour.Properties.TryGetPropertyValue(pName, out var v) && v != null
+                                                ? v.GetValue<string?>() ?? ""
+                                                : "";
                                             if (ImGui.InputText($"{pName}##{i}", ref val, 128))
                                                 behaviour.Properties[pName] = val;
                                         }
@@ -2841,7 +2941,6 @@ public unsafe class EditorUI : IDisposable
 
         DrawModelImportDialog(sceneService, assetService, history);
 
-        Undo.EndFrame(history, sceneService, assetService);
         ImGui.End();
     }
 
@@ -2879,6 +2978,7 @@ public unsafe class EditorUI : IDisposable
         _selectedObjects.Add(obj);
 
         var post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
@@ -2918,6 +3018,7 @@ public unsafe class EditorUI : IDisposable
         _selectedObjects.Add(obj);
 
         var post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
@@ -2958,6 +3059,7 @@ public unsafe class EditorUI : IDisposable
         _previewManager.Reset();
 
         var post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
@@ -3123,6 +3225,7 @@ public unsafe class EditorUI : IDisposable
         _selectedObjects.Add(obj);
 
         var post = doc.Serialize();
+        sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         sceneService.PopulateScene(assetService);
     }
@@ -3350,6 +3453,7 @@ public unsafe class EditorUI : IDisposable
             _selectedObject = importedObjects[0];
 
             var post = doc.Serialize();
+            sceneService.MarkModified(post);
             history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
             sceneService.PopulateScene(assetService);
         }
@@ -3431,7 +3535,7 @@ public unsafe class EditorUI : IDisposable
         }
     }
 
-    private void DrawJsonWindow(MapDocument? doc)
+    private void DrawJsonWindow(EditorSceneService sceneService)
     {
         ImGui.SetNextWindowSize(new Vector2(450, 500), ImGuiCond.FirstUseEver);
 
@@ -3441,21 +3545,64 @@ public unsafe class EditorUI : IDisposable
             return;
         }
 
-        if (doc != null)
-        {
-            string json = doc.Serialize();
-            ImGui.InputTextMultiline("##json", ref json, (uint)json.Length,
-                new Vector2(-1, -1), ImGuiInputTextFlags.ReadOnly);
-        }
-        else
-        {
-            ImGui.Text("No map loaded");
-        }
+        string json = sceneService.CaptureSnapshot();
+        ImGui.InputTextMultiline("##json", ref json, (uint)json.Length,
+            new Vector2(-1, -1), ImGuiInputTextFlags.ReadOnly);
 
         ImGui.End();
     }
 
-    private void DrawOpenDialog(EditorSceneService sceneService, EditorAssetService assetService)
+    private void DrawDiagnosticsWindow(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide)
+    {
+        ImGui.SetNextWindowSize(new Vector2(430, 420), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Diagnostics", ref _showDiagnostics))
+        {
+            ImGui.End();
+            return;
+        }
+
+        float fps = ImGui.GetIO().Framerate;
+        ImGui.TextUnformatted($"Editor: {fps:0.0} FPS ({(fps > 0 ? 1000.0f / fps : 0):0.00} ms)");
+        ImGui.TextUnformatted($"Map: {(sceneService.IsDirty ? "modified" : "saved")}");
+        ImGui.TextUnformatted($"Objects: {sceneService.Document.Objects.Count}");
+        ImGui.TextUnformatted($"Render entities: {sceneService.Scene.Entities.Count}");
+        ImGui.TextUnformatted($"Lights: {sceneService.Scene.Lights.Count}");
+        ImGui.TextUnformatted($"Materials: {assetService.EnumerateMaterials().Count}");
+        ImGui.TextUnformatted($"Textures: {assetService.EnumerateTextures().Count}");
+        ImGui.TextUnformatted($"Undo: {(history.CanUndo ? "available" : "empty")} | Redo: {(history.CanRedo ? "available" : "empty")}");
+
+        ImGui.SeparatorText("Viewport rendering");
+        DrawViewportDiagnostics("3D", viewport3D);
+        DrawViewportDiagnostics("Top", viewportTop);
+        DrawViewportDiagnostics("Front", viewportFront);
+        DrawViewportDiagnostics("Side", viewportSide);
+
+        if (sceneService.ValidationWarnings.Count > 0)
+        {
+            ImGui.SeparatorText("Map validation");
+            foreach (string warning in sceneService.ValidationWarnings)
+                ImGui.BulletText(warning);
+        }
+
+        ImGui.End();
+
+        static void DrawViewportDiagnostics(string name, EditorViewport viewport)
+        {
+            string state = viewport.IsVisibleInUi ? "visible" : "skipped";
+            ImGui.TextUnformatted(
+                $"{name}: {state}, {viewport.LastRenderMilliseconds:0.00} ms, " +
+                $"drawn {viewport.LastVisibleEntityCount}, culled {viewport.LastCulledEntityCount}, debug {viewport.LastVisibleDebugCount}");
+        }
+    }
+
+    private void DrawOpenDialog(EditorWindow window, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
     {
         if (!_showOpenDialog) return;
 
@@ -3483,14 +3630,8 @@ public unsafe class EditorUI : IDisposable
             ImGui.BeginDisabled(_selectedOpenMapIndex < 0);
             if (ImGui.Button("Open", new Vector2(120, 0)))
             {
-                var doc = MapDocument.Load(_availableMaps[_selectedOpenMapIndex]);
-                if (doc != null)
-                {
-                    sceneService.SetDocument(doc);
-                    sceneService.SetMapPath(_availableMaps[_selectedOpenMapIndex]);
-                    sceneService.PopulateScene(assetService);
-                    _selectedObjects.Clear();
-                }
+                string selectedPath = _availableMaps[_selectedOpenMapIndex];
+                RequestDocumentAction(PendingDocumentAction.Open, sceneService, selectedPath);
                 _showOpenDialog = false;
             }
             ImGui.EndDisabled();
@@ -3510,7 +3651,7 @@ public unsafe class EditorUI : IDisposable
         }
     }
 
-    private void DrawSaveAsDialog(EditorSceneService sceneService)
+    private void DrawSaveAsDialog(EditorWindow window, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
     {
         if (!_showSaveAsDialog) return;
 
@@ -3526,21 +3667,24 @@ public unsafe class EditorUI : IDisposable
 
             if (ImGui.Button("Save", new Vector2(120, 0)))
             {
-                string name = _saveMapName.Trim();
-                if (!string.IsNullOrEmpty(name))
+                if (TryResolveMapSavePath(_saveMapName, out string fullPath, out string error))
                 {
-                    if (!name.EndsWith(".bth", StringComparison.OrdinalIgnoreCase))
+                    if (File.Exists(fullPath) &&
+                        !fullPath.Equals(sceneService.MapPath, StringComparison.OrdinalIgnoreCase))
                     {
-                        name += ".bth";
+                        _pendingSavePath = fullPath;
+                        _showOverwriteDialog = true;
                     }
-                    string mapsDir = Path.Combine(ResPath.Path, "Maps");
-                    if (!Directory.Exists(mapsDir))
+                    else
                     {
-                        Directory.CreateDirectory(mapsDir);
+                        CompleteSaveAs(fullPath, window, sceneService, assetService, history);
                     }
-                    string fullPath = Path.Combine(mapsDir, name);
-                    sceneService.SetMapPath(fullPath);
-                    sceneService.SaveMap();
+                }
+                else
+                {
+                    ShowDocumentError(error);
+                    if (_resumePendingActionAfterSave)
+                        CancelPendingDocumentAction();
                 }
                 _showSaveAsDialog = false;
             }
@@ -3549,6 +3693,8 @@ public unsafe class EditorUI : IDisposable
             if (ImGui.Button("Cancel", new Vector2(120, 0)))
             {
                 _showSaveAsDialog = false;
+                if (_resumePendingActionAfterSave)
+                    CancelPendingDocumentAction();
             }
 
             ImGui.EndPopup();
@@ -3557,7 +3703,284 @@ public unsafe class EditorUI : IDisposable
         if (!open)
         {
             _showSaveAsDialog = false;
+            if (_resumePendingActionAfterSave)
+                CancelPendingDocumentAction();
         }
+    }
+
+    private void OpenMapDialog()
+    {
+        string mapsDir = Path.Combine(ResPath.Path, "Maps");
+        _availableMaps = Directory.Exists(mapsDir)
+            ? Directory.GetFiles(mapsDir, "*.bth").OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ToArray()
+            : [];
+        _selectedOpenMapIndex = -1;
+        _showOpenDialog = true;
+    }
+
+    private void RequestDocumentAction(
+        PendingDocumentAction action,
+        EditorSceneService sceneService,
+        string openPath = "")
+    {
+        _pendingDocumentAction = action;
+        _pendingOpenPath = openPath;
+        _executePendingDocumentAction = false;
+        if (sceneService.IsDirty)
+            _showUnsavedChangesDialog = true;
+        else
+            _executePendingDocumentAction = true;
+    }
+
+    private void ExecutePendingDocumentAction(
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        _executePendingDocumentAction = false;
+        PendingDocumentAction action = _pendingDocumentAction;
+        string openPath = _pendingOpenPath;
+        _pendingDocumentAction = PendingDocumentAction.None;
+        _pendingOpenPath = "";
+        _resumePendingActionAfterSave = false;
+
+        switch (action)
+        {
+            case PendingDocumentAction.New:
+                assetService.ClearBrushMeshes();
+                sceneService.SetDocument(new MapDocument
+                {
+                    PlayerSpawn = new MapPlayerSpawn
+                    {
+                        Position = Vector3.Zero,
+                        Yaw = 0,
+                        Pitch = 0
+                    }
+                });
+                sceneService.SetMapPath("");
+                sceneService.PopulateScene(assetService);
+                history.Clear();
+                Undo.Reset();
+                _selectedObject = null;
+                _selectedObjects.Clear();
+                _newDocumentRequested = true;
+                break;
+
+            case PendingDocumentAction.Open:
+                if (!sceneService.TryOpenMap(openPath, out string error))
+                {
+                    ShowDocumentError(error);
+                    break;
+                }
+                assetService.ClearBrushMeshes();
+                sceneService.PopulateScene(assetService);
+                history.Clear();
+                Undo.Reset();
+                _selectedObject = null;
+                _selectedObjects.Clear();
+                break;
+
+            case PendingDocumentAction.Exit:
+                window.Close();
+                break;
+        }
+    }
+
+    private void DrawUnsavedChangesDialog(
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!_showUnsavedChangesDialog)
+            return;
+
+        ImGui.OpenPopup("Unsaved Changes");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Unsaved Changes", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextUnformatted("The current map contains unsaved changes.");
+            ImGui.TextUnformatted("Save them before continuing?");
+            ImGui.Separator();
+
+            if (ImGui.Button("Save", new Vector2(110, 0)))
+            {
+                if (string.IsNullOrEmpty(sceneService.MapPath))
+                {
+                    _showUnsavedChangesDialog = false;
+                    _showSaveAsDialog = true;
+                    _saveMapName = "map.bth";
+                    _resumePendingActionAfterSave = true;
+                }
+                else if (sceneService.SaveMap())
+                {
+                    _showUnsavedChangesDialog = false;
+                    _executePendingDocumentAction = true;
+                }
+                else
+                {
+                    ShowDocumentError(sceneService.LastError);
+                }
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Discard", new Vector2(110, 0)))
+            {
+                _showUnsavedChangesDialog = false;
+                _executePendingDocumentAction = true;
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(110, 0)))
+            {
+                _showUnsavedChangesDialog = false;
+                CancelPendingDocumentAction();
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.EndPopup();
+        }
+
+        if (!open)
+        {
+            _showUnsavedChangesDialog = false;
+            CancelPendingDocumentAction();
+        }
+    }
+
+    private void DrawOverwriteDialog(
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!_showOverwriteDialog)
+            return;
+
+        ImGui.OpenPopup("Overwrite Map");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Overwrite Map", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextWrapped($"'{Path.GetFileName(_pendingSavePath)}' already exists. Replace it?");
+            ImGui.Separator();
+            if (ImGui.Button("Overwrite", new Vector2(120, 0)))
+            {
+                string path = _pendingSavePath;
+                _pendingSavePath = "";
+                _showOverwriteDialog = false;
+                CompleteSaveAs(path, window, sceneService, assetService, history);
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(120, 0)))
+            {
+                _pendingSavePath = "";
+                _showOverwriteDialog = false;
+                if (_resumePendingActionAfterSave)
+                    CancelPendingDocumentAction();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!open)
+        {
+            _showOverwriteDialog = false;
+            _pendingSavePath = "";
+            if (_resumePendingActionAfterSave)
+                CancelPendingDocumentAction();
+        }
+    }
+
+    private void CompleteSaveAs(
+        string fullPath,
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!sceneService.SaveMapAs(fullPath))
+        {
+            ShowDocumentError(sceneService.LastError);
+            if (_resumePendingActionAfterSave)
+                CancelPendingDocumentAction();
+            return;
+        }
+
+        if (_resumePendingActionAfterSave)
+            _executePendingDocumentAction = true;
+        _resumePendingActionAfterSave = false;
+    }
+
+    private static bool TryResolveMapSavePath(string requestedName, out string fullPath, out string error)
+    {
+        fullPath = "";
+        error = "";
+        string name = requestedName.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            error = "Enter a map filename.";
+            return false;
+        }
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !Path.GetFileName(name).Equals(name, StringComparison.Ordinal))
+        {
+            error = "Use a filename only; folders and invalid filename characters are not allowed.";
+            return false;
+        }
+        if (!name.EndsWith(".bth", StringComparison.OrdinalIgnoreCase))
+            name += ".bth";
+
+        string mapsDirectory = Path.GetFullPath(Path.Combine(ResPath.Path, "Maps"));
+        string candidate = Path.GetFullPath(Path.Combine(mapsDirectory, name));
+        if (!Path.GetDirectoryName(candidate)!.Equals(mapsDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "The map must be saved inside the Maps directory.";
+            return false;
+        }
+
+        fullPath = candidate;
+        return true;
+    }
+
+    private void CancelPendingDocumentAction()
+    {
+        _pendingDocumentAction = PendingDocumentAction.None;
+        _pendingOpenPath = "";
+        _executePendingDocumentAction = false;
+        _resumePendingActionAfterSave = false;
+    }
+
+    private void ShowDocumentError(string message)
+    {
+        _documentError = string.IsNullOrWhiteSpace(message) ? "The operation could not be completed." : message;
+    }
+
+    private void DrawDocumentErrorDialog()
+    {
+        if (string.IsNullOrEmpty(_documentError))
+            return;
+
+        ImGui.OpenPopup("Document Error");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Document Error", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.PushTextWrapPos(520);
+            ImGui.TextWrapped(_documentError);
+            ImGui.PopTextWrapPos();
+            ImGui.Separator();
+            if (ImGui.Button("OK", new Vector2(100, 0)))
+            {
+                _documentError = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+        if (!open)
+            _documentError = "";
     }
 
     private void DrawHollowDialog(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -3670,6 +4093,7 @@ public unsafe class EditorUI : IDisposable
         {
             sceneService.PopulateScene(assetService);
             string post = sceneService.Document.Serialize();
+            sceneService.MarkModified(post);
             history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
         }
     }

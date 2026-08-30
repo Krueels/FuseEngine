@@ -39,15 +39,23 @@ public class MapObject
 
     public bool IsGloballyVisible(MapDocument doc)
     {
-        if (!Visible) return false;
-        if (string.IsNullOrEmpty(ParentId)) return true;
-        for (int i = 0; i < doc.Objects.Count; i++)
+        MapObject? current = this;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        while (current != null)
         {
-            if (doc.Objects[i].Id == ParentId)
-            {
-                return doc.Objects[i].IsGloballyVisible(doc);
-            }
+            if (!current.Visible)
+                return false;
+            if (!visited.Add(current.Id))
+                return false;
+            if (string.IsNullOrEmpty(current.ParentId))
+                return true;
+
+            string parentId = current.ParentId;
+            current = doc.Objects.FirstOrDefault(candidate =>
+                candidate.Id.Equals(parentId, StringComparison.OrdinalIgnoreCase));
         }
+
         return true;
     }
 }

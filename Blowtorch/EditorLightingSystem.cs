@@ -62,6 +62,7 @@ public sealed class EditorLightingSystem : IDisposable
     {
         public Light? Light;
         public ulong SceneRevision;
+        public ulong DynamicSceneRevision;
         public Matrix4x4 Matrix;
         public bool Valid;
     }
@@ -70,6 +71,7 @@ public sealed class EditorLightingSystem : IDisposable
     {
         public Light? Light;
         public ulong SceneRevision;
+        public ulong DynamicSceneRevision;
         public Vector3 Position;
         public float Radius;
         public bool Valid;
@@ -275,7 +277,7 @@ public sealed class EditorLightingSystem : IDisposable
             ref LayerShadowCache cache = ref _directionalCache[cascade];
             bool cacheDirty = !cache.Valid ||
                               cache.SceneRevision != scene.StaticShadowRevision ||
-                              scene.DynamicShadowCasters.Count > 0 ||
+                              cache.DynamicSceneRevision != scene.DynamicShadowRevision ||
                               !MatrixApproximatelyEqual(cache.Matrix, matrix);
             if (!cacheDirty)
                 continue;
@@ -287,6 +289,7 @@ public sealed class EditorLightingSystem : IDisposable
             scene.RenderShadowCasters(shadowShader, matrix, ShadowCasterFilter.Dynamic);
 
             cache.SceneRevision = scene.StaticShadowRevision;
+            cache.DynamicSceneRevision = scene.DynamicShadowRevision;
             cache.Matrix = matrix;
             cache.Valid = true;
         }
@@ -309,7 +312,7 @@ public sealed class EditorLightingSystem : IDisposable
             bool cacheDirty = !cache.Valid ||
                               !ReferenceEquals(cache.Light, light) ||
                               cache.SceneRevision != scene.StaticShadowRevision ||
-                              scene.DynamicShadowCasters.Count > 0 ||
+                              cache.DynamicSceneRevision != scene.DynamicShadowRevision ||
                               !MatrixApproximatelyEqual(cache.Matrix, matrix);
             if (!cacheDirty)
                 continue;
@@ -322,6 +325,7 @@ public sealed class EditorLightingSystem : IDisposable
 
             cache.Light = light;
             cache.SceneRevision = scene.StaticShadowRevision;
+            cache.DynamicSceneRevision = scene.DynamicShadowRevision;
             cache.Matrix = matrix;
             cache.Valid = true;
         }
@@ -343,7 +347,7 @@ public sealed class EditorLightingSystem : IDisposable
             bool cacheDirty = !cache.Valid ||
                               !ReferenceEquals(cache.Light, light) ||
                               cache.SceneRevision != scene.StaticShadowRevision ||
-                              scene.DynamicShadowCasters.Count > 0 ||
+                              cache.DynamicSceneRevision != scene.DynamicShadowRevision ||
                               Vector3.DistanceSquared(cache.Position, light.Position) > 1e-8f ||
                               MathF.Abs(cache.Radius - light.Radius) > 1e-5f;
             if (!cacheDirty)
@@ -364,6 +368,7 @@ public sealed class EditorLightingSystem : IDisposable
 
             cache.Light = light;
             cache.SceneRevision = scene.StaticShadowRevision;
+            cache.DynamicSceneRevision = scene.DynamicShadowRevision;
             cache.Position = light.Position;
             cache.Radius = light.Radius;
             cache.Valid = true;
@@ -417,21 +422,28 @@ public sealed class EditorLightingSystem : IDisposable
         int max,
         Vector3 cameraPosition)
     {
-        var candidates = new List<Light>();
+        int count = 0;
         for (int i = 0; i < lights.Count; i++)
         {
             Light light = lights[i];
-            if (light.Enabled && light.Type == type)
-                candidates.Add(light);
+            if (!light.Enabled || light.Type != type)
+                continue;
+
+            float influence = CalculateVisualInfluence(light, cameraPosition);
+            int insertion = Math.Min(count, max);
+            while (insertion > 0 &&
+                   influence > CalculateVisualInfluence(destination[insertion - 1], cameraPosition))
+            {
+                if (insertion < max)
+                    destination[insertion] = destination[insertion - 1];
+                insertion--;
+            }
+            if (insertion < max)
+                destination[insertion] = light;
+            if (count < max)
+                count++;
         }
 
-        candidates.Sort((left, right) =>
-            CalculateVisualInfluence(right, cameraPosition)
-                .CompareTo(CalculateVisualInfluence(left, cameraPosition)));
-
-        int count = Math.Min(max, candidates.Count);
-        for (int i = 0; i < count; i++)
-            destination[i] = candidates[i];
         for (int i = count; i < destination.Length; i++)
             destination[i] = null!;
         return count;
@@ -442,20 +454,28 @@ public sealed class EditorLightingSystem : IDisposable
         Light[] destination,
         Vector3 cameraPosition)
     {
-        var candidates = new List<Light>();
+        int count = 0;
         for (int i = 0; i < selectedPointLights.Length; i++)
         {
-            if (selectedPointLights[i].CastShadows)
-                candidates.Add(selectedPointLights[i]);
+            Light light = selectedPointLights[i];
+            if (!light.CastShadows)
+                continue;
+
+            float influence = CalculateVisualInfluence(light, cameraPosition);
+            int insertion = Math.Min(count, destination.Length);
+            while (insertion > 0 &&
+                   influence > CalculateVisualInfluence(destination[insertion - 1], cameraPosition))
+            {
+                if (insertion < destination.Length)
+                    destination[insertion] = destination[insertion - 1];
+                insertion--;
+            }
+            if (insertion < destination.Length)
+                destination[insertion] = light;
+            if (count < destination.Length)
+                count++;
         }
 
-        candidates.Sort((left, right) =>
-            CalculateVisualInfluence(right, cameraPosition)
-                .CompareTo(CalculateVisualInfluence(left, cameraPosition)));
-
-        int count = Math.Min(destination.Length, candidates.Count);
-        for (int i = 0; i < count; i++)
-            destination[i] = candidates[i];
         for (int i = count; i < destination.Length; i++)
             destination[i] = null!;
         return count;

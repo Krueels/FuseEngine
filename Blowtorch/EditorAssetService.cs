@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Silk.NET.OpenGL;
 using Fuse.Scene.Model;
 using Fuse.AssetManagement;
@@ -25,6 +26,15 @@ public class EditorAssetService : IDisposable
     private ImageBasedLighting? _imageBasedLighting;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, Mesh?> _meshCache = [];
+    private readonly HashSet<string> _brushMeshKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _catalogLock = new();
+    private readonly ConcurrentQueue<string> _pendingTextureInvalidations = new();
+    private readonly ConcurrentQueue<string> _pendingMaterialReloads = new();
+    private IReadOnlyList<string>? _materialCatalog;
+    private IReadOnlyList<string>? _textureCatalog;
+    private FileSystemWatcher? _materialWatcher;
+    private FileSystemWatcher? _textureWatcher;
+    private long _assetRevision;
     private string _fuseResPath = "";
 
     public EditorAssetService(GL gl)
@@ -41,35 +51,58 @@ public class EditorAssetService : IDisposable
     public uint DefaultTexture => _defaultTex;
     public AssetManager AssetManager => _assets;
     public ImageBasedLighting? ImageBasedLighting => _imageBasedLighting;
+    public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
 
     public MaterialRuntime? GetOrCreateMaterial(string? materialRelPath) =>
         _assets.TryGetMaterial(materialRelPath);
 
-    public MaterialRuntime ReloadMaterial(string materialRelPath) =>
-        _assets.ReloadMaterial(materialRelPath);
+    public MaterialRuntime ReloadMaterial(string materialRelPath)
+    {
+        MaterialRuntime material = _assets.ReloadMaterial(materialRelPath);
+        System.Threading.Interlocked.Increment(ref _assetRevision);
+        return material;
+    }
 
     public IReadOnlyList<string> EnumerateMaterials()
     {
+        lock (_catalogLock)
+        {
+            if (_materialCatalog != null)
+                return _materialCatalog;
+        }
+
         string materialDirectory = Path.Combine(_fuseResPath, "Materials");
         if (!Directory.Exists(materialDirectory))
             return [];
-        return Directory.EnumerateFiles(materialDirectory, "*.fmat", SearchOption.AllDirectories)
+        IReadOnlyList<string> catalog = Directory.EnumerateFiles(materialDirectory, "*.fmat", SearchOption.AllDirectories)
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        lock (_catalogLock)
+            _materialCatalog ??= catalog;
+        return _materialCatalog;
     }
 
     public IReadOnlyList<string> EnumerateTextures()
     {
+        lock (_catalogLock)
+        {
+            if (_textureCatalog != null)
+                return _textureCatalog;
+        }
+
         string textureDirectory = Path.Combine(_fuseResPath, "Textures");
         if (!Directory.Exists(textureDirectory))
             return [];
         string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga"];
-        return Directory.EnumerateFiles(textureDirectory, "*.*", SearchOption.AllDirectories)
+        IReadOnlyList<string> catalog = Directory.EnumerateFiles(textureDirectory, "*.*", SearchOption.AllDirectories)
             .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        lock (_catalogLock)
+            _textureCatalog ??= catalog;
+        return _textureCatalog;
     }
 
     public void Initialize(string baseDirectory)
@@ -115,6 +148,41 @@ public class EditorAssetService : IDisposable
             var crateTex = new Texture(_gl, crateTexPath);
             _defaultTex = crateTex.ID;
         }
+
+        StartAssetWatchers();
+    }
+
+    public void UpdateFileChanges(EditorSceneService? sceneService = null)
+    {
+        bool refreshedMaterial = false;
+        var processedMaterials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (_pendingMaterialReloads.TryDequeue(out string? materialPath))
+        {
+            if (!processedMaterials.Add(materialPath) || !File.Exists(materialPath))
+                continue;
+            try
+            {
+                _assets.ReloadMaterial(materialPath);
+                refreshedMaterial = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Material hot reload failed for '{materialPath}': {ex.Message}");
+            }
+        }
+        if (refreshedMaterial && sceneService != null)
+            sceneService.RefreshMaterials(this);
+
+        while (_pendingTextureInvalidations.TryDequeue(out string? relativePath))
+        {
+            string normalized = relativePath.Replace('\\', '/');
+            string? key = _texCache.Keys.FirstOrDefault(candidate =>
+                NormalizeTexturePath(candidate).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+            if (key == null || !_texCache.Remove(key, out uint textureId))
+                continue;
+            if (textureId != 0)
+                _gl.DeleteTexture(textureId);
+        }
     }
 
     public Mesh? GetOrCreateMesh(MapObject mapObj)
@@ -126,6 +194,7 @@ public class EditorAssetService : IDisposable
                 var meshData = MeshGenerator.Generate(brush);
                 mesh = new Mesh(_gl, meshData.Vertices, meshData.Indices, meshData.LineIndices, meshData.Parts);
                 _meshCache[brush.Id] = mesh;
+                _brushMeshKeys.Add(brush.Id);
             }
             return mesh;
         }
@@ -183,34 +252,95 @@ public class EditorAssetService : IDisposable
         {
             mesh?.Dispose();
             _meshCache.Remove(key);
+            _brushMeshKeys.Remove(key);
         }
     }
 
     public void ClearBrushMeshes()
     {
-        var keysToRemove = new List<string>();
-        foreach (var pair in _meshCache)
+        foreach (string key in _brushMeshKeys.ToArray())
         {
-            if (pair.Key.StartsWith("brush_"))
+            if (_meshCache.Remove(key, out Mesh? mesh))
             {
-                pair.Value?.Dispose();
-                keysToRemove.Add(pair.Key);
+                mesh?.Dispose();
             }
         }
-        foreach (var key in keysToRemove)
-        {
-            _meshCache.Remove(key);
-        }
+        _brushMeshKeys.Clear();
     }
 
     public void Dispose()
     {
+        _materialWatcher?.Dispose();
+        _textureWatcher?.Dispose();
         foreach (var texId in _texCache.Values)
         {
             if (texId != 0) _gl.DeleteTexture(texId);
         }
+        ClearBrushMeshes();
+        _meshCache.Clear();
         if (_defaultTex != 0) _gl.DeleteTexture(_defaultTex);
         _imageBasedLighting?.Dispose();
         _assets.Clear();
+    }
+
+    private void StartAssetWatchers()
+    {
+        string materials = Path.Combine(_fuseResPath, "Materials");
+        string textures = Path.Combine(_fuseResPath, "Textures");
+        if (Directory.Exists(materials))
+        {
+            _materialWatcher = CreateWatcher(materials, "*.fmat", (_, args) =>
+            {
+                lock (_catalogLock) _materialCatalog = null;
+                _pendingMaterialReloads.Enqueue(args.FullPath);
+                System.Threading.Interlocked.Increment(ref _assetRevision);
+            });
+        }
+        if (Directory.Exists(textures))
+        {
+            _textureWatcher = CreateWatcher(textures, "*.*", (_, args) =>
+            {
+                string extension = Path.GetExtension(args.FullPath);
+                if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".tga") &&
+                    !extension.Equals(".PNG", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".JPG", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".JPEG", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".BMP", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".TGA", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                lock (_catalogLock) _textureCatalog = null;
+                _pendingTextureInvalidations.Enqueue(Path.GetRelativePath(_fuseResPath, args.FullPath));
+                System.Threading.Interlocked.Increment(ref _assetRevision);
+            });
+        }
+    }
+
+    private static FileSystemWatcher CreateWatcher(
+        string directory,
+        string filter,
+        FileSystemEventHandler handler)
+    {
+        var watcher = new FileSystemWatcher(directory, filter)
+        {
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+            EnableRaisingEvents = true
+        };
+        watcher.Created += handler;
+        watcher.Changed += handler;
+        watcher.Deleted += handler;
+        watcher.Renamed += (_, args) => handler(watcher, args);
+        return watcher;
+    }
+
+    private string NormalizeTexturePath(string path)
+    {
+        string relative = path.Replace('\\', '/');
+        if (relative.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            relative = relative[4..];
+        if (Path.IsPathRooted(relative))
+            relative = Path.GetRelativePath(_fuseResPath, relative).Replace('\\', '/');
+        return relative;
     }
 }

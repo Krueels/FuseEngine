@@ -7,12 +7,12 @@ namespace Blowtorch
     public class UndoManager
     {
         private string _preEditState = "";
-        private string _nextPreEditState = "";
         private bool _needsCommit = false;
 
         public void RecordState(string frameBeginState)
         {
-            _nextPreEditState = frameBeginState;
+            if (string.IsNullOrEmpty(_preEditState))
+                _preEditState = frameBeginState;
         }
 
         public void TrackItem(string frameBeginState)
@@ -32,25 +32,19 @@ namespace Blowtorch
             if (_needsCommit)
             {
                 var postEditState = sceneService.Document.Serialize();
-                // Ensure we don't push a DUD command if the states are identical
                 if (_preEditState != "" && _preEditState != postEditState)
                 {
+                    sceneService.MarkModified(postEditState);
                     history.PushCommand(new SnapshotCommand(sceneService, assetService, _preEditState, postEditState));
                 }
-                _needsCommit = false;
-            }
-
-            if (_nextPreEditState != "")
-            {
-                _preEditState = _nextPreEditState;
-                _nextPreEditState = "";
+                Reset();
             }
         }
 
         public void ForceStart(string frameBeginState)
         {
             _preEditState = frameBeginState;
-            _nextPreEditState = "";
+            _needsCommit = false;
         }
 
         public void ForceEnd(CommandHistory history, EditorSceneService sceneService, EditorAssetService assetService)
@@ -58,8 +52,16 @@ namespace Blowtorch
             var postEditState = sceneService.Document.Serialize();
             if (_preEditState != "" && _preEditState != postEditState)
             {
+                sceneService.MarkModified(postEditState);
                 history.PushCommand(new SnapshotCommand(sceneService, assetService, _preEditState, postEditState));
             }
+            Reset();
+        }
+
+        public void Reset()
+        {
+            _preEditState = "";
+            _needsCommit = false;
         }
     }
 }

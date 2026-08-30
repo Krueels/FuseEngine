@@ -9,58 +9,94 @@ public class MapDocument
     public int Version { get; set; } = 1;
     public List<MapObject> Objects { get; set; } = [];
     public MapPlayerSpawn? PlayerSpawn { get; set; }
+    public List<string> ValidationWarnings { get; } = [];
 
     public static MapDocument? Load(string path)
     {
-        if (!File.Exists(path)) return null;
-
-        string json = File.ReadAllText(path);
-        return Parse(json);
+        return TryLoad(path, out MapDocument? document, out _) ? document : null;
     }
 
     public static MapDocument? Parse(string json)
     {
-        JsonNode? rootNode;
+        return TryParse(json, out MapDocument? document, out _) ? document : null;
+    }
+
+    public static bool TryLoad(string path, out MapDocument? document, out string error)
+    {
+        document = null;
+        error = "";
+
         try
         {
-            rootNode = JsonNode.Parse(json);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
-        if (rootNode == null) return null;
-
-        var root = rootNode.AsObject();
-        var doc = new MapDocument
-        {
-            Version = root.TryGetPropertyValue("version", out var verNode) ? (int)verNode! : 1
-        };
-
-        if (root.TryGetPropertyValue("player_spawn", out var spawnNode))
-        {
-            var sj = spawnNode!.AsObject();
-            doc.PlayerSpawn = new MapPlayerSpawn
+            if (string.IsNullOrWhiteSpace(path))
             {
-                Position = Vec3FromJson(sj["position"]!.AsArray()),
-                Yaw = (float)sj["yaw"]!,
-                Pitch = (float)sj["pitch"]!
-            };
-        }
-
-        if (root.TryGetPropertyValue("objects", out var objectsNode))
-        {
-            foreach (var objNode in objectsNode!.AsArray())
-            {
-                if (objNode == null) continue;
-                doc.Objects.Add(ParseObject(objNode.AsObject()));
+                error = "No map path was provided.";
+                return false;
             }
+
+            if (!File.Exists(path))
+            {
+                error = $"Map file was not found: {path}";
+                return false;
+            }
+
+            return TryParse(File.ReadAllText(path), out document, out error);
         }
+        catch (Exception ex)
+        {
+            error = $"Could not read map '{path}': {ex.Message}";
+            return false;
+        }
+    }
 
-        SceneNameManager.EnsureAllUnique(doc);
+    public static bool TryParse(string json, out MapDocument? document, out string error)
+    {
+        document = null;
+        error = "";
 
-        return doc;
+        try
+        {
+            JsonNode? rootNode = JsonNode.Parse(json);
+            if (rootNode is not JsonObject root)
+                throw new InvalidDataException("The map root must be a JSON object.");
+
+            var doc = new MapDocument
+            {
+                Version = root.TryGetPropertyValue("version", out var verNode) ? (int)verNode! : 1
+            };
+
+            if (root.TryGetPropertyValue("player_spawn", out var spawnNode) && spawnNode != null)
+            {
+                var sj = spawnNode.AsObject();
+                doc.PlayerSpawn = new MapPlayerSpawn
+                {
+                    Position = Vec3FromJson(sj["position"]!.AsArray()),
+                    Yaw = (float)sj["yaw"]!,
+                    Pitch = (float)sj["pitch"]!
+                };
+            }
+
+            if (root.TryGetPropertyValue("objects", out var objectsNode) && objectsNode != null)
+            {
+                foreach (var objNode in objectsNode.AsArray())
+                {
+                    if (objNode == null) continue;
+                    doc.Objects.Add(ParseObject(objNode.AsObject()));
+                }
+            }
+
+            SceneNameManager.EnsureAllUnique(doc);
+            doc.ValidationWarnings.AddRange(SceneNameManager.ValidateAndRepairHierarchy(doc));
+
+            document = doc;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Invalid map data: {ex.Message}";
+            document = null;
+            return false;
+        }
     }
 
     public string Serialize()

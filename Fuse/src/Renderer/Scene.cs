@@ -132,6 +132,7 @@ public class Scene
     private readonly List<Entity> _dynamicShadowCasters = [];
 
     public ulong StaticShadowRevision { get; private set; }
+    public ulong DynamicShadowRevision { get; private set; }
     public IReadOnlyList<Entity> StaticShadowCasters => _staticShadowCasters;
     public IReadOnlyList<Entity> DynamicShadowCasters => _dynamicShadowCasters;
 
@@ -185,6 +186,7 @@ public class Scene
         _staticShadowCasters.Clear();
         _dynamicShadowCasters.Clear();
         StaticShadowRevision = 0;
+        DynamicShadowRevision = 0;
     }
 
     public IReadOnlyList<Entity> Entities => _entities;
@@ -195,6 +197,7 @@ public class Scene
         _dynamicShadowCasters.Clear();
 
         ulong hash = 1469598103934665603UL;
+        ulong dynamicHash = 1469598103934665603UL;
         for (int i = 0; i < _entities.Count; i++)
         {
             Entity entity = _entities[i];
@@ -206,6 +209,17 @@ public class Scene
             if (entity.IsDynamicShadowCaster)
             {
                 _dynamicShadowCasters.Add(entity);
+                MixHash(ref dynamicHash, (uint)RuntimeHelpers.GetHashCode(entity));
+                object dynamicGeometry = (object?)entity.SkinnedModel ?? (object?)entity.Mesh ?? entity;
+                MixHash(ref dynamicHash, (uint)RuntimeHelpers.GetHashCode(dynamicGeometry));
+                MixHash(ref dynamicHash, entity.RenderMatrix);
+                MixHash(ref dynamicHash, (uint)BitConverter.SingleToInt32Bits(entity.ShadowBoundsPadding));
+                MixHash(ref dynamicHash, entity.Material == null ? 0u : (uint)RuntimeHelpers.GetHashCode(entity.Material));
+                for (int materialIndex = 0; materialIndex < entity.Materials.Count; materialIndex++)
+                {
+                    Materials.MaterialRuntime? material = entity.Materials[materialIndex];
+                    MixHash(ref dynamicHash, material == null ? 0u : (uint)RuntimeHelpers.GetHashCode(material));
+                }
                 continue;
             }
 
@@ -224,7 +238,9 @@ public class Scene
         }
 
         MixHash(ref hash, (uint)_staticShadowCasters.Count);
+        MixHash(ref dynamicHash, (uint)_dynamicShadowCasters.Count);
         StaticShadowRevision = hash;
+        DynamicShadowRevision = dynamicHash;
     }
 
     public IReadOnlyList<Entity> GetShadowCasters(ShadowCasterFilter filter) =>
@@ -292,8 +308,11 @@ public class Scene
         bool HasPhysicsAncestor(Entity entity)
         {
             string pId = entity.ParentId;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (!string.IsNullOrEmpty(pId))
             {
+                if (!visited.Add(pId))
+                    return false;
                 var parent = _entities.FirstOrDefault(p => p.Id == pId);
                 if (parent == null) break;
                 if (parent.Body != null && parent.Body.IsBuilt) return true;
@@ -302,55 +321,76 @@ public class Scene
             return false;
         }
 
+        var resolvingPositions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var resolvingRotations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         Vector3 GetWorldPosition(Entity e)
         {
             if (worldPositions.TryGetValue(e.Id, out var pos)) return pos;
+            if (!resolvingPositions.Add(e.Id))
+            {
+                worldPositions[e.Id] = e.Transform.Position;
+                return e.Transform.Position;
+            }
             if (string.IsNullOrEmpty(e.ParentId))
             {
                 worldPositions[e.Id] = e.Transform.Position;
+                resolvingPositions.Remove(e.Id);
                 return e.Transform.Position;
             }
             var parent = _entities.FirstOrDefault(p => p.Id == e.ParentId);
             if (parent == null)
             {
                 worldPositions[e.Id] = e.Transform.Position;
+                resolvingPositions.Remove(e.Id);
                 return e.Transform.Position;
             }
 
             if (e.Body != null && e.Body.IsBuilt && HasPhysicsAncestor(e))
             {
                 worldPositions[e.Id] = e.Transform.Position;
+                resolvingPositions.Remove(e.Id);
                 return e.Transform.Position;
             }
 
             Vector3 wPos = GetWorldPosition(parent) + Vector3.Transform(e.InitialRelativePosition, GetWorldRotation(parent));
             worldPositions[e.Id] = wPos;
+            resolvingPositions.Remove(e.Id);
             return wPos;
         }
 
         Quaternion GetWorldRotation(Entity e)
         {
             if (worldRotations.TryGetValue(e.Id, out var rot)) return rot;
+            if (!resolvingRotations.Add(e.Id))
+            {
+                worldRotations[e.Id] = e.Transform.Rotation;
+                return e.Transform.Rotation;
+            }
             if (string.IsNullOrEmpty(e.ParentId))
             {
                 worldRotations[e.Id] = e.Transform.Rotation;
+                resolvingRotations.Remove(e.Id);
                 return e.Transform.Rotation;
             }
             var parent = _entities.FirstOrDefault(p => p.Id == e.ParentId);
             if (parent == null)
             {
                 worldRotations[e.Id] = e.Transform.Rotation;
+                resolvingRotations.Remove(e.Id);
                 return e.Transform.Rotation;
             }
 
             if (e.Body != null && e.Body.IsBuilt && HasPhysicsAncestor(e))
             {
                 worldRotations[e.Id] = e.Transform.Rotation;
+                resolvingRotations.Remove(e.Id);
                 return e.Transform.Rotation;
             }
 
             Quaternion wRot = GetWorldRotation(parent) * e.InitialRelativeRotation;
             worldRotations[e.Id] = wRot;
+            resolvingRotations.Remove(e.Id);
             return wRot;
         }
 
