@@ -603,6 +603,38 @@ public class AssetManager
         return loaded;
     }
 
+    public Renderer.Texture ReloadTexture(
+        string path,
+        Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear)
+    {
+        string filePath = ResolveAssetPath(path);
+        string prefix = filePath.Replace('\\', '/') + "|";
+        foreach (string key in _textures.Keys
+                     .Where(candidate => candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
+        {
+            if (_textures.Remove(key, out Renderer.Texture? texture))
+                texture.Dispose();
+        }
+        return GetTexture(filePath, colorSpace);
+    }
+
+    public Renderer.LoadedModel? ReloadModel(string path)
+    {
+        string cleanPath = ResolveAssetPath(path);
+        foreach (string key in _models.Keys
+                     .Where(candidate => candidate.Equals(cleanPath, StringComparison.OrdinalIgnoreCase) ||
+                                         candidate.StartsWith(cleanPath + "#", StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
+        {
+            _models.Remove(key);
+        }
+        _missingModels.RemoveWhere(candidate => candidate.Equals(cleanPath, StringComparison.OrdinalIgnoreCase) ||
+                                                candidate.StartsWith(cleanPath + "#", StringComparison.OrdinalIgnoreCase));
+        _loadedCleanPaths.Remove(cleanPath);
+        return GetModel(cleanPath);
+    }
+
     /// <summary>
     /// Returns a skinned model only when it is already resident. Unlike
     /// GetSkinnedModel, this method never imports a file or touches OpenGL.

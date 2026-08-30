@@ -90,6 +90,7 @@ public unsafe class EditorApplication : IDisposable
                 _inputService.Update();
                 _inputService.BeginFrame();
                 _assetService.UpdateFileChanges(_sceneService);
+                _assetService.AssetManager.PumpGpuUploads(4);
                 _imgui.NewFrame(dt, fbWidth, fbHeight);
 
                 // Build the UI first. It records which viewport images are actually visible.

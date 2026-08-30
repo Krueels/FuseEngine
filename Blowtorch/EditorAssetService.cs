@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Numerics;
 using Silk.NET.OpenGL;
 using Fuse.Scene.Model;
 using Fuse.AssetManagement;
@@ -104,7 +105,7 @@ public class EditorAssetService : IDisposable
         string textureDirectory = Path.Combine(_fuseResPath, "Textures");
         if (!Directory.Exists(textureDirectory))
             return [];
-        string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga"];
+        string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga", ".dds"];
         IReadOnlyList<string> catalog = Directory.EnumerateFiles(textureDirectory, "*.*", SearchOption.AllDirectories)
             .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
@@ -119,6 +120,150 @@ public class EditorAssetService : IDisposable
         EnumerateTextures()
             .Where(path => path.StartsWith("Textures/Skybox/", StringComparison.OrdinalIgnoreCase))
             .ToArray();
+
+    public IReadOnlyList<string> EnumerateModels()
+    {
+        string[] directories =
+        [
+            Path.Combine(_fuseResPath, "Models"),
+            Path.Combine(_fuseResPath, "skinned_models")
+        ];
+        string[] extensions = [".obj", ".fbx", ".gltf", ".glb"];
+        return directories
+            .Where(Directory.Exists)
+            .SelectMany(directory => Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories))
+            .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public string ResolveEditorAssetPath(string relativePath)
+    {
+        if (Path.IsPathRooted(relativePath))
+            return Path.GetFullPath(relativePath);
+
+        string normalized = relativePath.Replace('\\', '/');
+        if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+        return Path.GetFullPath(Path.Combine(_fuseResPath, normalized.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    public bool GetAssetStatus(
+        EditorAssetKind kind,
+        string relativePath,
+        out string error,
+        bool validateContents = false)
+    {
+        error = "";
+        string fullPath = ResolveEditorAssetPath(relativePath);
+        if (!File.Exists(fullPath))
+        {
+            error = "File not found.";
+            return false;
+        }
+
+        // Catalog refreshes must remain cheap. Material parsing is deferred to
+        // the details pane so opening Asset Browser never blocks on every .fmat.
+        if (kind != EditorAssetKind.Material || !validateContents)
+            return true;
+
+        try
+        {
+            MaterialAsset material = MaterialAsset.Load(fullPath);
+            foreach (MaterialGraphNode node in material.Graph.Nodes)
+            {
+                if (node.Type is not ("Texture2D" or "ScalarTexture" or "PackedMetallicRoughness"))
+                    continue;
+                string texturePath = MaterialAsset.GetString(node.Properties, "path", "");
+                if (!string.IsNullOrWhiteSpace(texturePath) &&
+                    !File.Exists(MaterialRuntime.ResolveAssetPath(texturePath)))
+                {
+                    error = $"Missing texture: {texturePath}";
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Invalid material: {ex.Message}";
+            return false;
+        }
+    }
+
+    public Vector3 GetMaterialThumbnailColor(string materialRelPath)
+    {
+        try
+        {
+            MaterialAsset material = MaterialAsset.Load(ResolveEditorAssetPath(materialRelPath));
+            MaterialGraphNode? output = material.Graph.FindOutput();
+            return output == null
+                ? Vector3.One
+                : MaterialAsset.GetVector3(output.Properties, "base_color", Vector3.One);
+        }
+        catch
+        {
+            return new Vector3(0.35f, 0.08f, 0.08f);
+        }
+    }
+
+    public void RefreshCatalogs()
+    {
+        lock (_catalogLock)
+        {
+            _materialCatalog = null;
+            _textureCatalog = null;
+        }
+        System.Threading.Interlocked.Increment(ref _assetRevision);
+    }
+
+    public bool ReimportAsset(EditorAssetKind kind, string relativePath, out string error)
+    {
+        error = "";
+        try
+        {
+            string fullPath = ResolveEditorAssetPath(relativePath);
+            if (!File.Exists(fullPath))
+            {
+                error = $"Asset not found: {relativePath}";
+                return false;
+            }
+
+            switch (kind)
+            {
+                case EditorAssetKind.Material:
+                    _assets.ReloadMaterial(fullPath);
+                    break;
+                case EditorAssetKind.Texture:
+                case EditorAssetKind.Skybox:
+                    InvalidateTexture(relativePath);
+                    _assets.ReloadTexture(fullPath, TextureColorSpace.Srgb);
+                    if (kind == EditorAssetKind.Skybox && !SetSkyboxTexture(relativePath))
+                    {
+                        error = $"Could not reload skybox: {relativePath}";
+                        return false;
+                    }
+                    break;
+                case EditorAssetKind.Model:
+                    string modelKey = Path.GetFullPath(fullPath);
+                    if (_meshCache.Remove(modelKey, out Mesh? mesh))
+                        mesh?.Dispose();
+                    _assets.ReloadModel(modelKey);
+                    break;
+            }
+
+            RefreshCatalogs();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            Logger.Warn($"Asset reimport failed for '{relativePath}': {ex.Message}");
+            return false;
+        }
+    }
 
     public void Initialize(string baseDirectory)
     {
@@ -293,14 +438,56 @@ public class EditorAssetService : IDisposable
         string texPath = Path.GetFullPath(Path.Combine(_fuseResPath, rel));
         if (File.Exists(texPath))
         {
-            var texture = new Texture(_gl, texPath);
-            _texCache[textureRelPath] = texture.ID;
-            return texture.ID;
+            try
+            {
+                var texture = new Texture(_gl, texPath);
+                _texCache[textureRelPath] = texture.ID;
+                return texture.ID;
+            }
+            catch (Exception ex)
+            {
+                _texCache[textureRelPath] = 0;
+                Logger.Warn($"Texture import failed: {texPath}: {ex.Message}");
+                return 0;
+            }
         }
         
         _texCache[textureRelPath] = 0;
         Logger.Warn($"Texture not found: {texPath}");
         return 0;
+    }
+
+    public uint RequestTexturePreview(string textureRelPath)
+    {
+        if (string.IsNullOrWhiteSpace(textureRelPath))
+            return 0;
+
+        string fullPath = ResolveEditorAssetPath(textureRelPath);
+        if (!File.Exists(fullPath))
+            return 0;
+
+        try
+        {
+            return _assets.RequestTexture(fullPath, TextureColorSpace.Srgb, AssetPriority.Low).ID;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Texture preview request failed: {fullPath}: {ex.Message}");
+            return 0;
+        }
+    }
+
+    private void InvalidateTexture(string textureRelPath)
+    {
+        string normalized = NormalizeTexturePath(textureRelPath);
+        foreach (string key in _texCache.Keys
+                     .Where(candidate => NormalizeTexturePath(candidate)
+                         .Equals(normalized, StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
+        {
+            if (_texCache.Remove(key, out uint textureId) && textureId != 0)
+                _gl.DeleteTexture(textureId);
+        }
     }
 
     public void InvalidateMesh(string key)
@@ -358,12 +545,13 @@ public class EditorAssetService : IDisposable
             _textureWatcher = CreateWatcher(textures, "*.*", (_, args) =>
             {
                 string extension = Path.GetExtension(args.FullPath);
-                if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".tga") &&
+                if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".tga" or ".dds") &&
                     !extension.Equals(".PNG", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".JPG", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".JPEG", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".BMP", StringComparison.OrdinalIgnoreCase) &&
-                    !extension.Equals(".TGA", StringComparison.OrdinalIgnoreCase))
+                    !extension.Equals(".TGA", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".DDS", StringComparison.OrdinalIgnoreCase))
                     return;
 
                 lock (_catalogLock) _textureCatalog = null;

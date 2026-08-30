@@ -45,7 +45,9 @@ public unsafe class EditorUI : IDisposable
 
     private bool _showMapWindow = true;
     private bool _showJsonWindow = false;
+    private bool _showAssetBrowser = false;
     private readonly MaterialEditorWindow _materialEditor = new();
+    private readonly AssetBrowserWindow _assetBrowser = new();
     private bool _newMaterialPopupRequested;
     private string _newMaterialName = "NewMaterial";
     private string _newMaterialTexture = "";
@@ -236,7 +238,22 @@ public unsafe class EditorUI : IDisposable
 
         // Draw the graph before map input is processed so it can claim the
         // MaterialGraph context in the same frame when it has focus.
-        _materialEditor.Draw(assetService, sceneService, inputService);
+        _materialEditor.Draw(
+            assetService,
+            sceneService,
+            inputService,
+            () =>
+            {
+                _showAssetBrowser = true;
+                _assetBrowser.OpenTexturePicker(_materialEditor.AssignSelectedTexture);
+            });
+        _assetBrowser.IsOpen = _showAssetBrowser;
+        _assetBrowser.Draw(
+            assetService,
+            sceneService,
+            _materialEditor,
+            entry => ActivateAssetFromBrowser(entry, sceneService, assetService, history, viewport3D));
+        _showAssetBrowser = _assetBrowser.IsOpen;
 
         DrawViewportWindow(window, viewport3D, viewportTop, viewportFront, viewportSide, sceneService, assetService, history, inputService);
 
@@ -256,6 +273,181 @@ public unsafe class EditorUI : IDisposable
 
         HandleKeyboardShortcuts(sceneService, assetService, history, inputService);
         Undo.EndFrame(history, sceneService, assetService);
+    }
+
+    private void ActivateAssetFromBrowser(
+        EditorAssetEntry entry,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport3D)
+    {
+        switch (entry.Kind)
+        {
+            case EditorAssetKind.Model:
+                AddModelFromAsset(entry.RelativePath, sceneService, assetService, history, viewport3D);
+                break;
+            case EditorAssetKind.Texture:
+                ApplyTextureFromAsset(entry.RelativePath, sceneService, assetService, history);
+                break;
+            case EditorAssetKind.Skybox:
+                ApplySkyboxFromAsset(entry.RelativePath, sceneService, assetService, history, viewport3D);
+                break;
+        }
+    }
+
+    private void HandleAssetDropOnViewport(
+        EditorViewport viewport,
+        Vector2 viewportPosition,
+        Vector2 viewportSize,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!ImGui.BeginDragDropTarget())
+            return;
+
+        var payload = ImGui.AcceptDragDropPayload("BLOWTORCH_ASSET");
+        if (payload.NativePtr != null && !string.IsNullOrWhiteSpace(AssetDragDrop.CurrentPath))
+        {
+            string path = AssetDragDrop.CurrentPath;
+            switch (AssetDragDrop.CurrentKind)
+            {
+                case EditorAssetKind.Model when viewport.Camera.ViewType == CameraViewType.Perspective3D:
+                    AddModelFromAsset(path, sceneService, assetService, history, viewport);
+                    break;
+                case EditorAssetKind.Material:
+                    ApplyMaterialFromAsset(path, sceneService, assetService, history);
+                    break;
+                case EditorAssetKind.Texture:
+                    ApplyTextureFromAsset(path, sceneService, assetService, history);
+                    break;
+                case EditorAssetKind.Skybox:
+                    ApplySkyboxFromAsset(path, sceneService, assetService, history, viewport);
+                    break;
+            }
+        }
+        ImGui.EndDragDropTarget();
+    }
+
+    private void AddModelFromAsset(
+        string modelPath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport)
+    {
+        string fullPath = assetService.ResolveEditorAssetPath(modelPath);
+        if (!File.Exists(fullPath))
+            return;
+
+        var document = sceneService.Document;
+        string pre = document.Serialize();
+        string baseName = Path.GetFileNameWithoutExtension(modelPath);
+        var obj = new MapObject
+        {
+            Id = baseName,
+            Visible = true,
+            Model = modelPath.Replace('\\', '/'),
+            ModelScale = Vector3.One,
+            MaterialPath = DefaultMaterialPath,
+            Body = new MapBody
+            {
+                Shape = MapShapeType.Trimesh,
+                Position = GetAssetDropPosition(viewport),
+                Rotation = Quaternion.Identity,
+                Mass = 0,
+                Friction = 0.5f,
+                Restitution = 0
+            }
+        };
+        document.Objects.Add(obj);
+        SceneNameManager.EnsureAllUnique(document);
+        _selectedObject = obj;
+        _selectedObjects.Clear();
+        _selectedObjects.Add(obj);
+        sceneService.PopulateScene(assetService);
+
+        string post = document.Serialize();
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+    }
+
+    private static Vector3 GetAssetDropPosition(EditorViewport viewport)
+    {
+        Vector3 position = viewport.Camera.Position + viewport.Camera.Front * 5.0f;
+        if (viewport.Camera.ViewType == CameraViewType.Top)
+            position.Y = 0;
+        else if (viewport.Camera.ViewType == CameraViewType.Front)
+            position.Z = 0;
+        else if (viewport.Camera.ViewType == CameraViewType.Side)
+            position.X = 0;
+        return position;
+    }
+
+    private void ApplyMaterialFromAsset(
+        string materialPath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        MapObject[] targets = _selectedObjects.Count > 0
+            ? _selectedObjects.Where(obj => !obj.IsLight).ToArray()
+            : _selectedObject != null && !_selectedObject.IsLight ? [_selectedObject] : [];
+        if (targets.Length == 0)
+            return;
+
+        string pre = sceneService.Document.Serialize();
+        foreach (MapObject target in targets)
+            AssignMaterial(target, materialPath, sceneService, assetService);
+        sceneService.PopulateScene(assetService);
+        string post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+    }
+
+    private void ApplyTextureFromAsset(
+        string texturePath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        MapObject[] targets = _selectedObjects.Count > 0
+            ? _selectedObjects.Where(obj => !obj.IsLight).ToArray()
+            : _selectedObject != null && !_selectedObject.IsLight ? [_selectedObject] : [];
+        if (targets.Length == 0)
+            return;
+
+        string pre = sceneService.Document.Serialize();
+        foreach (MapObject target in targets)
+        {
+            target.Texture = texturePath;
+            target.MaterialPath = EnsureMaterialForTexture(
+                assetService, texturePath, Path.GetFileNameWithoutExtension(texturePath));
+        }
+        sceneService.PopulateScene(assetService);
+        string post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+    }
+
+    private static void ApplySkyboxFromAsset(
+        string skyboxPath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport)
+    {
+        if (sceneService.Document.SkyboxPath.Equals(skyboxPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        string pre = sceneService.Document.Serialize();
+        sceneService.Document.SkyboxPath = skyboxPath.Replace('\\', '/');
+        assetService.SetSkyboxTexture(sceneService.Document.SkyboxPath);
+        viewport.RequestRender();
+        string post = sceneService.Document.Serialize();
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
     }
 
     private void SyncSkyboxPreview(
@@ -1237,6 +1429,7 @@ public unsafe class EditorUI : IDisposable
             if (ImGui.BeginMenu("View"))
             {
                 ImGui.MenuItem("Map Objects", "", ref _showMapWindow);
+                ImGui.MenuItem("Asset Browser", "", ref _showAssetBrowser);
                 ImGui.MenuItem("Raw JSON", "", ref _showJsonWindow);
                 ImGui.MenuItem("Diagnostics", "", ref _showDiagnostics);
                 ImGui.MenuItem("Show hitboxes", "", ref _showHitBoxes);
@@ -1423,6 +1616,7 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.Image((IntPtr)viewport.ColorTexture, vpSize, new Vector2(0, 1), new Vector2(1, 0));
 
+        HandleAssetDropOnViewport(viewport, vpPos, vpSize, sceneService, assetService, history);
         bool isHovered = ImGui.IsItemHovered() && inputService.IsMapContext;
 
         // 2D Handle Detection & State Setup

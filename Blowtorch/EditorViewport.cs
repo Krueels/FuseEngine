@@ -36,7 +36,7 @@ public unsafe class EditorViewport : IDisposable
     private ulong _lastAssetRevision = ulong.MaxValue;
     private Matrix4x4 _lastViewMatrix;
     private Matrix4x4 _lastProjectionMatrix;
-    private bool _shadowsEnabled = true;
+    private bool _shadowsEnabled = false;
     public static EditorViewport? ActiveViewport;
 
     public EditorViewport(GL gl, CameraViewType viewType, ImageBasedLighting? imageBasedLighting = null)

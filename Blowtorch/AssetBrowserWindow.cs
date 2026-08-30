@@ -1,0 +1,370 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using ImGuiNET;
+
+namespace Blowtorch;
+
+public sealed class AssetBrowserWindow
+{
+    private readonly List<EditorAssetEntry> _entries = [];
+    private string _search = "";
+    private int _filter;
+    private string _selectedPath = "";
+    private ulong _catalogRevision = ulong.MaxValue;
+    private string _status = "";
+    private bool _refreshRequested = true;
+    private Action<string>? _texturePickerCallback;
+
+    public bool IsOpen { get; set; }
+
+    public void OpenTexturePicker(Action<string> onSelected)
+    {
+        _texturePickerCallback = onSelected;
+        _filter = 3;
+        _search = "";
+        _status = "Select a texture.";
+        IsOpen = true;
+    }
+
+    public void Draw(
+        EditorAssetService assetService,
+        EditorSceneService sceneService,
+        MaterialEditorWindow materialEditor,
+        Action<EditorAssetEntry>? activate)
+    {
+        if (!IsOpen)
+            return;
+
+        if (_refreshRequested || _catalogRevision != assetService.AssetRevision)
+            Refresh(assetService);
+
+        ImGui.SetNextWindowSize(new Vector2(980, 620), ImGuiCond.FirstUseEver);
+        bool open = IsOpen;
+        if (!ImGui.Begin("Asset Browser##AssetBrowser", ref open, ImGuiWindowFlags.MenuBar))
+        {
+            IsOpen = open;
+            if (!open)
+                _texturePickerCallback = null;
+            ImGui.End();
+            return;
+        }
+        IsOpen = open;
+        if (!open)
+            _texturePickerCallback = null;
+
+        if (ImGui.BeginMenuBar())
+        {
+            if (ImGui.MenuItem("Refresh"))
+                _refreshRequested = true;
+            if (ImGui.MenuItem("Reimport Selected", "", false, FindSelected() != null))
+                ReimportSelected(assetService, sceneService, activate);
+            ImGui.EndMenuBar();
+        }
+
+        ImGui.InputTextWithHint("##AssetSearch", "Search assets...", ref _search, 256);
+        ImGui.SameLine();
+        string[] filters = ["All", "Models", "Materials", "Textures", "Skyboxes"];
+        ImGui.SetNextItemWidth(130);
+        ImGui.Combo("##AssetType", ref _filter, filters, filters.Length);
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{FilteredEntries().Count} assets");
+        if (!string.IsNullOrEmpty(_status))
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.95f, 0.75f, 0.25f, 1), _status);
+        }
+        ImGui.Separator();
+
+        Vector2 available = ImGui.GetContentRegionAvail();
+        float detailsWidth = Math.Clamp(available.X * 0.28f, 230, 320);
+        ImGui.BeginChild("AssetTiles", new Vector2(MathF.Max(300, available.X - detailsWidth - 8), available.Y), ImGuiChildFlags.Borders);
+        DrawTiles(assetService, materialEditor, activate);
+        ImGui.EndChild();
+        ImGui.SameLine();
+        ImGui.BeginChild("AssetDetails", new Vector2(detailsWidth, available.Y), ImGuiChildFlags.Borders);
+        DrawDetails(assetService, materialEditor, activate);
+        ImGui.EndChild();
+
+        ImGui.End();
+    }
+
+    private void DrawTiles(EditorAssetService assetService, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    {
+        const float tileWidth = 142;
+        const float tileHeight = 142;
+        float width = ImGui.GetContentRegionAvail().X;
+        int columns = Math.Max(1, (int)(width / tileWidth));
+        int column = 0;
+
+        foreach (EditorAssetEntry entry in FilteredEntries())
+        {
+            if (column > 0)
+                ImGui.SameLine();
+
+            ImGui.PushID(entry.RelativePath);
+            Vector4 tileColor = entry.Broken
+                ? new Vector4(0.26f, 0.08f, 0.08f, 1)
+                : entry.RelativePath.Equals(_selectedPath, StringComparison.OrdinalIgnoreCase)
+                    ? new Vector4(0.12f, 0.28f, 0.45f, 1)
+                    : new Vector4(0.12f, 0.14f, 0.18f, 1);
+            ImGui.PushStyleColor(ImGuiCol.Button, tileColor);
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.20f, 0.36f, 0.52f, 1));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.24f, 0.42f, 0.60f, 1));
+            bool clicked = ImGui.Button("##AssetTile", new Vector2(tileWidth - 8, tileHeight));
+            ImGui.PopStyleColor(3);
+
+            Vector2 tileMin = ImGui.GetItemRectMin();
+            Vector2 tileMax = ImGui.GetItemRectMax();
+            bool tileVisible = ImGui.IsRectVisible(tileMin, tileMax);
+            if (!tileVisible)
+            {
+                ImGui.PopID();
+                column++;
+                if (column >= columns)
+                    column = 0;
+                continue;
+            }
+
+            DrawThumbnail(assetService, entry, tileMin + new Vector2(10, 8), new Vector2(tileWidth - 28, 82));
+            ImGui.GetWindowDrawList().AddText(tileMin + new Vector2(8, 94),
+                ImGui.GetColorU32(entry.Broken ? ImGuiCol.TextDisabled : ImGuiCol.Text),
+                entry.Broken ? "[!] BROKEN" : entry.DisplayName);
+            ImGui.GetWindowDrawList().AddText(tileMin + new Vector2(8, 113),
+                ImGui.GetColorU32(ImGuiCol.TextDisabled), KindLabel(entry.Kind));
+
+            if (clicked)
+                _selectedPath = entry.RelativePath;
+            if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                Activate(entry, materialEditor, activate);
+
+            if (ImGui.BeginDragDropSource())
+            {
+                AssetDragDrop.Publish(entry);
+                ImGui.Text($"{KindLabel(entry.Kind)}: {entry.DisplayName}");
+                ImGui.SetDragDropPayload("BLOWTORCH_ASSET", IntPtr.Zero, 0);
+                ImGui.EndDragDropSource();
+            }
+            ImGui.PopID();
+
+            column++;
+            if (column >= columns)
+                column = 0;
+        }
+
+        if (_entries.Count == 0)
+            ImGui.TextDisabled("No assets found in Fuse/res.");
+        else if (FilteredEntries().Count == 0)
+            ImGui.TextDisabled("No asset matches the current filter.");
+    }
+
+    private void DrawThumbnail(EditorAssetService assetService, EditorAssetEntry entry, Vector2 min, Vector2 size)
+    {
+        ImDrawListPtr draw = ImGui.GetWindowDrawList();
+        Vector2 max = min + size;
+        draw.AddRectFilled(min, max, ImGui.GetColorU32(ImGuiCol.FrameBg), 4);
+
+        if (entry.Kind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+        {
+            uint texture = assetService.RequestTexturePreview(entry.RelativePath);
+            if (texture != 0)
+                draw.AddImage((IntPtr)texture, min, max, new Vector2(0, 1), new Vector2(1, 0));
+            else
+            {
+                entry.Broken = true;
+                entry.Error = "Texture could not be decoded.";
+                DrawBroken(draw, min, max);
+            }
+            return;
+        }
+
+        if (entry.Kind == EditorAssetKind.Material)
+        {
+            Vector3 color = assetService.GetMaterialThumbnailColor(entry.RelativePath);
+            draw.AddRectFilled(min + new Vector2(14, 10), max - new Vector2(14, 10),
+                ImGui.ColorConvertFloat4ToU32(new Vector4(color, 1)), 4);
+            draw.AddCircleFilled((min + max) * 0.5f, MathF.Min(size.X, size.Y) * 0.23f,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(0.8f, 0.86f, 0.95f, 0.45f)));
+            return;
+        }
+
+        // A lightweight drawn model thumbnail keeps the browser responsive
+        // even when a project contains hundreds of large imported models.
+        Vector2 center = (min + max) * 0.5f;
+        float s = MathF.Min(size.X, size.Y) * 0.28f;
+        Vector2 top = center + new Vector2(0, -s);
+        Vector2 left = center + new Vector2(-s, -s * 0.45f);
+        Vector2 right = center + new Vector2(s, -s * 0.45f);
+        Vector2 bottom = center + new Vector2(0, s * 0.55f);
+        uint modelColor = ImGui.GetColorU32(ImGuiCol.Text);
+        draw.AddLine(top, left, modelColor, 2); draw.AddLine(top, right, modelColor, 2);
+        draw.AddLine(left, bottom, modelColor, 2); draw.AddLine(right, bottom, modelColor, 2);
+        draw.AddLine(left, right, modelColor, 2);
+        draw.AddText(center - new Vector2(12, 7), ImGui.GetColorU32(ImGuiCol.TextDisabled), "3D");
+    }
+
+    private void DrawDetails(EditorAssetService assetService, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    {
+        EditorAssetEntry? entry = FindSelected();
+        if (entry == null)
+        {
+            ImGui.TextDisabled("Select an asset to inspect it.");
+            return;
+        }
+
+        ImGui.TextColored(new Vector4(0.75f, 0.86f, 1, 1), entry.DisplayName);
+        ImGui.TextDisabled(KindLabel(entry.Kind));
+        ImGui.Separator();
+        ImGui.TextWrapped(entry.RelativePath);
+        ImGui.TextDisabled(entry.FullPath);
+        ImGui.Spacing();
+
+        assetService.GetAssetStatus(
+            entry.Kind,
+            entry.RelativePath,
+            out string currentError,
+            validateContents: entry.Kind == EditorAssetKind.Material);
+        if (!string.IsNullOrEmpty(currentError))
+        {
+            entry.Broken = true;
+            entry.Error = currentError;
+        }
+
+        if (entry.Broken)
+            ImGui.TextColored(new Vector4(1, 0.28f, 0.25f, 1), $"[!] {entry.Error}");
+        else
+            ImGui.TextColored(new Vector4(0.35f, 0.9f, 0.5f, 1), "Ready");
+
+        if (entry.Kind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+        {
+            uint texture = assetService.RequestTexturePreview(entry.RelativePath);
+            if (texture != 0)
+            {
+                ImGui.Spacing();
+                ImGui.Image((IntPtr)texture, new Vector2(MathF.Min(240, ImGui.GetContentRegionAvail().X), 180),
+                    new Vector2(0, 1), new Vector2(1, 0));
+            }
+        }
+
+        ImGui.Spacing();
+        string activateLabel = _texturePickerCallback != null ? "Use Selected Texture" : "Open / Apply";
+        if (ImGui.Button(activateLabel, new Vector2(-1, 0)))
+            Activate(entry, materialEditor, activate);
+        if (ImGui.Button("Reimport", new Vector2(-1, 0)))
+            ReimportSelected(assetService, null, activate);
+        ImGui.TextDisabled("Drag this asset to a viewport or to the Material Graph.");
+    }
+
+    private void Activate(EditorAssetEntry entry, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    {
+        _selectedPath = entry.RelativePath;
+        if (_texturePickerCallback != null &&
+            entry.Kind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+        {
+            Action<string> callback = _texturePickerCallback;
+            _texturePickerCallback = null;
+            callback(entry.RelativePath);
+            _status = $"Selected {entry.DisplayName}.";
+            IsOpen = false;
+            return;
+        }
+        if (entry.Kind == EditorAssetKind.Material)
+            materialEditor.Open(entry.RelativePath);
+        activate?.Invoke(entry);
+    }
+
+    private void ReimportSelected(EditorAssetService assetService, EditorSceneService? sceneService, Action<EditorAssetEntry>? activate)
+    {
+        EditorAssetEntry? entry = FindSelected();
+        if (entry == null)
+            return;
+
+        if (assetService.ReimportAsset(entry.Kind, entry.RelativePath, out string error))
+        {
+            _status = $"Reimported {entry.DisplayName}.";
+            _refreshRequested = true;
+            if (sceneService != null)
+            {
+                if (entry.Kind == EditorAssetKind.Model)
+                    sceneService.PopulateScene(assetService);
+                else
+                    sceneService.RefreshMaterials(assetService);
+            }
+        }
+        else
+        {
+            _status = error;
+            _refreshRequested = true;
+        }
+    }
+
+    private void Refresh(EditorAssetService assetService)
+    {
+        _entries.Clear();
+        AddEntries(assetService.EnumerateModels(), EditorAssetKind.Model, assetService);
+        AddEntries(assetService.EnumerateMaterials(), EditorAssetKind.Material, assetService);
+        HashSet<string> skyboxes = assetService.EnumerateSkyboxes().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (string texture in assetService.EnumerateTextures())
+            AddEntry(assetService, texture, skyboxes.Contains(texture) ? EditorAssetKind.Skybox : EditorAssetKind.Texture);
+        _catalogRevision = assetService.AssetRevision;
+        _refreshRequested = false;
+    }
+
+    private void AddEntries(IEnumerable<string> paths, EditorAssetKind kind, EditorAssetService assetService)
+    {
+        foreach (string path in paths)
+            AddEntry(assetService, path, kind);
+    }
+
+    private void AddEntry(EditorAssetService assetService, string relativePath, EditorAssetKind kind)
+    {
+        string normalized = relativePath.Replace('\\', '/');
+        assetService.GetAssetStatus(kind, normalized, out string error);
+        _entries.Add(new EditorAssetEntry
+        {
+            RelativePath = normalized,
+            FullPath = assetService.ResolveEditorAssetPath(normalized),
+            Kind = kind,
+            Broken = !string.IsNullOrEmpty(error),
+            Error = error
+        });
+    }
+
+    private EditorAssetEntry? FindSelected() => _entries.FirstOrDefault(entry =>
+        entry.RelativePath.Equals(_selectedPath, StringComparison.OrdinalIgnoreCase));
+
+    private List<EditorAssetEntry> FilteredEntries()
+    {
+        string filter = _search.Trim();
+        EditorAssetKind? kind = _filter switch
+        {
+            1 => EditorAssetKind.Model,
+            2 => EditorAssetKind.Material,
+            3 => EditorAssetKind.Texture,
+            4 => EditorAssetKind.Skybox,
+            _ => null
+        };
+        return _entries.Where(entry =>
+            (!kind.HasValue || entry.Kind == kind.Value) &&
+            (string.IsNullOrEmpty(filter) || entry.RelativePath.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private static string KindLabel(EditorAssetKind kind) => kind switch
+    {
+        EditorAssetKind.Model => "Model",
+        EditorAssetKind.Material => "Material",
+        EditorAssetKind.Skybox => "Skybox",
+        _ => "Texture"
+    };
+
+    private static void DrawBroken(ImDrawListPtr draw, Vector2 min, Vector2 max)
+    {
+        uint red = ImGui.GetColorU32(ImGuiCol.TextDisabled);
+        draw.AddLine(min, max, red, 2);
+        draw.AddLine(new Vector2(max.X, min.Y), new Vector2(min.X, max.Y), red, 2);
+        draw.AddText((min + max) * 0.5f - new Vector2(18, 7), red, "MISSING");
+    }
+}

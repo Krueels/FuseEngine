@@ -5,7 +5,7 @@ using Fuse.Renderer.Materials;
 
 namespace Blowtorch;
 
-public sealed class MaterialEditorWindow : IDisposable
+public sealed unsafe class MaterialEditorWindow : IDisposable
 {
     private const float NodeWidth = 190.0f;
     private const float HeaderHeight = 28.0f;
@@ -81,6 +81,21 @@ public sealed class MaterialEditorWindow : IDisposable
         OpenImmediate(fullPath);
     }
 
+    public void AssignSelectedTexture(string texturePath)
+    {
+        if (_asset == null)
+            return;
+
+        MaterialGraphNode? node = _asset.Graph.FindNode(_selectedNodeId);
+        if (node == null ||
+            node.Type is not ("Texture2D" or "ScalarTexture" or "PackedMetallicRoughness"))
+            return;
+
+        node.Properties["path"] = MaterialAsset.NormalizeAssetPath(texturePath);
+        _dirty = true;
+        _status = "Texture selected from Asset Browser.";
+    }
+
     private void OpenImmediate(string materialPath)
     {
         string fullPath = MaterialRuntime.ResolveAssetPath(materialPath);
@@ -116,7 +131,8 @@ public sealed class MaterialEditorWindow : IDisposable
     public void Draw(
         EditorAssetService assetService,
         EditorSceneService sceneService,
-        EditorInputService inputService)
+        EditorInputService inputService,
+        Action? openTextureBrowser = null)
     {
         IsInputContextActive = false;
         if (!IsOpen)
@@ -184,12 +200,12 @@ public sealed class MaterialEditorWindow : IDisposable
             float inspectorWidth = Math.Clamp(available.X * 0.25f, 250.0f, 360.0f);
             ImGui.BeginChild("MaterialGraphCanvas", new Vector2(MathF.Max(200, available.X - galleryWidth - inspectorWidth - 16), available.Y), ImGuiChildFlags.Borders,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
-            DrawCanvas();
+            DrawCanvas(assetService);
             ImGui.EndChild();
 
             ImGui.SameLine();
             ImGui.BeginChild("MaterialGraphInspector", new Vector2(inspectorWidth, available.Y), ImGuiChildFlags.Borders);
-            DrawInspector(assetService);
+            DrawInspector(assetService, openTextureBrowser);
             ImGui.EndChild();
         }
 
@@ -419,7 +435,7 @@ public sealed class MaterialEditorWindow : IDisposable
         _dirty = true;
     }
 
-    private void DrawCanvas()
+    private void DrawCanvas(EditorAssetService assetService)
     {
         MaterialGraph graph = _asset!.Graph;
         Vector2 canvasMin = ImGui.GetCursorScreenPos();
@@ -584,6 +600,40 @@ public sealed class MaterialEditorWindow : IDisposable
             }
         }
 
+        // This target is created only during an active drag. Keeping it out of
+        // the normal item stack prevents it from overlapping node click targets.
+        var activePayload = ImGui.GetDragDropPayload();
+        if (activePayload.NativePtr != null && canvasHovered)
+        {
+            ImGui.SetCursorScreenPos(canvasMin);
+            ImGui.InvisibleButton("MaterialGraphAssetDropTarget", canvasMax - canvasMin);
+            if (ImGui.BeginDragDropTarget())
+            {
+                var payload = ImGui.AcceptDragDropPayload("BLOWTORCH_ASSET");
+                if (payload.NativePtr != null &&
+                    !string.IsNullOrWhiteSpace(AssetDragDrop.CurrentPath))
+                {
+                    if (AssetDragDrop.CurrentKind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+                    {
+                        Vector2 position = (mouse - canvasMin - _canvasPan) / _canvasZoom;
+                        MaterialGraphNode node = MaterialNodeCatalog.CreateNode("Texture2D", position);
+                        node.Name = Path.GetFileNameWithoutExtension(AssetDragDrop.CurrentPath);
+                        node.Properties["path"] = MaterialAsset.NormalizeAssetPath(AssetDragDrop.CurrentPath);
+                        node.Properties["color_space"] = "sRGB";
+                        _asset.Graph.Nodes.Add(node);
+                        SelectNode(node.Id, false);
+                        _dirty = true;
+                        _status = "Texture node added from Asset Browser.";
+                    }
+                    else if (AssetDragDrop.CurrentKind == EditorAssetKind.Material)
+                    {
+                        _status = "Double-click a material in Asset Browser to open it.";
+                    }
+                }
+                ImGui.EndDragDropTarget();
+            }
+        }
+
     }
 
     private void DrawNode(MaterialGraphNode node, Vector2 canvasMin, Vector2 mouse, ImDrawListPtr drawList)
@@ -727,7 +777,7 @@ public sealed class MaterialEditorWindow : IDisposable
         _status = "";
     }
 
-    private void DrawInspector(EditorAssetService assetService)
+    private void DrawInspector(EditorAssetService assetService, Action? openTextureBrowser)
     {
         DrawPreview(assetService);
         ImGui.TextUnformatted("Material Settings");
@@ -785,7 +835,7 @@ public sealed class MaterialEditorWindow : IDisposable
             _dirty = true;
         }
         ImGui.TextDisabled(node.Type);
-        DrawNodeProperties(node, assetService);
+        DrawNodeProperties(node, assetService, openTextureBrowser);
 
         MaterialGraphLink[] links = _asset.Graph.Links
             .Where(link => link.FromNode == node.Id || link.ToNode == node.Id)
@@ -822,7 +872,10 @@ public sealed class MaterialEditorWindow : IDisposable
         }
     }
 
-    private void DrawNodeProperties(MaterialGraphNode node, EditorAssetService assetService)
+    private void DrawNodeProperties(
+        MaterialGraphNode node,
+        EditorAssetService assetService,
+        Action? openTextureBrowser)
     {
         switch (node.Type)
         {
@@ -836,18 +889,8 @@ public sealed class MaterialEditorWindow : IDisposable
                     node.Properties["path"] = MaterialAsset.NormalizeAssetPath(path);
                     _dirty = true;
                 }
-                if (ImGui.BeginCombo("Browse", string.IsNullOrEmpty(path) ? "Select texture..." : Path.GetFileName(path)))
-                {
-                    foreach (string texture in assetService.EnumerateTextures())
-                    {
-                        if (ImGui.Selectable(texture, texture.Equals(path, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            node.Properties["path"] = texture;
-                            _dirty = true;
-                        }
-                    }
-                    ImGui.EndCombo();
-                }
+                if (ImGui.Button("Open Asset Browser"))
+                    openTextureBrowser?.Invoke();
                 string defaultSpace = node.Type == "Texture2D" ? "sRGB" : "linear";
                 string colorSpace = MaterialAsset.GetString(node.Properties, "color_space", defaultSpace);
                 if (ImGui.BeginCombo("Color Space", colorSpace))
