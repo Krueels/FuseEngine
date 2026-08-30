@@ -606,6 +606,13 @@ public unsafe class MasterRenderer
         _gl.ClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
+        // O attachment emissivo precisa começar preto a cada frame. O clear
+        // da cena usa uma cor de fundo diferente e limparia os dois attachments
+        // com essa cor, gerando bloom no céu/fundo.
+        float[] emissiveClear = [0.0f, 0.0f, 0.0f, 0.0f];
+        fixed (float* clear = emissiveClear)
+            _gl.ClearBuffer(BufferKind.Color, 1, clear);
+
         // Skybox
         if (_skyboxShader.ID != 0 && _skyboxTexture.ID != 0)
         {
@@ -719,7 +726,7 @@ public unsafe class MasterRenderer
         if (_postPipeline.Settings.Enabled)
         {
             _postPipeline.SetViewProj(_prevViewProj, view, proj);
-            _postPipeline.Execute(_postPipeline.HdrColorId, 0); // 0 = tela final
+            _postPipeline.Execute(_postPipeline.HdrColorId, 0, _postPipeline.HdrEmissiveId); // 0 = tela final
         }
         else
         {

@@ -8,7 +8,8 @@ in vec3 vWorldTangent;
 in vec3 vWorldBitangent;
 in vec3 vViewPos;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 fragEmissive;
 
 uniform sampler2D uTexture;
 uniform sampler2DArrayShadow uShadowMap;
@@ -389,6 +390,12 @@ void main()
     if (uIsEmissive)
         result += uEmissiveColor * uEmissiveStrength;
 
+    // Saída independente para o bloom: somente emissão do material.
+    // Não incluir iluminação direta, especular, IBL ou reflexos do cubemap.
+    vec3 emissiveRadiance = max(material.emission, vec3(0.0));
+    if (uIsEmissive)
+        emissiveRadiance += max(uEmissiveColor * uEmissiveStrength, vec3(0.0));
+
     // Opaque and masked materials must write an opaque framebuffer alpha.
     // Keeping alpha at zero made the ImGui material preview blend the lit RGB
     // away as transparent, which looked like an unlit/black preview.
@@ -398,4 +405,5 @@ void main()
         ? pow(max(result, vec3(0.0)), vec3(1.0 / 2.2))
         : result;
     fragColor = vec4(outputColor, outputAlpha);
+    fragEmissive = vec4(emissiveRadiance, outputAlpha);
 }

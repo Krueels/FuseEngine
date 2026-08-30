@@ -13,6 +13,7 @@ public sealed class PostProcessShader : IDisposable
     // Uniform locations
     public int UPass { get; private set; }
     public int UScene { get; private set; }
+    public int UEmissive { get; private set; }
     public int UBloom { get; private set; }
     public int UExposure { get; private set; }
     public int UBloomStrength { get; private set; }
@@ -78,6 +79,7 @@ public sealed class PostProcessShader : IDisposable
         _shader.Use();
         UPass = _gl.GetUniformLocation(_shader.ID, "uPass");
         UScene = _gl.GetUniformLocation(_shader.ID, "uScene");
+        UEmissive = _gl.GetUniformLocation(_shader.ID, "uEmissive");
         UBloom = _gl.GetUniformLocation(_shader.ID, "uBloom");
         UExposure = _gl.GetUniformLocation(_shader.ID, "uExposure");
         UBloomStrength = _gl.GetUniformLocation(_shader.ID, "uBloomStrength");
@@ -125,6 +127,11 @@ public sealed class PostProcessShader : IDisposable
     public void SetSceneTexture(int slot)
     {
         _gl.Uniform1(UScene, slot);
+    }
+
+    public void SetEmissiveTexture(int slot)
+    {
+        _gl.Uniform1(UEmissive, slot);
     }
 
     public void SetBloomTexture(int slot)

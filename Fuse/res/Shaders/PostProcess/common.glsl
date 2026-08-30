@@ -3,6 +3,7 @@ layout(location = 0) out vec4 FragColor;
 
 uniform int uPass;
 uniform sampler2D uScene;
+uniform sampler2D uEmissive;
 uniform sampler2D uBloom;
 uniform float uExposure;
 uniform float uBloomStrength;

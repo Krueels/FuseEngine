@@ -31,6 +31,7 @@ public sealed class PostProcessPipeline : IDisposable
 
     public uint HdrFbo => _fbPool.HdrFbo;
     public uint HdrColorId => _fbPool.HdrColorId;
+    public uint HdrEmissiveId => _fbPool.HdrEmissiveId;
     public uint HdrDepthId => _fbPool.HdrDepthTexture;
     public int Width => _fbPool.Width;
     public int Height => _fbPool.Height;
@@ -59,7 +60,8 @@ public sealed class PostProcessPipeline : IDisposable
     /// </summary>
     /// <param name="sceneColorId">ID da textura da cena renderizada (HDR)</param>
     /// <param name="targetFbo">Framebuffer destino (0 = tela, ou FBO custom)</param>
-    public void Execute(uint sceneColorId, uint targetFbo = 0)
+    /// <param name="emissiveColorId">Textura HDR com somente a emissão dos materiais</param>
+    public void Execute(uint sceneColorId, uint targetFbo = 0, uint emissiveColorId = 0)
     {
         if (sceneColorId == 0)
         {
@@ -69,6 +71,10 @@ public sealed class PostProcessPipeline : IDisposable
 
         if (!_fbPool.Validate(_gl))
             _fbPool.Resize(_fbPool.Width, _fbPool.Height);
+
+        // Resolve depois de uma possível recriação para nunca usar o ID de uma
+        // textura emissiva que acabou de ser destruída durante o Resize.
+        uint bloomSourceId = emissiveColorId != 0 ? emissiveColorId : _fbPool.HdrEmissiveId;
 
         bool anyEffect = _settings.Enabled &&
             (_settings.BloomEnabled || _settings.MotionBlurEnabled || _settings.SsaoEnabled);
@@ -158,9 +164,9 @@ public sealed class PostProcessPipeline : IDisposable
             _gl.Clear(ClearBufferMask.ColorBufferBit);
 
             _shader.SetPass(1);
-            _shader.SetSceneTexture(0);
+            _shader.SetEmissiveTexture(0);
             _gl.ActiveTexture(TextureUnit.Texture0);
-            _gl.BindTexture(TextureTarget.Texture2D, sceneColorId);
+            _gl.BindTexture(TextureTarget.Texture2D, bloomSourceId);
             _quad.Draw();
 
             // Kawase Blur iterations
@@ -192,11 +198,14 @@ public sealed class PostProcessPipeline : IDisposable
 
             _shader.SetPass(4);
             _shader.SetSceneTexture(0);
+            _shader.SetEmissiveTexture(2);
             _shader.SetBloomTexture(1);
             _gl.ActiveTexture(TextureUnit.Texture0);
             _gl.BindTexture(TextureTarget.Texture2D, sceneColorId);
             _gl.ActiveTexture(TextureUnit.Texture1);
             _gl.BindTexture(TextureTarget.Texture2D, lastBloom);
+            _gl.ActiveTexture(TextureUnit.Texture2);
+            _gl.BindTexture(TextureTarget.Texture2D, bloomSourceId);
             _quad.Draw();
 
             currentLayer = _fbPool.PingPongColorB;

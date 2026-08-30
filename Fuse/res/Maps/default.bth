@@ -3652,6 +3652,100 @@
           10
         ]
       }
+    },
+    {
+      "id": "new_box_1",
+      "visible": true,
+      "mesh": "cube",
+      "material": "Materials/EMI_WHITE.fmat",
+      "body": {
+        "shape": "box",
+        "position": [
+          0,
+          1,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 10,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "new_point_light_2",
+      "visible": true,
+      "parent": "new_box_1",
+      "light_type": "point",
+      "light_color": [
+        1,
+        1,
+        1
+      ],
+      "light_intensity": 5,
+      "light_radius": 15,
+      "light_inner_cone": 0.2617994,
+      "light_outer_cone": 0.5235988,
+      "light_cast_shadows": true,
+      "light_shadow_bias": 0.001,
+      "light_dynamic": true,
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          1,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "new_box_2",
+      "visible": true,
+      "mesh": "cube",
+      "material": "Materials/MAT_Glock.fmat",
+      "body": {
+        "shape": "box",
+        "position": [
+          0,
+          7,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      }
     }
   ],
   "player_spawn": {

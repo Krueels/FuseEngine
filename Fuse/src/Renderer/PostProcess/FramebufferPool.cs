@@ -10,6 +10,7 @@ public sealed unsafe class FramebufferPool : IDisposable
 
     public uint HdrFbo { get; private set; }
     public uint HdrColorId { get; private set; }
+    public uint HdrEmissiveId { get; private set; }
     public uint HdrDepthTexture { get; private set; }
     
     public int Width => _width;
@@ -52,6 +53,21 @@ public sealed unsafe class FramebufferPool : IDisposable
 
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, HdrColorId, 0);
 
+        // Segundo alvo HDR: contém somente a radiância emissiva dos materiais.
+        // O bloom usa este attachment em vez da cena completa, evitando que
+        // reflexos especulares e o environment map sejam tratados como emissão.
+        HdrEmissiveId = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, HdrEmissiveId);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba16f, (uint)_width, (uint)_height, 0,
+            PixelFormat.Rgba, PixelType.Float, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment1,
+            TextureTarget.Texture2D, HdrEmissiveId, 0);
+
         // DEPTH TEXTURE (not renderbuffer - so we can sample in shader)
         HdrDepthTexture = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, HdrDepthTexture);
@@ -65,6 +81,12 @@ public sealed unsafe class FramebufferPool : IDisposable
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode, (int)TextureCompareMode.None);
 
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, TextureTarget.Texture2D, HdrDepthTexture, 0);
+
+        _gl.DrawBuffers(new[]
+        {
+            DrawBufferMode.ColorAttachment0,
+            DrawBufferMode.ColorAttachment1
+        });
 
         var status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
         if (status != GLEnum.FramebufferComplete)
@@ -169,6 +191,7 @@ public sealed unsafe class FramebufferPool : IDisposable
         _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0);
 
         if (HdrColorId != 0) { _gl.DeleteTexture(HdrColorId); HdrColorId = 0; }
+        if (HdrEmissiveId != 0) { _gl.DeleteTexture(HdrEmissiveId); HdrEmissiveId = 0; }
         if (HdrDepthTexture != 0) { _gl.DeleteTexture(HdrDepthTexture); HdrDepthTexture = 0; }
         if (PingPongColorA != 0) { _gl.DeleteTexture(PingPongColorA); PingPongColorA = 0; }
         if (PingPongColorB != 0) { _gl.DeleteTexture(PingPongColorB); PingPongColorB = 0; }

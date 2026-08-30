@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "GRASS",
+  "name": "MAT_Glock",
   "alpha_mode": "opaque",
   "alpha_cutoff": 0.5,
   "two_sided": false,
@@ -34,100 +34,81 @@
         }
       },
       {
-        "id": "2fb8e78da4bb4547a8645a7b60ff88e4",
+        "id": "dedd73bcdcac4c6eb6e84c1b2ea44767",
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          9,
-          70
+          29,
+          51
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_Color.png",
+          "path": "Textures/weapons/glock/Glock_ALB.png",
           "color_space": "sRGB"
         }
       },
       {
-        "id": "f43ccb6f9a8a452c9351ee86bb655f0d",
-        "type": "Texture2D",
-        "name": "Texture",
-        "position": [
-          11,
-          304
-        ],
-        "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_NormalGL.png",
-          "color_space": "linear"
-        }
-      },
-      {
-        "id": "dd7171f9ad7c47f0aed4a2e05c771f8f",
+        "id": "fa1b9cab95394166ae29f9a270fe3a74",
         "type": "NormalMap",
         "name": "Normal Map",
         "position": [
-          234,
-          278
+          266,
+          242
         ],
         "properties": {
           "strength": 1
         }
       },
       {
-        "id": "1ad0817b12cd41e0bebce3a664a55969",
-        "type": "PackedMetallicRoughness",
-        "name": "Metallic/Roughness",
+        "id": "3c368bb0f97d403ea0d63a6d6c0e4543",
+        "type": "Texture2D",
+        "name": "Texture",
         "position": [
-          126,
-          -5
+          23,
+          258
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_Roughness.png",
+          "path": "Textures/weapons/glock/Glock_NRM.png",
           "color_space": "linear"
         }
       },
       {
-        "id": "ae5659d0cc7245919149733d61d29e91",
+        "id": "e8e4e4b59bba41cd8871b60c037d03e1",
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          41,
-          182
+          42,
+          358
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_AmbientOcclusion.png",
+          "path": "Textures/weapons/glock/Glock_RMA.png",
           "color_space": "sRGB"
         }
       }
     ],
     "links": [
       {
-        "from_node": "2fb8e78da4bb4547a8645a7b60ff88e4",
+        "from_node": "dedd73bcdcac4c6eb6e84c1b2ea44767",
         "from_socket": "Color",
         "to_node": "output",
         "to_socket": "BaseColor"
       },
       {
-        "from_node": "f43ccb6f9a8a452c9351ee86bb655f0d",
+        "from_node": "3c368bb0f97d403ea0d63a6d6c0e4543",
         "from_socket": "Color",
-        "to_node": "dd7171f9ad7c47f0aed4a2e05c771f8f",
+        "to_node": "fa1b9cab95394166ae29f9a270fe3a74",
         "to_socket": "Color"
       },
       {
-        "from_node": "dd7171f9ad7c47f0aed4a2e05c771f8f",
+        "from_node": "fa1b9cab95394166ae29f9a270fe3a74",
         "from_socket": "Normal",
         "to_node": "output",
         "to_socket": "Normal"
       },
       {
-        "from_node": "1ad0817b12cd41e0bebce3a664a55969",
-        "from_socket": "Roughness",
-        "to_node": "output",
-        "to_socket": "Roughness"
-      },
-      {
-        "from_node": "ae5659d0cc7245919149733d61d29e91",
+        "from_node": "e8e4e4b59bba41cd8871b60c037d03e1",
         "from_socket": "Color",
         "to_node": "output",
-        "to_socket": "AO"
+        "to_socket": "Roughness"
       }
     ]
   }

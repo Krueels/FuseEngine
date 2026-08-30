@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "name": "MAT_AK",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "7d5373b98aff446d9c5acf608ddc26d4",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          58,
+          113
+        ],
+        "properties": {
+          "path": "Textures/weapons/ak/AKS74U_0_ALB.png",
+          "color_space": "sRGB"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "7d5373b98aff446d9c5acf608ddc26d4",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      }
+    ]
+  }
+}

@@ -110,27 +110,32 @@ public class WeaponSystem : IDisposable
         // Create viewmodel
         CreateViewmodel(weapon);
 
-        //Texuta padrão para ArmsMale
+        // aplicar somente materiais aos braços e à arma.
+        var armsMaterial = _assets.GetMaterial(Bible.MAT_Arms);
+
+        var weaponMaterial = string.IsNullOrWhiteSpace(weapon.ViewmodelMaterialPath)
+            ? null
+            : _assets.GetMaterial(weapon.ViewmodelMaterialPath);
+
         if (_viewmodelModel != null)
         {
-            var armsTex = _assets.GetTexture(Bible.Tex(Bible.ArmsMale), TextureColorSpace.Srgb);
             foreach (var sub in _viewmodelModel.Submeshes)
             {
-                if (sub.Name == "ArmsMale" && armsTex != null)
-                    sub.Texture = armsTex;
-            }
-        }
+                sub.Material = null;
 
-        // aplicar texturas por submesh
-        if (_viewmodelModel != null && weapon.ViewmodelTextures != null)
-        {
-            foreach(var sub in _viewmodelModel.Submeshes)
-            {
-                if (weapon.ViewmodelTextures.TryGetValue(sub.Name, out string? texPath))
+                // Braços usam exclusivamente MAT_Arms.
+                if (sub.Name.Equals("ArmsMale", StringComparison.OrdinalIgnoreCase))
                 {
-                    var tex = _assets.GetTexture(texPath, TextureColorSpace.Srgb);
-                    if (tex != null)
-                        sub.Texture = tex;
+                    sub.Material = armsMaterial;
+                    sub.Texture = null;
+                    continue;
+                }
+
+                // Todos os demais submeshes da Glock usam exclusivamente MAT_Glock.
+                if (weaponMaterial != null)
+                {
+                    sub.Material = weaponMaterial;
+                    sub.Texture = null;
                 }
             }
         }

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "EMI_WHITE",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": false,
+  "receive_shadows": false,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            1,
+            1,
+            1
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      }
+    ],
+    "links": []
+  }
+}

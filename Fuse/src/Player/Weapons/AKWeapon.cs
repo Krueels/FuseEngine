@@ -15,9 +15,7 @@ public sealed class AKWeapon : IWeapon
 {
     public string Id => "ak";
     public string ViewmodelModelPath => Bible.Model(Bible.AKModel);
-
-    private static readonly string[] _glockSubmeshes = ["GlockBarrel", "GlockMagazine", "GlockMagazine_02", "GlockReceiver", "GlockSlide", "GlockSlideUnLock", "GlockTrigger"];
-    public Dictionary<string, string> ViewmodelTextures => _glockSubmeshes.ToDictionary(s => s, _ => Bible.Tex(Bible.GlockAlbedo));
+    public string ViewmodelMaterialPath => Bible.MAT_AK;
 
     // Muzzle flash
     public Vector3 MuzzleFlashOffset => new(0.1f, -0.08f, 0.58f);

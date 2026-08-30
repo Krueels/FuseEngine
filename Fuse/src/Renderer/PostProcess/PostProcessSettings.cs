@@ -16,8 +16,8 @@ public sealed class PostProcessSettings
 
     // Bloom
     public bool BloomEnabled = true;
-    public float BloomStrength = 2.0f;
-    public float BloomThreshold = 1.0f;
+    public float BloomStrength = 1.0f;
+    public float BloomThreshold = 0.1f;
     public float BloomKnee = 0.0f;
 
     // Kawase Blur
@@ -27,7 +27,7 @@ public sealed class PostProcessSettings
     // Bloom Expansion
     public float BloomScale = 1.0f;           // multiplica o raio efetivo
     public Vector3 BloomTint = Vector3.One;   // cor do bloom (RGB)
-    public float BloomAnamorphicRatio = 1.0f; // >1 = horizontal, <1 = vertical
+    public float BloomAnamorphicRatio = 4.0f; // >1 = horizontal, <1 = vertical
 
     // Legacy (mantido para compatibilidade)
     public int BlurIterations = 1;

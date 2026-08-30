@@ -9,18 +9,24 @@ public static class Bible
     //Font
     public const string DefaultFont = "Fonts/Obelisk-Demo.ttf";
 
+
+    // Material - Viewmodel
+    public const string MAT_Arms = "Materials/MAT_Arms.fmat";
+
+    // Material - Glock
+    public const string MAT_Glock = "Materials/MAT_Glock.fmat";
+
+    // Material - AK
+    public const string MAT_AK = "Materials/MAT_AK.fmat";
+
     // Textures - UI
     public const string Crosshair = "UI/crosshair.png";
     public const string CrosshairInteract = "UI/crosshair_interact.png";
     public const string EnemyIcon = "UI/enemy_icon.png";
 
     // Textures - Weapons
-    public const string GlockAlbedo = "weapons/glock/Glock_ALB.png";
     public const string MuzzleFlash = "FX/muzzle_flash_{0}.png";
-
-    // Textures - Viewmodel
-    public const string ArmsMale = "ArmsMale_ALB.png";
-
+    
     // Textures - Environment
     public const string Skybox = "skybox_1.png";
     public const string Crate = "dev_measurecrate01.bmp";
@@ -108,8 +114,8 @@ public static class Bible
         assets.GetTexture(Tex(Crosshair), Fuse.Renderer.TextureColorSpace.Linear);
         assets.GetTexture(Tex(CrosshairInteract), Fuse.Renderer.TextureColorSpace.Linear);
         assets.GetTexture(Tex(EnemyIcon), Fuse.Renderer.TextureColorSpace.Linear);
-        assets.GetTexture(Tex(GlockAlbedo), Fuse.Renderer.TextureColorSpace.Srgb);
-        assets.GetTexture(Tex(ArmsMale), Fuse.Renderer.TextureColorSpace.Srgb);
+        //assets.GetTexture(Tex(GlockAlbedo), Fuse.Renderer.TextureColorSpace.Srgb);
+        //assets.GetTexture(Tex(ArmsMale), Fuse.Renderer.TextureColorSpace.Srgb);
         assets.GetTexture(Tex(Skybox), Fuse.Renderer.TextureColorSpace.Srgb);
         assets.GetTexture(Tex(Crate), Fuse.Renderer.TextureColorSpace.Srgb);
         for (int i = 0; i < 3; i++)

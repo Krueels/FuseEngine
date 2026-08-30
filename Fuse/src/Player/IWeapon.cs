@@ -20,7 +20,7 @@ public interface IWeapon : IDisposable
     float RecoilPitchKick { get; }    // kick vertical (graus)
     float RecoilYawKick { get; }      // variação horizontal (graus)
 
-    Dictionary<string, string> ViewmodelTextures { get; }
+    string ViewmodelMaterialPath => "";
 
     // Muzzle flash
     Vector3 MuzzleFlashOffset { get; }        // offset relativo à câmera (em world space)

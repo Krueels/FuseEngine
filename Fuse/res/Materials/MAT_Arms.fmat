@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "GRASS",
+  "name": "MAT_Arms",
   "alpha_mode": "opaque",
   "alpha_cutoff": 0.5,
   "two_sided": false,
@@ -34,100 +34,75 @@
         }
       },
       {
-        "id": "2fb8e78da4bb4547a8645a7b60ff88e4",
+        "id": "b3681a78b6444bf09d2ee8f6b058fe13",
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          9,
-          70
+          125,
+          152
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_Color.png",
+          "path": "Textures/Arms/ArmsMale_ALB.png",
           "color_space": "sRGB"
         }
       },
       {
-        "id": "f43ccb6f9a8a452c9351ee86bb655f0d",
-        "type": "Texture2D",
-        "name": "Texture",
-        "position": [
-          11,
-          304
-        ],
-        "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_NormalGL.png",
-          "color_space": "linear"
-        }
-      },
-      {
-        "id": "dd7171f9ad7c47f0aed4a2e05c771f8f",
+        "id": "75546a1350d54d5e9ff59f9fc7daad61",
         "type": "NormalMap",
         "name": "Normal Map",
         "position": [
-          234,
-          278
+          263,
+          276
         ],
         "properties": {
           "strength": 1
         }
       },
       {
-        "id": "1ad0817b12cd41e0bebce3a664a55969",
-        "type": "PackedMetallicRoughness",
-        "name": "Metallic/Roughness",
+        "id": "bcc5ec17552942bda914013894d7349b",
+        "type": "Texture2D",
+        "name": "Texture",
         "position": [
-          126,
-          -5
+          -45,
+          285
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_Roughness.png",
+          "path": "Textures/Arms/ArmsMale_NRM.png",
           "color_space": "linear"
         }
       },
       {
-        "id": "ae5659d0cc7245919149733d61d29e91",
+        "id": "0147a064280e4a0b975caf7bb13c401d",
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          41,
-          182
+          86,
+          -47
         ],
         "properties": {
-          "path": "Textures/Grass/Grass001_1K-PNG_AmbientOcclusion.png",
+          "path": "Textures/Arms/ArmsMale_RMA.png",
           "color_space": "sRGB"
         }
       }
     ],
     "links": [
       {
-        "from_node": "2fb8e78da4bb4547a8645a7b60ff88e4",
+        "from_node": "b3681a78b6444bf09d2ee8f6b058fe13",
         "from_socket": "Color",
         "to_node": "output",
         "to_socket": "BaseColor"
       },
       {
-        "from_node": "f43ccb6f9a8a452c9351ee86bb655f0d",
-        "from_socket": "Color",
-        "to_node": "dd7171f9ad7c47f0aed4a2e05c771f8f",
-        "to_socket": "Color"
-      },
-      {
-        "from_node": "dd7171f9ad7c47f0aed4a2e05c771f8f",
+        "from_node": "75546a1350d54d5e9ff59f9fc7daad61",
         "from_socket": "Normal",
         "to_node": "output",
         "to_socket": "Normal"
       },
       {
-        "from_node": "1ad0817b12cd41e0bebce3a664a55969",
-        "from_socket": "Roughness",
-        "to_node": "output",
-        "to_socket": "Roughness"
-      },
-      {
-        "from_node": "ae5659d0cc7245919149733d61d29e91",
+        "from_node": "bcc5ec17552942bda914013894d7349b",
         "from_socket": "Color",
-        "to_node": "output",
-        "to_socket": "AO"
+        "to_node": "75546a1350d54d5e9ff59f9fc7daad61",
+        "to_socket": "Color"
       }
     ]
   }

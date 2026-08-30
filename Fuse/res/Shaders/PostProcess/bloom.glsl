@@ -24,7 +24,9 @@ vec3 KawaseBlur(sampler2D tex, vec2 uv, vec2 texelSize, int radius, float anamor
 }
 
 vec4 BloomExtract(vec2 uv) {
-    vec3 col = texture(uScene, uv).rgb;
+    // A fonte do bloom é exclusivamente a radiância emissiva.
+    // Reflexos do cubemap e highlights especulares permanecem apenas na cena.
+    vec3 col = texture(uEmissive, uv).rgb;
     float mask = BloomThreshold(col);
     return vec4(col * mask, 1.0);
 }
@@ -49,8 +51,9 @@ vec4 BloomComposite(vec2 uv) {
     } else if (uDebugView == 2) {
         return vec4(bloomCol, scene.a);
     } else if (uDebugView == 3) {
-        float mask = BloomThreshold(sceneCol);
-        return vec4(sceneCol * mask, scene.a);
+        vec3 emissiveCol = texture(uEmissive, uv).rgb;
+        float mask = BloomThreshold(emissiveCol);
+        return vec4(emissiveCol * mask, scene.a);
     } else {
         return vec4(sceneCol + bloomCol * uBloomStrength, scene.a);
     }
