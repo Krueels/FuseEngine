@@ -19,6 +19,10 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     private const float BodyProbeRadius = 0.48f;
     private const float FootProbeHeight = 1.35f;
     private const float FootProbeDistance = 4.5f;
+    private const float SameSurfaceObstacleProbeMinimum = 1.75f;
+    private const float SameSurfaceObstacleProbeMaximum = 3.50f;
+    private const float SameSurfaceDetourMargin = 0.30f;
+    private const float SameSurfaceDetourMaximumOffset = 12.0f;
 
     private readonly SceneManager _scene;
     private readonly List<DebugProbe> _debugProbes = new();
@@ -230,6 +234,198 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
 
         _lastBodyContact = contact;
         return true;
+    }
+
+    /// <summary>
+    /// Finds a short lateral waypoint when an obstacle blocks a spider that is
+    /// otherwise pursuing a target on the same support surface. This is a
+    /// reactive local query, not a navigation graph: it probes the two tangent
+    /// sides, validates that the body can keep its support, and prefers a side
+    /// that restores a clear line to the target sooner.
+    /// </summary>
+    public bool TryFindSameSurfaceDetour(
+        Vector3 bodyCenter,
+        Vector3 currentNormal,
+        Vector3 desiredDirection,
+        Vector3 targetPosition,
+        float clearance,
+        BodyID selfBody,
+        Vector3 preferredSide,
+        out Vector3 waypoint,
+        out float score,
+        out Vector3 selectedSide)
+    {
+        waypoint = Vector3.Zero;
+        score = float.MaxValue;
+        selectedSide = Vector3.Zero;
+
+        currentNormal = NormalizeOrZero(currentNormal);
+        desiredDirection = NormalizeOrZero(
+            ProjectOnPlane(desiredDirection, currentNormal));
+        Vector3 forward = Vector3.Zero;
+        Vector3 right = Vector3.Zero;
+        if (currentNormal.LengthSquared() <= Epsilon * Epsilon ||
+            desiredDirection.LengthSquared() <= Epsilon * Epsilon ||
+            !IsFinite(bodyCenter) ||
+            !IsFinite(targetPosition) ||
+            !BuildTangentBasis(
+                currentNormal,
+                desiredDirection,
+                out forward,
+                out right))
+        {
+            return false;
+        }
+
+        clearance = MathF.Max(0.01f, clearance);
+        float bodyRadius = System.Math.Clamp(
+            MathF.Max(BodyProbeRadius, clearance * 0.72f),
+            0.30f,
+            0.75f);
+        float probeDistance = System.Math.Clamp(
+            clearance * 3.0f,
+            SameSurfaceObstacleProbeMinimum,
+            SameSurfaceObstacleProbeMaximum);
+
+        // Establish the current support before probing the obstacle. The
+        // candidate support checks below use this same local surface frame.
+        if (!TryFindSupportContact(
+                bodyCenter,
+                currentNormal,
+                forward,
+                clearance,
+                selfBody,
+                out _))
+        {
+            return false;
+        }
+
+        Vector3 probeOrigin = bodyCenter + currentNormal * 0.18f;
+        if (!TryProbeContact(
+                probeOrigin,
+                forward,
+                probeDistance,
+                selfBody,
+                out SpiderSurfaceContact obstacle,
+                out float obstacleDistance))
+        {
+            return false;
+        }
+
+        Vector3 obstacleNormal = NormalizeOrZero(obstacle.Normal);
+        if (obstacleNormal.LengthSquared() <= Epsilon * Epsilon ||
+            !float.IsFinite(obstacleDistance))
+        {
+            return false;
+        }
+
+        float minimumOffset = bodyRadius + SameSurfaceDetourMargin;
+        float[] lateralOffsets =
+        {
+            minimumOffset,
+            MathF.Min(SameSurfaceDetourMaximumOffset, minimumOffset * 2.0f),
+            MathF.Min(SameSurfaceDetourMaximumOffset, minimumOffset * 4.0f),
+            MathF.Min(SameSurfaceDetourMaximumOffset, minimumOffset * 8.0f),
+            SameSurfaceDetourMaximumOffset
+        };
+
+        preferredSide = NormalizeOrZero(
+            ProjectOnPlane(preferredSide, currentNormal));
+        bool hasPreferredSide =
+            preferredSide.LengthSquared() > Epsilon * Epsilon;
+        Vector3[] sideDirections = hasPreferredSide
+            ? new[] { preferredSide, -preferredSide }
+            : new[] { right, -right };
+        Vector3 targetDelta = ProjectOnPlane(
+            targetPosition - bodyCenter,
+            currentNormal);
+        Vector3 targetDirection = NormalizeOrZero(targetDelta);
+        if (targetDirection.LengthSquared() <= Epsilon * Epsilon)
+            targetDirection = forward;
+
+        for (int sideIndex = 0; sideIndex < sideDirections.Length; sideIndex++)
+        {
+            Vector3 side = sideDirections[sideIndex];
+            for (int offsetIndex = 0; offsetIndex < lateralOffsets.Length; offsetIndex++)
+            {
+                float lateralOffset = lateralOffsets[offsetIndex];
+                Vector3 candidate = bodyCenter + side * lateralOffset;
+
+                if (!TryFindSupportContact(
+                        candidate,
+                        currentNormal,
+                        forward,
+                        clearance,
+                        selfBody,
+                        out SpiderSurfaceContact candidateSupport))
+                {
+                    continue;
+                }
+
+                float supportAlignment = Vector3.Dot(
+                    NormalizeOrZero(candidateSupport.Normal),
+                    currentNormal);
+                if (supportAlignment < 0.72f)
+                    continue;
+
+                if (!IsSameSurfaceDetourPathClear(
+                        bodyCenter,
+                        candidate,
+                        currentNormal,
+                        bodyRadius,
+                        selfBody))
+                {
+                    continue;
+                }
+
+                Vector3 toTarget = ProjectOnPlane(
+                    targetPosition - candidate,
+                    currentNormal);
+                float targetDistance = toTarget.Length();
+                if (!float.IsFinite(targetDistance))
+                    continue;
+
+                bool lineToTargetClear = IsSameSurfaceDetourPathClear(
+                    candidate,
+                    targetPosition,
+                    currentNormal,
+                    bodyRadius,
+                    selfBody,
+                    maxDistance: MathF.Max(0.5f, targetDistance));
+
+                // A clear line after this waypoint is worth more than a small
+                // difference in lateral distance. The tiny side bias makes a
+                // tie deterministic and, together with the planner's
+                // persistent waypoint, prevents left/right oscillation.
+                float candidateScore = targetDistance +
+                                       lateralOffset * 0.24f +
+                                       (1f - supportAlignment) * 0.75f +
+                                       offsetIndex * 0.04f +
+                                       sideIndex * 0.005f;
+                if (hasPreferredSide &&
+                    Vector3.Dot(side, preferredSide) < 0.5f)
+                {
+                    // Keep following the side selected on the previous
+                    // waypoint. The opposite side is still available when
+                    // the preferred side has no valid support/path.
+                    candidateScore += 0.65f;
+                }
+                if (lineToTargetClear)
+                    candidateScore -= 3.0f;
+                else
+                    candidateScore += 0.85f;
+
+                if (candidateScore >= score)
+                    continue;
+
+                score = candidateScore;
+                waypoint = candidate;
+                selectedSide = side;
+            }
+        }
+
+        return waypoint.LengthSquared() > Epsilon * Epsilon &&
+               float.IsFinite(score);
     }
 
     /// <summary>
@@ -622,6 +818,67 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         return touchesPathSurface || endpointContact;
     }
 
+    private bool IsSameSurfaceDetourPathClear(
+        Vector3 start,
+        Vector3 end,
+        Vector3 surfaceNormal,
+        float bodyRadius,
+        BodyID selfBody,
+        float maxDistance = float.MaxValue)
+    {
+        surfaceNormal = NormalizeOrZero(surfaceNormal);
+        Vector3 path = ProjectOnPlane(end - start, surfaceNormal);
+        float pathLength = path.Length();
+        if (surfaceNormal.LengthSquared() <= Epsilon * Epsilon ||
+            pathLength <= Epsilon ||
+            !float.IsFinite(pathLength))
+        {
+            return true;
+        }
+
+        pathLength = MathF.Min(pathLength, MathF.Max(0.01f, maxDistance));
+        Vector3 direction = Vector3.Normalize(path);
+        Vector3 width = NormalizeOrZero(Vector3.Cross(direction, surfaceNormal));
+        if (width.LengthSquared() <= Epsilon * Epsilon)
+            return false;
+
+        float laneOffset = MathF.Max(0.12f, bodyRadius * 0.82f);
+        float[] lanes = { -laneOffset, 0f, laneOffset };
+        foreach (float lane in lanes)
+        {
+            Vector3 laneStart = start + surfaceNormal * 0.18f + width * lane;
+            Vector3 laneEnd = laneStart + direction * pathLength;
+            if (!_scene.Raycast(
+                    laneStart,
+                    direction,
+                    pathLength,
+                    out SceneRaycastHit hit,
+                    selfBody,
+                    collideWithBackFaces: true,
+                    excludedBodies: _ignoredBodies))
+            {
+                _debugProbes.Add(new DebugProbe(laneStart, laneEnd, false));
+                continue;
+            }
+
+            _debugProbes.Add(new DebugProbe(laneStart, hit.Position, true));
+
+            Vector3 hitNormal = NormalizeOrZero(hit.Normal);
+            // A ray parallel to the active surface may still touch the support
+            // mesh at a seam. That is not an obstacle for a body moving on the
+            // same plane; walls and other blocking faces remain candidates.
+            if (hitNormal.LengthSquared() > Epsilon * Epsilon &&
+                MathF.Abs(Vector3.Dot(hitNormal, surfaceNormal)) >= 0.92f)
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     private bool TryProbeContact(
         Vector3 origin,
         Vector3 direction,
@@ -811,6 +1068,11 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             ? Vector3.Normalize(value)
             : Vector3.Zero;
     }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
 
     private static Vector3 ProjectOnPlane(Vector3 value, Vector3 normal) =>
         value - normal * Vector3.Dot(value, normal);

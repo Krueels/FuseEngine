@@ -229,10 +229,14 @@ public sealed class SpiderPatrol : IGizmoDrawable
         // surface is active, its old world-space direction is no longer valid.
         bool reachedPlannedSurface =
             !_motor.IsTransitioning &&
-            _pursuitPlanner.IsPlannedSurfaceReached(normal);
+            _pursuitPlanner.IsPlannedSurfaceReached(
+                normal,
+                currentPosition);
         if (reachedPlannedSurface)
         {
-            _pursuitPlanner.ClearPlan();
+            bool preserveDetourSide =
+                _pursuitPlanner.IsSameSurfaceDetourActive;
+            _pursuitPlanner.ClearPlan(preserveDetourSide);
             // Blocking accumulated while crossing the edge belongs to the old
             // surface. Carrying it onto the new surface immediately creates a
             // second, unrelated local plan instead of pursuing the player.
@@ -306,6 +310,16 @@ public sealed class SpiderPatrol : IGizmoDrawable
         bool directDirectionAvailable =
             surfaceDirection.LengthSquared() > 0.0001f;
 
+        // A same-surface detour belongs only to the current floor/plane. If
+        // the player changes to another surface while the spider is moving
+        // around an obstacle, discard that local waypoint and let the normal
+        // transition planner take over again.
+        if (_pursuitPlanner.IsSameSurfaceDetourActive &&
+            (!hasTargetSurface || targetOutsideCurrentSurface))
+        {
+            _pursuitPlanner.ClearPlan();
+        }
+
         // The motor has a one-second transition lock to prevent oscillation at
         // corners. During that same interval the planner must not keep using a
         // stale route from the previous face. If the final target already has
@@ -330,6 +344,31 @@ public sealed class SpiderPatrol : IGizmoDrawable
         if (transitionExitLocked)
             localPlanRequired = false;
 
+        bool usingSameSurfaceDetour =
+            hasTargetSurface &&
+            !targetOutsideCurrentSurface &&
+            directDirectionAvailable &&
+            !_motor.IsTransitioning &&
+            _pursuitPlanner.IsSameSurfaceDetourActive;
+
+        if (!usingSameSurfaceDetour &&
+            hasTargetSurface &&
+            !targetOutsideCurrentSurface &&
+            directDirectionAvailable &&
+            !_motor.IsTransitioning)
+        {
+            usingSameSurfaceDetour =
+                _pursuitPlanner.TryGetSameSurfaceDetour(
+                    dt,
+                    currentPosition,
+                    normal,
+                    surfaceDirection,
+                    navigationTarget,
+                    _motor.Clearance,
+                    _enemy.Body.Native,
+                    out _);
+        }
+
         bool hasLocalDirection = _pursuitPlanner.TryGetDirection(
             dt,
             currentPosition,
@@ -347,7 +386,8 @@ public sealed class SpiderPatrol : IGizmoDrawable
         if (directDirectionAvailable &&
             (!targetOutsideCurrentSurface || transitionExitLocked) &&
             _pursuitBlockedTimer <= 0.20f &&
-            !_motor.IsBlocked)
+            !_motor.IsBlocked &&
+            !usingSameSurfaceDetour)
         {
             _pursuitPlanner.ClearPlan();
             _travelDirection = surfaceDirection;
