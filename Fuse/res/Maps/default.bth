@@ -3723,7 +3723,7 @@
       }
     },
     {
-      "id": "brush_dae1647d",
+      "id": "brush_f7033fc7",
       "visible": true,
       "type": "brush",
       "faces": [
@@ -3733,7 +3733,7 @@
             0,
             1
           ],
-          "d": -2,
+          "d": -1,
           "texture": "default",
           "u_axis": [
             1,
@@ -3757,7 +3757,7 @@
             0,
             -1
           ],
-          "d": -2,
+          "d": -1,
           "texture": "default",
           "u_axis": [
             1,
@@ -3781,7 +3781,7 @@
             1,
             0
           ],
-          "d": -1,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -3805,7 +3805,7 @@
             -1,
             0
           ],
-          "d": -1,
+          "d": -0.5,
           "texture": "default",
           "u_axis": [
             1,
@@ -3829,7 +3829,7 @@
             0,
             0
           ],
-          "d": -2,
+          "d": -1,
           "texture": "default",
           "u_axis": [
             0,
@@ -3853,7 +3853,7 @@
             0,
             0
           ],
-          "d": -2,
+          "d": -1,
           "texture": "default",
           "u_axis": [
             0,
@@ -3874,47 +3874,47 @@
       ],
       "geometry_mode": "editable_mesh",
       "editable_mesh": {
-        "next_vertex_id": 39,
-        "next_face_id": 37,
+        "next_vertex_id": 67,
+        "next_face_id": 50,
         "vertices": [
           {
             "id": 1,
             "position": [
               3,
               -0.5,
-              2
+              1
             ]
           },
           {
             "id": 2,
             "position": [
-              -1,
+              1,
               -0.5,
-              2
+              1
             ]
           },
           {
             "id": 3,
             "position": [
-              -1,
-              -2.5,
-              2
+              1,
+              -1.5,
+              1
             ]
           },
           {
             "id": 4,
             "position": [
               3,
-              -2.5,
-              2
+              -1.5,
+              1
             ]
           },
           {
             "id": 5,
             "position": [
-              -1,
+              1,
               -0.5,
-              -2
+              -1
             ]
           },
           {
@@ -3922,263 +3922,487 @@
             "position": [
               3,
               -0.5,
-              -2
+              -1
             ]
           },
           {
             "id": 7,
             "position": [
               3,
-              -2.5,
-              -2
+              -1.5,
+              -1
             ]
           },
           {
             "id": 8,
             "position": [
-              -1,
-              -2.5,
-              -2
+              1,
+              -1.5,
+              -1
             ]
           },
           {
             "id": 9,
             "position": [
-              -3,
+              -1,
               -0.5,
-              2
+              1
             ]
           },
           {
             "id": 10,
             "position": [
-              -3,
+              -1,
               -0.5,
-              -2
+              -1
             ]
           },
           {
             "id": 11,
             "position": [
-              -3,
-              -2.5,
-              -2
+              -1,
+              -1.5,
+              -1
             ]
           },
           {
             "id": 12,
             "position": [
-              -3,
-              -2.5,
-              2
+              -1,
+              -1.5,
+              1
             ]
           },
           {
             "id": 13,
             "position": [
-              -1,
-              1.5,
-              2
+              1,
+              0.5,
+              1
             ]
           },
           {
             "id": 14,
             "position": [
-              -1,
-              1.5,
-              -2
+              1,
+              0.5,
+              -1
             ]
           },
           {
             "id": 15,
             "position": [
-              -3,
-              1.5,
-              -2
+              -1,
+              0.5,
+              -1
             ]
           },
           {
             "id": 16,
             "position": [
-              -3,
-              1.5,
-              2
+              -1,
+              0.5,
+              1
             ]
           },
           {
             "id": 17,
             "position": [
-              -2,
-              2.5,
-              -2
+              0,
+              1.5,
+              -1
             ]
           },
           {
             "id": 18,
             "position": [
-              -2,
-              2.5,
-              2
+              0,
+              1.5,
+              1
             ]
           },
           {
             "id": 19,
             "position": [
-              -2,
+              0,
               -0.5,
-              2
+              1
             ]
           },
           {
             "id": 20,
             "position": [
-              -2,
-              -2.5,
-              2
+              0,
+              -1.5,
+              1
             ]
           },
           {
             "id": 21,
             "position": [
-              -2,
-              -2.5,
-              -2
+              0,
+              -1.5,
+              -1
             ]
           },
           {
             "id": 22,
             "position": [
-              -2,
+              0,
               -0.5,
-              -2
+              -1
             ]
           },
           {
             "id": 23,
             "position": [
-              2.7,
+              2.85,
               -0.5,
-              1.7
+              0.85
             ]
           },
           {
             "id": 24,
             "position": [
-              2.7,
+              2.85,
               -0.5,
-              -1.7
+              -0.85
             ]
           },
           {
             "id": 25,
             "position": [
-              -0.70000005,
+              1.15,
               -0.5,
-              -1.7
+              -0.85
             ]
           },
           {
             "id": 26,
             "position": [
-              -0.70000005,
+              1.15,
               -0.5,
-              1.7
+              0.85
             ]
           },
           {
             "id": 27,
             "position": [
-              2.7,
-              0.5,
-              1.7
+              2.85,
+              0,
+              0.85
             ]
           },
           {
             "id": 28,
             "position": [
-              2.7,
-              0.5,
-              -1.7
+              2.85,
+              0,
+              -0.85
             ]
           },
           {
             "id": 29,
             "position": [
-              -0.70000005,
-              0.5,
-              -1.7
+              1.15,
+              0,
+              -0.85
             ]
           },
           {
             "id": 30,
             "position": [
-              -0.70000005,
-              0.5,
-              1.7
+              1.15,
+              0,
+              0.85
             ]
           },
           {
             "id": 31,
             "position": [
-              1,
-              1.5,
-              -1.7
+              3,
+              -0.6,
+              1
             ]
           },
           {
             "id": 32,
             "position": [
               1,
-              1.5,
-              1.7
+              -0.6,
+              1
             ]
           },
           {
             "id": 33,
             "position": [
               1,
-              -0.5,
-              1.7
+              -0.6,
+              -1
             ]
           },
           {
             "id": 34,
             "position": [
-              1,
-              -0.5,
-              2
+              3,
+              -0.6,
+              -1
             ]
           },
           {
             "id": 35,
             "position": [
-              1,
-              -2.5,
-              2
+              3,
+              -0.6,
+              -1
             ]
           },
           {
             "id": 36,
             "position": [
-              1,
-              -2.5,
-              -2
+              3,
+              -0.6,
+              1
             ]
           },
           {
             "id": 37,
             "position": [
-              1,
+              2.9325,
               -0.5,
-              -2
+              0.9325
             ]
           },
           {
             "id": 38,
             "position": [
-              1,
+              2.9325,
               -0.5,
-              -1.7
+              -0.9325
+            ]
+          },
+          {
+            "id": 39,
+            "position": [
+              2.9325,
+              -0.5,
+              -0.9325
+            ]
+          },
+          {
+            "id": 40,
+            "position": [
+              1.0675,
+              -0.5,
+              -0.9325
+            ]
+          },
+          {
+            "id": 41,
+            "position": [
+              1.0675,
+              -0.5,
+              0.9325
+            ]
+          },
+          {
+            "id": 42,
+            "position": [
+              2.9325,
+              -0.5,
+              0.9325
+            ]
+          },
+          {
+            "id": 43,
+            "position": [
+              2.7792892,
+              0,
+              0.77928936
+            ]
+          },
+          {
+            "id": 44,
+            "position": [
+              2.7792892,
+              0,
+              -0.77928936
+            ]
+          },
+          {
+            "id": 45,
+            "position": [
+              1.2207108,
+              0,
+              -0.77928936
+            ]
+          },
+          {
+            "id": 46,
+            "position": [
+              1.2207108,
+              0,
+              0.77928936
+            ]
+          },
+          {
+            "id": 47,
+            "position": [
+              2.85,
+              -0.1,
+              -0.85
+            ]
+          },
+          {
+            "id": 48,
+            "position": [
+              2.85,
+              -0.1,
+              0.85
+            ]
+          },
+          {
+            "id": 49,
+            "position": [
+              1.15,
+              -0.1,
+              -0.85
+            ]
+          },
+          {
+            "id": 50,
+            "position": [
+              2.85,
+              -0.1,
+              -0.85
+            ]
+          },
+          {
+            "id": 51,
+            "position": [
+              1.15,
+              -0.1,
+              0.85
+            ]
+          },
+          {
+            "id": 52,
+            "position": [
+              1.15,
+              -0.1,
+              -0.85
+            ]
+          },
+          {
+            "id": 53,
+            "position": [
+              2.85,
+              -0.1,
+              0.85
+            ]
+          },
+          {
+            "id": 54,
+            "position": [
+              1.15,
+              -0.1,
+              0.85
+            ]
+          },
+          {
+            "id": 55,
+            "position": [
+              -2,
+              -0.5,
+              1
+            ]
+          },
+          {
+            "id": 56,
+            "position": [
+              -2,
+              -0.5,
+              -1
+            ]
+          },
+          {
+            "id": 57,
+            "position": [
+              -2,
+              -1.5,
+              -1
+            ]
+          },
+          {
+            "id": 58,
+            "position": [
+              -2,
+              -1.5,
+              1
+            ]
+          },
+          {
+            "id": 59,
+            "position": [
+              -3,
+              -0.5,
+              1
+            ]
+          },
+          {
+            "id": 60,
+            "position": [
+              -3,
+              -0.5,
+              -1
+            ]
+          },
+          {
+            "id": 61,
+            "position": [
+              -3,
+              -1.5,
+              -1
+            ]
+          },
+          {
+            "id": 62,
+            "position": [
+              -3,
+              -1.5,
+              1
+            ]
+          },
+          {
+            "id": 63,
+            "position": [
+              -2,
+              0.5,
+              1
+            ]
+          },
+          {
+            "id": 64,
+            "position": [
+              -2,
+              0.5,
+              -1
+            ]
+          },
+          {
+            "id": 65,
+            "position": [
+              -3,
+              0.5,
+              -1
+            ]
+          },
+          {
+            "id": 66,
+            "position": [
+              -3,
+              0.5,
+              1
             ]
           }
         ],
@@ -4186,9 +4410,9 @@
           {
             "id": 1,
             "vertices": [
-              1,
-              34,
-              35,
+              31,
+              32,
+              3,
               4
             ],
             "texture": "default",
@@ -4212,10 +4436,10 @@
           {
             "id": 2,
             "vertices": [
+              33,
+              34,
               7,
-              36,
-              37,
-              6
+              8
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4238,10 +4462,10 @@
           {
             "id": 3,
             "vertices": [
-              28,
-              31,
-              32,
-              27
+              43,
+              44,
+              45,
+              46
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4264,10 +4488,10 @@
           {
             "id": 4,
             "vertices": [
+              7,
               4,
-              35,
-              36,
-              7
+              3,
+              8
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4290,8 +4514,8 @@
           {
             "id": 5,
             "vertices": [
-              6,
-              1,
+              35,
+              36,
               4,
               7
             ],
@@ -4316,10 +4540,10 @@
           {
             "id": 6,
             "vertices": [
-              9,
-              10,
-              11,
-              12
+              59,
+              60,
+              61,
+              62
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4706,8 +4930,8 @@
           {
             "id": 21,
             "vertices": [
-              1,
-              6,
+              37,
+              38,
               24,
               23
             ],
@@ -4732,9 +4956,9 @@
           {
             "id": 22,
             "vertices": [
-              6,
-              37,
-              38,
+              39,
+              40,
+              25,
               24
             ],
             "texture": "default",
@@ -4784,10 +5008,10 @@
           {
             "id": 24,
             "vertices": [
+              41,
+              42,
               23,
-              33,
-              34,
-              1
+              26
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4812,8 +5036,8 @@
             "vertices": [
               23,
               24,
-              28,
-              27
+              47,
+              48
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4837,9 +5061,9 @@
             "id": 26,
             "vertices": [
               24,
-              38,
-              31,
-              28
+              25,
+              49,
+              50
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4864,8 +5088,8 @@
             "vertices": [
               25,
               26,
-              30,
-              29
+              51,
+              52
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4888,10 +5112,10 @@
           {
             "id": 28,
             "vertices": [
-              27,
-              32,
-              33,
-              23
+              26,
+              23,
+              53,
+              54
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4914,10 +5138,10 @@
           {
             "id": 29,
             "vertices": [
-              31,
-              29,
-              30,
-              32
+              42,
+              41,
+              32,
+              31
             ],
             "texture": "default",
             "material_slot": 0,
@@ -4928,8 +5152,8 @@
             ],
             "v_axis": [
               -0,
-              -0,
-              -1
+              -1,
+              -0
             ],
             "u_scale": 1,
             "v_scale": 1,
@@ -4940,9 +5164,9 @@
           {
             "id": 30,
             "vertices": [
-              32,
-              30,
-              26,
+              40,
+              39,
+              34,
               33
             ],
             "texture": "default",
@@ -4954,8 +5178,8 @@
             ],
             "v_axis": [
               -0,
-              -0,
-              -1
+              -1,
+              -0
             ],
             "u_scale": 1,
             "v_scale": 1,
@@ -4966,22 +5190,22 @@
           {
             "id": 31,
             "vertices": [
-              33,
-              26,
-              2,
-              34
+              38,
+              37,
+              36,
+              35
             ],
             "texture": "default",
             "material_slot": 0,
             "u_axis": [
-              1,
               0,
-              0
+              0,
+              1
             ],
             "v_axis": [
               -0,
-              -0,
-              -1
+              -1,
+              -0
             ],
             "u_scale": 1,
             "v_scale": 1,
@@ -4992,10 +5216,9 @@
           {
             "id": 32,
             "vertices": [
-              34,
-              2,
-              3,
-              35
+              40,
+              33,
+              5
             ],
             "texture": "default",
             "material_slot": 0,
@@ -5018,36 +5241,9 @@
           {
             "id": 33,
             "vertices": [
-              35,
-              3,
-              8,
-              36
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              1,
-              0,
-              0
-            ],
-            "v_axis": [
-              -0,
-              -0,
-              -1
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 34,
-            "vertices": [
-              36,
-              8,
-              5,
-              37
+              41,
+              2,
+              32
             ],
             "texture": "default",
             "material_slot": 0,
@@ -5068,12 +5264,38 @@
             "rotation": 0
           },
           {
+            "id": 34,
+            "vertices": [
+              48,
+              47,
+              44,
+              43
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -0,
+              -1
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
             "id": 35,
             "vertices": [
-              37,
-              5,
-              25,
-              38
+              50,
+              49,
+              45,
+              44
             ],
             "texture": "default",
             "material_slot": 0,
@@ -5096,10 +5318,10 @@
           {
             "id": 36,
             "vertices": [
-              38,
-              25,
-              29,
-              31
+              52,
+              51,
+              46,
+              45
             ],
             "texture": "default",
             "material_slot": 0,
@@ -5118,6 +5340,344 @@
             "u_offset": 0,
             "v_offset": 0,
             "rotation": 0
+          },
+          {
+            "id": 37,
+            "vertices": [
+              54,
+              53,
+              43,
+              46
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -0,
+              -1
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 38,
+            "vertices": [
+              9,
+              10,
+              56,
+              55
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 39,
+            "vertices": [
+              10,
+              11,
+              57,
+              56
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 40,
+            "vertices": [
+              11,
+              12,
+              58,
+              57
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 41,
+            "vertices": [
+              12,
+              9,
+              55,
+              58
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 42,
+            "vertices": [
+              63,
+              64,
+              65,
+              66
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 43,
+            "vertices": [
+              56,
+              57,
+              61,
+              60
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 44,
+            "vertices": [
+              57,
+              58,
+              62,
+              61
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 45,
+            "vertices": [
+              58,
+              55,
+              59,
+              62
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 46,
+            "vertices": [
+              55,
+              56,
+              64,
+              63
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 47,
+            "vertices": [
+              56,
+              60,
+              65,
+              64
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 48,
+            "vertices": [
+              60,
+              59,
+              66,
+              65
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 49,
+            "vertices": [
+              59,
+              55,
+              63,
+              66
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
           }
         ]
       },
@@ -5126,9 +5686,9 @@
       "body": {
         "shape": "trimesh",
         "position": [
-          -1,
-          2.5,
-          20
+          0,
+          1.5,
+          15
         ],
         "rotation": [
           1,
@@ -5142,8 +5702,8 @@
         "is_trigger": false,
         "half_extents": [
           3,
-          2.5,
-          2
+          1.5,
+          1
         ]
       }
     }

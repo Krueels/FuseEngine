@@ -98,6 +98,23 @@ public unsafe class EditorUI : IDisposable
     private float _brushLoopCutFactor = 0.5f;
     private double _lastBrushComponentSelectionTime = -10.0;
 
+    // Shift + drag in Face mode is a direct, normal-constrained extrude. The
+    // topology is created only after the pointer moves far enough, avoiding a
+    // zero-length extrude when the user was simply selecting a face.
+    private bool _isFaceExtrudeDragging;
+    private bool _faceExtrudeTopologyCreated;
+    private EditorViewport? _faceExtrudeViewport;
+    private Brush? _faceExtrudeBrush;
+    private int _faceExtrudeFaceId = -1;
+    private Vector2 _faceExtrudeStartMouse;
+    private Vector2 _faceExtrudeScreenDirection;
+    private float _faceExtrudeWorldUnitsPerPixel;
+    private Vector3 _faceExtrudeLocalNormal;
+    private float _faceExtrudeInitialDistance;
+    private float _faceExtrudeCurrentDistance;
+    private Dictionary<int, Vector3>? _faceExtrudeInitialPositions;
+    private string? _faceExtrudePreState;
+
     // Brush Tool State
     private BrushPreviewManager _previewManager = new BrushPreviewManager();
 
@@ -195,7 +212,10 @@ public unsafe class EditorUI : IDisposable
         _frameBeginState = sceneService.CaptureSnapshot();
 
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            EndFaceExtrudeDrag(sceneService, assetService, history);
             EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+        }
 
         if (_focusCameraRequested && _selectedObject != null)
         {
@@ -1592,6 +1612,218 @@ public unsafe class EditorUI : IDisposable
     private Brush? ActiveEditableBrush =>
         _selectedObject is Brush brush && brush.IsEditableMesh ? brush : null;
 
+    private bool BeginFaceExtrudeDrag(
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        Vector3 worldRayOrigin,
+        Vector3 worldRayDirection,
+        int? requestedFaceId = null)
+    {
+        if (_isFaceExtrudeDragging ||
+            _brushComponentMode != BrushComponentMode.Face ||
+            _brushEditTool != BrushEditTool.None ||
+            ActiveEditableBrush is not Brush brush ||
+            brush.EditableMesh == null ||
+            brush.Body == null)
+        {
+            return false;
+        }
+
+        Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(brush.Body.Rotation) *
+                              Matrix4x4.CreateTranslation(brush.Body.Position);
+        if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse))
+            return false;
+
+        Vector3 localRayOrigin = Vector3.Transform(worldRayOrigin, inverse);
+        Vector3 localRayDirection = Vector3.Normalize(Vector3.TransformNormal(worldRayDirection, inverse));
+        int faceId;
+        if (requestedFaceId is int selectedFaceId && brush.EditableMesh.FindFace(selectedFaceId) != null)
+        {
+            // When the drag begins on the transform gizmo, the cursor is not a
+            // reliable face picker: another face can be visually in front of
+            // the gizmo. Preserve the explicit face selection instead.
+            faceId = selectedFaceId;
+        }
+        else if (!brush.EditableMesh.TryRaycastFace(localRayOrigin, localRayDirection, out faceId, out _, out _))
+        {
+            return false;
+        }
+
+        EditableBrushFace? face = brush.EditableMesh.FindFace(faceId);
+        if (face == null)
+            return false;
+
+        Vector3 localNormal = brush.EditableMesh.CalculateFaceNormal(face);
+        if (localNormal.LengthSquared() < 0.000001f)
+            return false;
+
+        Vector3 localCenter = brush.EditableMesh.CalculateFaceCenter(face);
+        Vector3 worldCenter = brush.Body.Position + Vector3.Transform(localCenter, brush.Body.Rotation);
+        Vector3 worldNormal = Vector3.Normalize(Vector3.Transform(localNormal, brush.Body.Rotation));
+        if (!TryWorldToScreen(worldCenter, viewport, vpPos, vpSize, out Vector2 centerOnScreen))
+            return false;
+
+        Vector2 screenDirection;
+        float worldUnitsPerPixel;
+        if (TryWorldToScreen(worldCenter + worldNormal, viewport, vpPos, vpSize, out Vector2 normalOnScreen))
+        {
+            Vector2 projectedNormal = normalOnScreen - centerOnScreen;
+            float projectedLength = projectedNormal.Length();
+            if (projectedLength >= 2.0f)
+            {
+                screenDirection = projectedNormal / projectedLength;
+                worldUnitsPerPixel = 1.0f / projectedLength;
+            }
+            else
+            {
+                // A face pointing straight at the camera has no visible normal
+                // direction. Vertical dragging keeps that common case usable.
+                screenDirection = -Vector2.UnitY;
+                worldUnitsPerPixel = GetFaceExtrudeFallbackScale(viewport, worldCenter, vpSize);
+            }
+        }
+        else
+        {
+            screenDirection = -Vector2.UnitY;
+            worldUnitsPerPixel = GetFaceExtrudeFallbackScale(viewport, worldCenter, vpSize);
+        }
+
+        _selectedBrushFaces.Clear();
+        _selectedBrushFaces.Add(faceId);
+        _lastBrushComponentSelectionTime = ImGui.GetTime();
+        _isFaceExtrudeDragging = true;
+        _faceExtrudeTopologyCreated = false;
+        _faceExtrudeViewport = viewport;
+        _faceExtrudeBrush = brush;
+        _faceExtrudeFaceId = faceId;
+        _faceExtrudeStartMouse = ImGui.GetIO().MousePos;
+        _faceExtrudeScreenDirection = screenDirection;
+        _faceExtrudeWorldUnitsPerPixel = worldUnitsPerPixel;
+        _faceExtrudeLocalNormal = localNormal;
+        _faceExtrudeInitialDistance = 0.0f;
+        _faceExtrudeCurrentDistance = 0.0f;
+        _faceExtrudeInitialPositions = null;
+        _faceExtrudePreState = null;
+        return true;
+    }
+
+    private void HandleFaceExtrudeDrag(
+        EditorViewport viewport,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (!_isFaceExtrudeDragging || _faceExtrudeViewport != viewport ||
+            _faceExtrudeBrush?.EditableMesh == null || _faceExtrudeBrush.Body == null)
+        {
+            return;
+        }
+
+        Vector2 mouseDelta = ImGui.GetIO().MousePos - _faceExtrudeStartMouse;
+        float screenDistance = Vector2.Dot(mouseDelta, _faceExtrudeScreenDirection);
+        if (MathF.Abs(screenDistance) < 3.0f)
+            return;
+
+        float desiredDistance = screenDistance * _faceExtrudeWorldUnitsPerPixel;
+        if (_snapEnabled && _snapGrid > 0.0f)
+            desiredDistance = MathF.Round(desiredDistance / _snapGrid) * _snapGrid;
+        if (MathF.Abs(desiredDistance) < 0.0001f)
+            return;
+
+        EditableBrushMesh topology = _faceExtrudeBrush.EditableMesh;
+        if (!_faceExtrudeTopologyCreated)
+        {
+            _faceExtrudePreState = sceneService.Document.Serialize();
+            if (!topology.TryExtrude([_faceExtrudeFaceId], desiredDistance, out string error))
+            {
+                ShowDocumentError(error);
+                ResetFaceExtrudeState();
+                return;
+            }
+
+            EditableBrushFace? extrudedFace = topology.FindFace(_faceExtrudeFaceId);
+            if (extrudedFace == null)
+            {
+                ShowDocumentError("Não foi possível localizar a face extrudada.");
+                ResetFaceExtrudeState();
+                return;
+            }
+
+            _faceExtrudeInitialPositions = extrudedFace.Vertices.ToDictionary(
+                vertexId => vertexId,
+                topology.GetPosition);
+            _faceExtrudeInitialDistance = desiredDistance;
+            _faceExtrudeCurrentDistance = desiredDistance;
+            _faceExtrudeTopologyCreated = true;
+            RefreshEditableBrush(_faceExtrudeBrush, sceneService, assetService, normalizeOrigin: false);
+            return;
+        }
+
+        // Do not pass through a collapsed extrusion during a single drag. To
+        // extrude to the opposite side, release and start a new Shift drag.
+        if (MathF.Sign(desiredDistance) != MathF.Sign(_faceExtrudeInitialDistance))
+            desiredDistance = MathF.Sign(_faceExtrudeInitialDistance) * 0.0001f;
+        if (MathF.Abs(desiredDistance - _faceExtrudeCurrentDistance) < 0.000001f ||
+            _faceExtrudeInitialPositions == null)
+        {
+            return;
+        }
+
+        float localDelta = desiredDistance - _faceExtrudeInitialDistance;
+        foreach ((int vertexId, Vector3 initialPosition) in _faceExtrudeInitialPositions)
+        {
+            EditableBrushVertex? vertex = topology.FindVertex(vertexId);
+            if (vertex != null)
+                vertex.Position = initialPosition + _faceExtrudeLocalNormal * localDelta;
+        }
+        _faceExtrudeCurrentDistance = desiredDistance;
+        RefreshEditableBrush(_faceExtrudeBrush, sceneService, assetService, normalizeOrigin: false);
+    }
+
+    private void EndFaceExtrudeDrag(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        Brush? brush = _faceExtrudeBrush;
+        string? preState = _faceExtrudePreState;
+        bool commit = _faceExtrudeTopologyCreated && brush?.EditableMesh != null && !string.IsNullOrEmpty(preState);
+        ResetFaceExtrudeState();
+
+        if (!commit || brush == null || preState == null)
+            return;
+
+        RefreshEditableBrush(brush, sceneService, assetService, normalizeOrigin: true);
+        CommitBrushTopologySnapshot(preState, sceneService, assetService, history);
+    }
+
+    private void ResetFaceExtrudeState()
+    {
+        _isFaceExtrudeDragging = false;
+        _faceExtrudeTopologyCreated = false;
+        _faceExtrudeViewport = null;
+        _faceExtrudeBrush = null;
+        _faceExtrudeFaceId = -1;
+        _faceExtrudeStartMouse = Vector2.Zero;
+        _faceExtrudeScreenDirection = Vector2.Zero;
+        _faceExtrudeWorldUnitsPerPixel = 0.0f;
+        _faceExtrudeLocalNormal = Vector3.Zero;
+        _faceExtrudeInitialDistance = 0.0f;
+        _faceExtrudeCurrentDistance = 0.0f;
+        _faceExtrudeInitialPositions = null;
+        _faceExtrudePreState = null;
+    }
+
+    private static float GetFaceExtrudeFallbackScale(EditorViewport viewport, Vector3 worldCenter, Vector2 viewportSize)
+    {
+        float height = MathF.Max(viewportSize.Y, 1.0f);
+        if (viewport.Camera.IsOrthographic)
+            return viewport.Camera.OrthoSize / height;
+
+        float distance = MathF.Max(Vector3.Distance(viewport.Camera.Position, worldCenter), 0.1f);
+        return 2.0f * distance * MathF.Tan(float.DegreesToRadians(22.5f)) / height;
+    }
+
     private void EndEditorGizmoInteraction(
         EditorSceneService sceneService,
         EditorAssetService assetService,
@@ -1622,6 +1854,7 @@ public unsafe class EditorUI : IDisposable
     {
         if (_gizmoOperation == operation)
             return;
+        EndFaceExtrudeDrag(sceneService, assetService, history);
         EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
         _gizmoOperation = operation;
     }
@@ -1632,6 +1865,7 @@ public unsafe class EditorUI : IDisposable
         EditorAssetService assetService,
         CommandHistory history)
     {
+        EndFaceExtrudeDrag(sceneService, assetService, history);
         EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
         _brushComponentMode = mode;
         _brushEditTool = BrushEditTool.None;
@@ -1787,6 +2021,8 @@ public unsafe class EditorUI : IDisposable
 
         EditableBrushMesh topology = ActiveEditableBrush.EditableMesh;
         ImGui.TextDisabled($"{topology.Vertices.Count} vertices  |  {topology.GetEdges().Count} edges  |  {topology.Faces.Count} faces");
+        if (_brushComponentMode == BrushComponentMode.Face)
+            ImGui.TextDisabled("Shift + drag a face: direct extrude");
         ImGui.Separator();
         ImGui.TextUnformatted("Face operations");
         ImGui.SetNextItemWidth(115);
@@ -1839,6 +2075,7 @@ public unsafe class EditorUI : IDisposable
             {
                 if (ImGui.IsKeyPressed(ImGuiKey.Escape))
                 {
+                    EndFaceExtrudeDrag(sceneService, assetService, history);
                     EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
                     if (_currentMode == EditorMode.DrawBrush)
                     {
@@ -1855,6 +2092,7 @@ public unsafe class EditorUI : IDisposable
                 }
                 if (ImGui.IsKeyPressed(ImGuiKey.B))
                 {
+                    EndFaceExtrudeDrag(sceneService, assetService, history);
                     EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
                     _currentMode = EditorMode.DrawBrush;
                     ClearBrushComponentSelection();
@@ -2059,10 +2297,45 @@ public unsafe class EditorUI : IDisposable
         bool editingBrushComponents = IsEditingBrushComponents;
         bool suppressGizmoForBrushes = editingBrushComponents || (allSelectedAreBrushes && _gizmoOperation != GizmoOperation.Rotate);
 
-        if (editingBrushComponents && !_isDraggingHandle)
+        // This intentionally runs before the component gizmo. A selected face
+        // usually has its translation gizmo on top of it; without this priority
+        // the gizmo consumes Shift + drag and only translates the old face.
+        bool faceExtrudeStartedThisFrame = false;
+        if (editingBrushComponents &&
+            !_isDraggingHandle &&
+            !gizmoActive &&
+            isHovered &&
+            _brushComponentMode == BrushComponentMode.Face &&
+            _brushEditTool == BrushEditTool.None &&
+            ImGui.GetIO().KeyShift &&
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        {
+            EditorGizmo.GetMouseRay(
+                ImGui.GetIO().MousePos,
+                viewport.Camera.ViewMatrix,
+                viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y),
+                vpPos,
+                vpSize,
+                out Vector3 rayOrigin,
+                out Vector3 rayDir);
+            int? selectedFaceId = _selectedBrushFaces.Count == 1
+                ? _selectedBrushFaces.First()
+                : null;
+            faceExtrudeStartedThisFrame = BeginFaceExtrudeDrag(
+                viewport,
+                vpPos,
+                vpSize,
+                rayOrigin,
+                rayDir,
+                selectedFaceId);
+        }
+
+        if (editingBrushComponents && !_isDraggingHandle && !_isFaceExtrudeDragging && !faceExtrudeStartedThisFrame)
         {
             HandleBrushComponentGizmo(viewport, vpPos, vpSize, isHovered, sceneService, assetService, history);
         }
+        if (_isFaceExtrudeDragging)
+            HandleFaceExtrudeDrag(viewport, sceneService, assetService);
 
         if (_selectedObject != null && _selectedObject.Body != null && sceneService.Document.Objects.Contains(_selectedObject) && !_isDraggingHandle && !suppressGizmoForBrushes)
         {
@@ -2263,8 +2536,8 @@ public unsafe class EditorUI : IDisposable
             }
         }
 
-        bool componentClickHandled = false;
-        if (allowPicking && _currentMode == EditorMode.Select && IsEditingBrushComponents && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        bool componentClickHandled = faceExtrudeStartedThisFrame;
+        if (!componentClickHandled && allowPicking && _currentMode == EditorMode.Select && IsEditingBrushComponents && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
             EditorGizmo.GetMouseRay(ImGui.GetIO().MousePos, viewport.Camera.ViewMatrix, viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y), vpPos, vpSize, out Vector3 rayOrigin, out Vector3 rayDir);
             componentClickHandled = _brushEditTool == BrushEditTool.Knife

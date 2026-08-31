@@ -489,55 +489,177 @@ public sealed class EditableBrushMesh
     }
 
     /// <summary>
-    /// Bevels one or more convex edges by clipping the solid with a chamfer plane.
-    /// This keeps a valid shared topology and intentionally refuses non-convex
-    /// meshes, where an automatic bevel would otherwise create invalid collision.
+    /// Bevels arbitrary manifold edges locally. Unlike the former brush-wide
+    /// clipping approach, this splits the adjacent face corners, creates bevel
+    /// strips on selected edges, repairs the neighboring unselected edges and
+    /// closes every affected vertex fan. Concave brushes are therefore supported.
     /// </summary>
     public bool TryBevel(IEnumerable<EditableBrushEdge> selectedEdges, float width, out string error)
     {
-        EditableBrushEdge[] edges = selectedEdges.Distinct().ToArray();
+        EditableBrushEdge[] edges = selectedEdges
+            .Select(edge => EditableBrushEdge.Create(edge.A, edge.B))
+            .Distinct()
+            .ToArray();
         if (edges.Length == 0)
         {
             error = "Selecione ao menos uma aresta para aplicar bevel.";
             return false;
         }
-        if (!IsConvex())
+        if (width <= Epsilon)
         {
-            error = "O bevel atual é seguro apenas em brushes convexos.";
+            error = "A largura do bevel precisa ser maior que zero.";
             return false;
         }
 
-        var cuts = new List<(Vector3 point, Vector3 normal)>();
+        Dictionary<EditableBrushEdge, List<int>> incidences = BuildEdgeIncidences();
+        var selected = edges.ToHashSet();
         foreach (EditableBrushEdge edge in edges)
         {
-            List<EditableBrushFace> adjacent = GetFacesUsingEdge(edge);
-            if (adjacent.Count != 2)
+            if (!incidences.TryGetValue(edge, out List<int>? adjacent) || adjacent.Count != 2)
             {
-                error = "Cada aresta do bevel precisa pertencer a exatamente duas faces.";
+                error = "Bevel exige arestas manifold: cada aresta selecionada deve pertencer a exatamente duas faces.";
                 return false;
             }
-
-            Vector3 normal = CalculateFaceNormal(adjacent[0]) + CalculateFaceNormal(adjacent[1]);
-            if (normal.LengthSquared() < Epsilon * Epsilon)
-            {
-                error = "Não é possível aplicar bevel em faces opostas.";
-                return false;
-            }
-
-            Vector3 first = GetPosition(edge.A);
-            Vector3 second = GetPosition(edge.B);
-            Vector3 point = (first + second) * 0.5f;
-            normal = Vector3.Normalize(normal);
-            if (TryGetBounds(out Vector3 min, out Vector3 max) && Vector3.Dot(normal, ((min + max) * 0.5f) - point) > 0.0f)
-                normal = -normal;
-            cuts.Add((point, normal));
         }
 
-        foreach ((Vector3 point, Vector3 normal) in cuts)
-            ClipWithBevelPlane(point, normal, MathF.Max(0.0001f, width));
+        HashSet<int> affectedVertices = edges
+            .SelectMany(edge => new[] { edge.A, edge.B })
+            .ToHashSet();
 
-        error = string.Empty;
-        return TryValidate(out error);
+        // Neighboring open/non-manifold topology would leave the generated
+        // vertex cap without a valid boundary. Reject only the local problem;
+        // unrelated parts of a map may still be modeled normally.
+        foreach ((EditableBrushEdge edge, List<int> adjacent) in incidences)
+        {
+            if ((affectedVertices.Contains(edge.A) || affectedVertices.Contains(edge.B)) && adjacent.Count != 2)
+            {
+                error = "Bevel não pode atravessar uma borda aberta ou não-manifold.";
+                return false;
+            }
+        }
+
+        EditableBrushMesh backup = DeepClone();
+        try
+        {
+            Dictionary<int, EditableBrushFace> facesById = Faces.ToDictionary(face => face.Id);
+            Dictionary<int, List<int>> originalLoops = Faces.ToDictionary(face => face.Id, face => face.Vertices.ToList());
+            Vector3 meshCenter = CalculateMeshCenter();
+            var faceVertexMap = new Dictionary<FaceVertexKey, int>();
+
+            // Split only the face corners touched by a selected edge. Faces
+            // outside the bevel keep their original shared vertices.
+            foreach (EditableBrushFace face in Faces)
+            {
+                List<int> loop = originalLoops[face.Id];
+                for (int index = 0; index < loop.Count; index++)
+                {
+                    int vertexId = loop[index];
+                    if (!affectedVertices.Contains(vertexId))
+                        continue;
+
+                    int previous = loop[(index - 1 + loop.Count) % loop.Count];
+                    int next = loop[(index + 1) % loop.Count];
+                    bool previousSelected = selected.Contains(EditableBrushEdge.Create(previous, vertexId));
+                    bool nextSelected = selected.Contains(EditableBrushEdge.Create(vertexId, next));
+                    if (!previousSelected && !nextSelected)
+                        continue;
+
+                    Vector3 offset = CalculateBevelCornerOffset(face, previous, vertexId, next, previousSelected, nextSelected, width);
+                    if (offset.LengthSquared() < Epsilon * Epsilon)
+                    {
+                        error = "Uma das faces selecionadas não possui espaço suficiente para o bevel.";
+                        RestoreFrom(backup);
+                        return false;
+                    }
+
+                    faceVertexMap[new FaceVertexKey(face.Id, vertexId)] = AddVertex(GetPosition(vertexId) + offset);
+                }
+            }
+
+            foreach (EditableBrushFace face in Faces)
+            {
+                List<int> original = originalLoops[face.Id];
+                List<int> updated = original
+                    .Select(vertexId => GetFaceVertex(face.Id, vertexId, faceVertexMap))
+                    .ToList();
+                if (!updated.SequenceEqual(original))
+                    face.Vertices = updated;
+            }
+
+            // Every original edge whose two neighboring faces now use different
+            // vertices needs a small bridge. For selected edges that bridge is
+            // the visible bevel strip; for every other affected edge it seals
+            // the transition back into the original surface.
+            foreach ((EditableBrushEdge edge, List<int> adjacentFaceIds) in incidences)
+            {
+                if (adjacentFaceIds.Count != 2 ||
+                    (!affectedVertices.Contains(edge.A) && !affectedVertices.Contains(edge.B)))
+                    continue;
+
+                EditableBrushFace firstFace = facesById[adjacentFaceIds[0]];
+                EditableBrushFace secondFace = facesById[adjacentFaceIds[1]];
+                List<int> firstLoop = originalLoops[firstFace.Id];
+                if (!TryGetDirectedEdge(firstLoop, edge, out int start, out int end))
+                    continue;
+
+                int firstStart = GetFaceVertex(firstFace.Id, start, faceVertexMap);
+                int firstEnd = GetFaceVertex(firstFace.Id, end, faceVertexMap);
+                int secondStart = GetFaceVertex(secondFace.Id, start, faceVertexMap);
+                int secondEnd = GetFaceVertex(secondFace.Id, end, faceVertexMap);
+                bool changed = firstStart != secondStart || firstEnd != secondEnd;
+                if (!changed)
+                    continue;
+
+                Vector3 preferredNormal = CalculateFaceNormal(firstFace) + CalculateFaceNormal(secondFace);
+                AddOrientedGeneratedFace(
+                    [firstStart, firstEnd, secondEnd, secondStart],
+                    firstFace,
+                    preferredNormal,
+                    meshCenter);
+            }
+
+            // Close the hole left around every moved original vertex. The cap is
+            // sorted in the local face fan, so it works on concave shapes and on
+            // selections containing multiple connected edges.
+            foreach (int vertexId in affectedVertices)
+            {
+                List<int> incidentFaceIds = incidences
+                    .Where(pair => pair.Key.Contains(vertexId))
+                    .SelectMany(pair => pair.Value)
+                    .Distinct()
+                    .ToList();
+                if (incidentFaceIds.Count < 2)
+                    continue;
+
+                List<int> capVertices = incidentFaceIds
+                    .Select(faceId => GetFaceVertex(faceId, vertexId, faceVertexMap))
+                    .Distinct()
+                    .ToList();
+                if (capVertices.Count < 3)
+                    continue;
+
+                Vector3 preferredNormal = Vector3.Zero;
+                foreach (int faceId in incidentFaceIds)
+                    preferredNormal += CalculateFaceNormal(facesById[faceId]);
+                SortVertexCap(capVertices, GetPosition(vertexId), preferredNormal);
+                AddOrientedGeneratedFace(capVertices, facesById[incidentFaceIds[0]], preferredNormal, meshCenter);
+            }
+
+            if (!TryValidate(out error))
+            {
+                RestoreFrom(backup);
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RestoreFrom(backup);
+            error = $"Bevel falhou sem alterar a malha: {ex.Message}";
+            return false;
+        }
     }
 
     public bool TryLoopCut(EditableBrushEdge startEdge, float factor, out string error)
@@ -733,52 +855,225 @@ public sealed class EditableBrushMesh
         return topology;
     }
 
-    private void ClipWithBevelPlane(Vector3 surfacePoint, Vector3 normal, float width)
+    private readonly record struct FaceVertexKey(int FaceId, int VertexId);
+
+    private Dictionary<EditableBrushEdge, List<int>> BuildEdgeIncidences()
     {
-        float limit = Vector3.Dot(normal, surfacePoint) - width;
-        var intersections = new List<int>();
-
-        foreach (EditableBrushFace face in Faces.ToArray())
+        var incidences = new Dictionary<EditableBrushEdge, List<int>>();
+        foreach (EditableBrushFace face in Faces)
         {
-            List<int> source = face.Vertices;
-            var result = new List<int>();
-            for (int index = 0; index < source.Count; index++)
+            for (int index = 0; index < face.Vertices.Count; index++)
             {
-                int currentId = source[index];
-                int nextId = source[(index + 1) % source.Count];
-                Vector3 current = GetPosition(currentId);
-                Vector3 next = GetPosition(nextId);
-                float currentDistance = Vector3.Dot(normal, current) - limit;
-                float nextDistance = Vector3.Dot(normal, next) - limit;
-                bool currentInside = currentDistance <= Epsilon;
-                bool nextInside = nextDistance <= Epsilon;
-
-                if (currentInside)
-                    result.Add(currentId);
-                if (currentInside == nextInside)
-                    continue;
-
-                float t = currentDistance / (currentDistance - nextDistance);
-                int intersection = AddOrGetVertex(Vector3.Lerp(current, next, t));
-                result.Add(intersection);
-                intersections.Add(intersection);
+                EditableBrushEdge edge = EditableBrushEdge.Create(
+                    face.Vertices[index],
+                    face.Vertices[(index + 1) % face.Vertices.Count]);
+                if (!incidences.TryGetValue(edge, out List<int>? adjacentFaces))
+                {
+                    adjacentFaces = [];
+                    incidences[edge] = adjacentFaces;
+                }
+                adjacentFaces.Add(face.Id);
             }
+        }
+        return incidences;
+    }
 
-            face.Vertices = result.Distinct().ToList();
+    private Vector3 CalculateBevelCornerOffset(
+        EditableBrushFace face,
+        int previous,
+        int current,
+        int next,
+        bool previousSelected,
+        bool nextSelected,
+        float width)
+    {
+        Vector3 position = GetPosition(current);
+        Vector3 toPrevious = GetPosition(previous) - position;
+        Vector3 toNext = GetPosition(next) - position;
+        float previousLength = toPrevious.Length();
+        float nextLength = toNext.Length();
+        if (previousLength < Epsilon || nextLength < Epsilon)
+            return Vector3.Zero;
+
+        Vector3 direction = Vector3.Zero;
+        if (!previousSelected)
+            direction += toPrevious / previousLength;
+        if (!nextSelected)
+            direction += toNext / nextLength;
+
+        // When a selected chain turns at this corner both neighboring edges
+        // are selected. Move toward the face interior, which produces a stable
+        // miter rather than collapsing the two new corner vertices together.
+        if (direction.LengthSquared() < Epsilon * Epsilon)
+            direction = CalculateFaceCenter(face) - position;
+        if (direction.LengthSquared() < Epsilon * Epsilon)
+            return Vector3.Zero;
+
+        float maximumSafeWidth = MathF.Min(previousLength, nextLength) * 0.45f;
+        return Vector3.Normalize(direction) * MathF.Min(width, maximumSafeWidth);
+    }
+
+    private static int GetFaceVertex(
+        int faceId,
+        int originalVertexId,
+        IReadOnlyDictionary<FaceVertexKey, int> replacements) =>
+        replacements.TryGetValue(new FaceVertexKey(faceId, originalVertexId), out int replacement)
+            ? replacement
+            : originalVertexId;
+
+    private static bool TryGetDirectedEdge(
+        IReadOnlyList<int> loop,
+        EditableBrushEdge edge,
+        out int start,
+        out int end)
+    {
+        int index = FindDirectedEdgeIndex(loop, edge);
+        if (index < 0)
+        {
+            start = end = -1;
+            return false;
         }
 
-        Faces.RemoveAll(face => face.Vertices.Count < 3);
-        int[] capVertices = intersections.Distinct().ToArray();
-        if (capVertices.Length < 3)
+        start = loop[index];
+        end = loop[(index + 1) % loop.Count];
+        return true;
+    }
+
+    private void AddOrientedGeneratedFace(
+        IEnumerable<int> sourceVertices,
+        EditableBrushFace prototype,
+        Vector3 preferredNormal,
+        Vector3 meshCenter)
+    {
+        var vertices = new List<int>();
+        foreach (int vertexId in sourceVertices)
+        {
+            if (vertices.Count == 0 || vertices[^1] != vertexId)
+                vertices.Add(vertexId);
+        }
+        if (vertices.Count > 1 && vertices[0] == vertices[^1])
+            vertices.RemoveAt(vertices.Count - 1);
+        if (vertices.Count < 3)
             return;
 
-        var polygon = capVertices.ToList();
-        SortPolygon(polygon, normal, GetPosition);
-        if (Vector3.Dot(CalculateNormal(polygon, GetPosition), normal) < 0.0f)
-            polygon.Reverse();
+        Vector3 normal = CalculateNormal(vertices, GetPosition);
+        if (normal.LengthSquared() < Epsilon * Epsilon)
+            return;
 
-        EditableBrushFace prototype = Faces.FirstOrDefault() ?? new EditableBrushFace();
-        AddFace(prototype.CloneWithVertices(polygon));
+        if (preferredNormal.LengthSquared() < Epsilon * Epsilon)
+        {
+            Vector3 center = Vector3.Zero;
+            foreach (int vertexId in vertices)
+                center += GetPosition(vertexId);
+            preferredNormal = center / vertices.Count - meshCenter;
+        }
+
+        if (preferredNormal.LengthSquared() > Epsilon * Epsilon &&
+            Vector3.Dot(normal, preferredNormal) < 0.0f)
+        {
+            vertices.Reverse();
+        }
+
+        AddFace(prototype.CloneWithVertices(vertices));
+    }
+
+    private void SortVertexCap(List<int> vertices, Vector3 originalPosition, Vector3 preferredNormal)
+    {
+        if (preferredNormal.LengthSquared() < Epsilon * Epsilon)
+            preferredNormal = Vector3.UnitY;
+        preferredNormal = Vector3.Normalize(preferredNormal);
+
+        Vector3 uAxis = Vector3.Zero;
+        foreach (int vertexId in vertices)
+        {
+            uAxis = GetPosition(vertexId) - originalPosition;
+            uAxis -= preferredNormal * Vector3.Dot(uAxis, preferredNormal);
+            if (uAxis.LengthSquared() >= Epsilon * Epsilon)
+            {
+                uAxis = Vector3.Normalize(uAxis);
+                break;
+            }
+        }
+        if (uAxis.LengthSquared() < Epsilon * Epsilon)
+        {
+            Vector3 fallback = MathF.Abs(preferredNormal.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX;
+            uAxis = Vector3.Normalize(Vector3.Cross(fallback, preferredNormal));
+        }
+        Vector3 vAxis = Vector3.Normalize(Vector3.Cross(preferredNormal, uAxis));
+
+        vertices.Sort((first, second) =>
+        {
+            Vector3 firstOffset = GetPosition(first) - originalPosition;
+            Vector3 secondOffset = GetPosition(second) - originalPosition;
+            float firstAngle = MathF.Atan2(Vector3.Dot(firstOffset, vAxis), Vector3.Dot(firstOffset, uAxis));
+            float secondAngle = MathF.Atan2(Vector3.Dot(secondOffset, vAxis), Vector3.Dot(secondOffset, uAxis));
+            return firstAngle.CompareTo(secondAngle);
+        });
+    }
+
+    private Vector3 CalculateMeshCenter()
+    {
+        HashSet<int> usedVertexIds = Faces.SelectMany(face => face.Vertices).ToHashSet();
+        if (usedVertexIds.Count == 0)
+            return Vector3.Zero;
+
+        Vector3 center = Vector3.Zero;
+        foreach (int vertexId in usedVertexIds)
+            center += GetPosition(vertexId);
+        return center / usedVertexIds.Count;
+    }
+
+    private EditableBrushMesh DeepClone()
+    {
+        return new EditableBrushMesh
+        {
+            Vertices = Vertices.Select(vertex => new EditableBrushVertex
+            {
+                Id = vertex.Id,
+                Position = vertex.Position
+            }).ToList(),
+            Faces = Faces.Select(face => new EditableBrushFace
+            {
+                Id = face.Id,
+                Vertices = face.Vertices.ToList(),
+                Texture = face.Texture,
+                MaterialSlot = face.MaterialSlot,
+                UAxis = face.UAxis,
+                VAxis = face.VAxis,
+                UScale = face.UScale,
+                VScale = face.VScale,
+                UOffset = face.UOffset,
+                VOffset = face.VOffset,
+                Rotation = face.Rotation
+            }).ToList(),
+            NextVertexId = NextVertexId,
+            NextFaceId = NextFaceId
+        };
+    }
+
+    private void RestoreFrom(EditableBrushMesh snapshot)
+    {
+        Vertices = snapshot.Vertices.Select(vertex => new EditableBrushVertex
+        {
+            Id = vertex.Id,
+            Position = vertex.Position
+        }).ToList();
+        Faces = snapshot.Faces.Select(face => new EditableBrushFace
+        {
+            Id = face.Id,
+            Vertices = face.Vertices.ToList(),
+            Texture = face.Texture,
+            MaterialSlot = face.MaterialSlot,
+            UAxis = face.UAxis,
+            VAxis = face.VAxis,
+            UScale = face.UScale,
+            VScale = face.VScale,
+            UOffset = face.UOffset,
+            VOffset = face.VOffset,
+            Rotation = face.Rotation
+        }).ToList();
+        NextVertexId = snapshot.NextVertexId;
+        NextFaceId = snapshot.NextFaceId;
     }
 
     private int SplitEdgeInAllFaces(EditableBrushEdge edge, Vector3 point)
