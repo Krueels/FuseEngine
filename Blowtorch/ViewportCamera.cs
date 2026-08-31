@@ -28,6 +28,7 @@ public class ViewportCamera
 
     public CameraViewType ViewType { get; set; } = CameraViewType.Perspective3D;
     public float OrthoSize { get; set; } = 10.0f;
+    public float FieldOfView { get; set; } = 45.0f;
 
     public bool IsOrthographic => ViewType != CameraViewType.Perspective3D;
 
@@ -109,7 +110,7 @@ public class ViewportCamera
             return Matrix4x4.CreateOrthographic(OrthoSize * aspect, OrthoSize, -10000.0f, 10000.0f);
         }
         return Matrix4x4.CreatePerspectiveFieldOfView(
-            float.DegreesToRadians(45.0f), aspect, 0.1f, 500.0f);
+            float.DegreesToRadians(float.Clamp(FieldOfView, 1.0f, 170.0f)), aspect, 0.1f, 500.0f);
     }
 
     // Position is now an auto-property

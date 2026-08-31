@@ -56,10 +56,29 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     private readonly List<MaterialGraphLink> _clipboardLinks = [];
     private string _instanceName = "MaterialInstance";
     private bool _showCreateInstanceDialog;
+    private string _pendingDeleteMaterialPath = "";
+    private bool _showDeleteMaterialDialog;
 
     public bool IsOpen { get; private set; }
     public string CurrentPath => _path;
     public bool IsInputContextActive { get; private set; }
+
+    public void HandleDeletedMaterial(string materialPath)
+    {
+        string fullPath = MaterialRuntime.ResolveAssetPath(materialPath);
+        if (!_path.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        DisposePreviewMaterial();
+        _asset = null;
+        _path = "";
+        _selectedNodeId = "";
+        _selectedNodeIds.Clear();
+        _dirty = false;
+        _previewSignature = "";
+        _failedPreviewSignature = "";
+        _status = "The open material was moved to the Recycle Bin.";
+    }
 
     public void OpenStandalone()
     {
@@ -166,6 +185,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             }
             ImGui.End();
             DrawUnsavedMaterialDialog(assetService, sceneService);
+            DrawMaterialDeleteConfirmation(assetService, sceneService);
             return;
         }
         if (!open && _dirty)
@@ -220,6 +240,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         ImGui.End();
         DrawUnsavedMaterialDialog(assetService, sceneService);
         DrawCreateInstanceDialog(assetService, sceneService);
+        DrawMaterialDeleteConfirmation(assetService, sceneService);
     }
 
     private void DrawMaterialGallery(EditorAssetService assetService)
@@ -248,6 +269,14 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             ImGui.SameLine();
             if (ImGui.Selectable(fileName, selected, ImGuiSelectableFlags.None, new Vector2(0, 22)))
                 Open(material);
+            if (ImGui.BeginPopupContextItem($"MaterialContext##{material}"))
+            {
+                ImGui.TextDisabled(material);
+                ImGui.Separator();
+                if (ImGui.MenuItem("Delete material..."))
+                    RequestMaterialDelete(material);
+                ImGui.EndPopup();
+            }
             if (selected)
                 ImGui.SetItemDefaultFocus();
             ImGui.TextDisabled($"  {material}");
@@ -255,6 +284,65 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
 
         if (!any)
             ImGui.TextDisabled(materials.Count == 0 ? "No .fmat materials found." : "No materials match the filter.");
+    }
+
+    private void RequestMaterialDelete(string materialPath)
+    {
+        _pendingDeleteMaterialPath = materialPath;
+        _showDeleteMaterialDialog = true;
+    }
+
+    private void DrawMaterialDeleteConfirmation(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!_showDeleteMaterialDialog)
+            return;
+
+        ImGui.OpenPopup("Dangerous Material Deletion##MaterialGraph");
+        bool popupOpen = true;
+        if (ImGui.BeginPopupModal("Dangerous Material Deletion##MaterialGraph", ref popupOpen,
+                ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.28f, 0.22f, 1.0f), "WARNING: dangerous operation");
+            ImGui.Spacing();
+            ImGui.TextWrapped("This will remove the material from the project and send it to the Windows " +
+                              "Recycle Bin. Objects using it may lose their material until the file is restored.");
+            ImGui.Spacing();
+            ImGui.TextDisabled(_pendingDeleteMaterialPath);
+            ImGui.Spacing();
+            if (ImGui.Button("Send to Recycle Bin", new Vector2(190, 0)))
+            {
+                string deletedPath = _pendingDeleteMaterialPath;
+                if (assetService.SendAssetToRecycleBin(EditorAssetKind.Material, deletedPath, out string error))
+                {
+                    HandleDeletedMaterial(deletedPath);
+                    _materialSwatches.Remove(MaterialRuntime.ResolveAssetPath(deletedPath));
+                    _status = $"Moved {Path.GetFileName(deletedPath)} to the Recycle Bin.";
+                    sceneService.RefreshMaterials(assetService);
+                }
+                else
+                {
+                    _status = error;
+                }
+
+                _showDeleteMaterialDialog = false;
+                _pendingDeleteMaterialPath = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(100, 0)))
+            {
+                _showDeleteMaterialDialog = false;
+                _pendingDeleteMaterialPath = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!popupOpen)
+        {
+            _showDeleteMaterialDialog = false;
+            _pendingDeleteMaterialPath = "";
+        }
     }
 
     private Vector4 GetMaterialSwatch(string materialPath)

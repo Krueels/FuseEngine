@@ -1,0 +1,5656 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "sponza_sponza_cd.glb",
+      "visible": true,
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_nodes[103]",
+      "visible": true,
+      "parent": "sponza_sponza_cd.glb",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_meshes[0]",
+      "visible": true,
+      "parent": "sponza_mesh_0",
+      "model": "Models/sponza.glb#0",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_0_CBC49B4F.fmat",
+      "texture": "Textures/sponza/tex_0.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_1",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_1_meshes[1]",
+      "visible": true,
+      "parent": "sponza_mesh_0_1",
+      "model": "Models/sponza.glb#1",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_2",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_2_meshes[2]",
+      "visible": true,
+      "parent": "sponza_mesh_0_2",
+      "model": "Models/sponza.glb#2",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_3",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_3_meshes[3]",
+      "visible": true,
+      "parent": "sponza_mesh_0_3",
+      "model": "Models/sponza.glb#3",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_9_263EB83C.fmat",
+      "texture": "Textures/sponza/tex_9.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_4",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_4_meshes[4]",
+      "visible": true,
+      "parent": "sponza_mesh_0_4",
+      "model": "Models/sponza.glb#4",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_5",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_5_meshes[5]",
+      "visible": true,
+      "parent": "sponza_mesh_0_5",
+      "model": "Models/sponza.glb#5",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_6",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_6_meshes[6]",
+      "visible": true,
+      "parent": "sponza_mesh_0_6",
+      "model": "Models/sponza.glb#6",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_7",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_7_meshes[7]",
+      "visible": true,
+      "parent": "sponza_mesh_0_7",
+      "model": "Models/sponza.glb#7",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_21_48E18F56.fmat",
+      "texture": "Textures/sponza/tex_21.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_8",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_8_meshes[8]",
+      "visible": true,
+      "parent": "sponza_mesh_0_8",
+      "model": "Models/sponza.glb#8",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_9",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_9_meshes[9]",
+      "visible": true,
+      "parent": "sponza_mesh_0_9",
+      "model": "Models/sponza.glb#9",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_24_0E8F7B93.fmat",
+      "texture": "Textures/sponza/tex_24.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_10",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_10_meshes[10]",
+      "visible": true,
+      "parent": "sponza_mesh_0_10",
+      "model": "Models/sponza.glb#10",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_11",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_11_meshes[11]",
+      "visible": true,
+      "parent": "sponza_mesh_0_11",
+      "model": "Models/sponza.glb#11",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_12",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_12_meshes[12]",
+      "visible": true,
+      "parent": "sponza_mesh_0_12",
+      "model": "Models/sponza.glb#12",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_27_4F9A4E7A.fmat",
+      "texture": "Textures/sponza/tex_27.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_13",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_13_meshes[13]",
+      "visible": true,
+      "parent": "sponza_mesh_0_13",
+      "model": "Models/sponza.glb#13",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_14",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_14_meshes[14]",
+      "visible": true,
+      "parent": "sponza_mesh_0_14",
+      "model": "Models/sponza.glb#14",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_15",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_15_meshes[15]",
+      "visible": true,
+      "parent": "sponza_mesh_0_15",
+      "model": "Models/sponza.glb#15",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_16",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_16_meshes[16]",
+      "visible": true,
+      "parent": "sponza_mesh_0_16",
+      "model": "Models/sponza.glb#16",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_17",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_17_meshes[17]",
+      "visible": true,
+      "parent": "sponza_mesh_0_17",
+      "model": "Models/sponza.glb#17",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_18",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_18_meshes[18]",
+      "visible": true,
+      "parent": "sponza_mesh_0_18",
+      "model": "Models/sponza.glb#18",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_19",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_19_meshes[19]",
+      "visible": true,
+      "parent": "sponza_mesh_0_19",
+      "model": "Models/sponza.glb#19",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_20",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_20_meshes[20]",
+      "visible": true,
+      "parent": "sponza_mesh_0_20",
+      "model": "Models/sponza.glb#20",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_21",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_21_meshes[21]",
+      "visible": true,
+      "parent": "sponza_mesh_0_21",
+      "model": "Models/sponza.glb#21",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_22",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_22_meshes[22]",
+      "visible": true,
+      "parent": "sponza_mesh_0_22",
+      "model": "Models/sponza.glb#22",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_23",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_23_meshes[23]",
+      "visible": true,
+      "parent": "sponza_mesh_0_23",
+      "model": "Models/sponza.glb#23",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_24",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_24_meshes[24]",
+      "visible": true,
+      "parent": "sponza_mesh_0_24",
+      "model": "Models/sponza.glb#24",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_25",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_25_meshes[25]",
+      "visible": true,
+      "parent": "sponza_mesh_0_25",
+      "model": "Models/sponza.glb#25",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_26",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_26_meshes[26]",
+      "visible": true,
+      "parent": "sponza_mesh_0_26",
+      "model": "Models/sponza.glb#26",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_27",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_27_meshes[27]",
+      "visible": true,
+      "parent": "sponza_mesh_0_27",
+      "model": "Models/sponza.glb#27",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_28",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_28_meshes[28]",
+      "visible": true,
+      "parent": "sponza_mesh_0_28",
+      "model": "Models/sponza.glb#28",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_29",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_29_meshes[29]",
+      "visible": true,
+      "parent": "sponza_mesh_0_29",
+      "model": "Models/sponza.glb#29",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_30",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_30_meshes[30]",
+      "visible": true,
+      "parent": "sponza_mesh_0_30",
+      "model": "Models/sponza.glb#30",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_31",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_31_meshes[31]",
+      "visible": true,
+      "parent": "sponza_mesh_0_31",
+      "model": "Models/sponza.glb#31",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_32",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_32_meshes[32]",
+      "visible": true,
+      "parent": "sponza_mesh_0_32",
+      "model": "Models/sponza.glb#32",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_33",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_33_meshes[33]",
+      "visible": true,
+      "parent": "sponza_mesh_0_33",
+      "model": "Models/sponza.glb#33",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_18_BD06EFA0.fmat",
+      "texture": "Textures/sponza/tex_18.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_34",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_34_meshes[34]",
+      "visible": true,
+      "parent": "sponza_mesh_0_34",
+      "model": "Models/sponza.glb#34",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_35",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_35_meshes[35]",
+      "visible": true,
+      "parent": "sponza_mesh_0_35",
+      "model": "Models/sponza.glb#35",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_36",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_36_meshes[36]",
+      "visible": true,
+      "parent": "sponza_mesh_0_36",
+      "model": "Models/sponza.glb#36",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_37",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_37_meshes[37]",
+      "visible": true,
+      "parent": "sponza_mesh_0_37",
+      "model": "Models/sponza.glb#37",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_38",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_38_meshes[38]",
+      "visible": true,
+      "parent": "sponza_mesh_0_38",
+      "model": "Models/sponza.glb#38",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_30_C0892852.fmat",
+      "texture": "Textures/sponza/tex_30.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_39",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_39_meshes[39]",
+      "visible": true,
+      "parent": "sponza_mesh_0_39",
+      "model": "Models/sponza.glb#39",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_40",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_40_meshes[40]",
+      "visible": true,
+      "parent": "sponza_mesh_0_40",
+      "model": "Models/sponza.glb#40",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_30_C0892852.fmat",
+      "texture": "Textures/sponza/tex_30.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_41",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_41_meshes[41]",
+      "visible": true,
+      "parent": "sponza_mesh_0_41",
+      "model": "Models/sponza.glb#41",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_42",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_42_meshes[42]",
+      "visible": true,
+      "parent": "sponza_mesh_0_42",
+      "model": "Models/sponza.glb#42",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_30_C0892852.fmat",
+      "texture": "Textures/sponza/tex_30.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_43",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_43_meshes[43]",
+      "visible": true,
+      "parent": "sponza_mesh_0_43",
+      "model": "Models/sponza.glb#43",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_44",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_44_meshes[44]",
+      "visible": true,
+      "parent": "sponza_mesh_0_44",
+      "model": "Models/sponza.glb#44",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_27_4F9A4E7A.fmat",
+      "texture": "Textures/sponza/tex_27.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_45",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_45_meshes[45]",
+      "visible": true,
+      "parent": "sponza_mesh_0_45",
+      "model": "Models/sponza.glb#45",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_46",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_46_meshes[46]",
+      "visible": true,
+      "parent": "sponza_mesh_0_46",
+      "model": "Models/sponza.glb#46",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_24_0E8F7B93.fmat",
+      "texture": "Textures/sponza/tex_24.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_47",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_47_meshes[47]",
+      "visible": true,
+      "parent": "sponza_mesh_0_47",
+      "model": "Models/sponza.glb#47",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_21_48E18F56.fmat",
+      "texture": "Textures/sponza/tex_21.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_48",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_48_meshes[48]",
+      "visible": true,
+      "parent": "sponza_mesh_0_48",
+      "model": "Models/sponza.glb#48",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_15_5E37245F.fmat",
+      "texture": "Textures/sponza/tex_15.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_49",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_49_meshes[49]",
+      "visible": true,
+      "parent": "sponza_mesh_0_49",
+      "model": "Models/sponza.glb#49",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_33_09070A4C.fmat",
+      "texture": "Textures/sponza/tex_33.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_50",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_50_meshes[50]",
+      "visible": true,
+      "parent": "sponza_mesh_0_50",
+      "model": "Models/sponza.glb#50",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_36_C20F1251.fmat",
+      "texture": "Textures/sponza/tex_36.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_51",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_51_meshes[51]",
+      "visible": true,
+      "parent": "sponza_mesh_0_51",
+      "model": "Models/sponza.glb#51",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_52",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_52_meshes[52]",
+      "visible": true,
+      "parent": "sponza_mesh_0_52",
+      "model": "Models/sponza.glb#52",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_37_097C2DFA.fmat",
+      "texture": "Textures/sponza/tex_37.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_53",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_53_meshes[53]",
+      "visible": true,
+      "parent": "sponza_mesh_0_53",
+      "model": "Models/sponza.glb#53",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_0_CBC49B4F.fmat",
+      "texture": "Textures/sponza/tex_0.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_54",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_54_meshes[54]",
+      "visible": true,
+      "parent": "sponza_mesh_0_54",
+      "model": "Models/sponza.glb#54",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_40_39233C08.fmat",
+      "texture": "Textures/sponza/tex_40.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_55",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_55_meshes[55]",
+      "visible": true,
+      "parent": "sponza_mesh_0_55",
+      "model": "Models/sponza.glb#55",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_43_53990E70.fmat",
+      "texture": "Textures/sponza/tex_43.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_56",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_56_meshes[56]",
+      "visible": true,
+      "parent": "sponza_mesh_0_56",
+      "model": "Models/sponza.glb#56",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_45_12E24613.fmat",
+      "texture": "Textures/sponza/tex_45.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_57",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_57_meshes[57]",
+      "visible": true,
+      "parent": "sponza_mesh_0_57",
+      "model": "Models/sponza.glb#57",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_40_39233C08.fmat",
+      "texture": "Textures/sponza/tex_40.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_58",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_58_meshes[58]",
+      "visible": true,
+      "parent": "sponza_mesh_0_58",
+      "model": "Models/sponza.glb#58",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_43_53990E70.fmat",
+      "texture": "Textures/sponza/tex_43.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_59",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_59_meshes[59]",
+      "visible": true,
+      "parent": "sponza_mesh_0_59",
+      "model": "Models/sponza.glb#59",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_40_39233C08.fmat",
+      "texture": "Textures/sponza/tex_40.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_60",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_60_meshes[60]",
+      "visible": true,
+      "parent": "sponza_mesh_0_60",
+      "model": "Models/sponza.glb#60",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_45_12E24613.fmat",
+      "texture": "Textures/sponza/tex_45.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_61",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_61_meshes[61]",
+      "visible": true,
+      "parent": "sponza_mesh_0_61",
+      "model": "Models/sponza.glb#61",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_43_53990E70.fmat",
+      "texture": "Textures/sponza/tex_43.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_62",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_62_meshes[62]",
+      "visible": true,
+      "parent": "sponza_mesh_0_62",
+      "model": "Models/sponza.glb#62",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_37_097C2DFA.fmat",
+      "texture": "Textures/sponza/tex_37.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_63",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_63_meshes[63]",
+      "visible": true,
+      "parent": "sponza_mesh_0_63",
+      "model": "Models/sponza.glb#63",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_47_91558CE7.fmat",
+      "texture": "Textures/sponza/tex_47.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_64",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_64_meshes[64]",
+      "visible": true,
+      "parent": "sponza_mesh_0_64",
+      "model": "Models/sponza.glb#64",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_50_56A4FD09.fmat",
+      "texture": "Textures/sponza/tex_50.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_65",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_65_meshes[65]",
+      "visible": true,
+      "parent": "sponza_mesh_0_65",
+      "model": "Models/sponza.glb#65",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_52_930A668C.fmat",
+      "texture": "Textures/sponza/tex_52.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_66",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_66_meshes[66]",
+      "visible": true,
+      "parent": "sponza_mesh_0_66",
+      "model": "Models/sponza.glb#66",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_50_56A4FD09.fmat",
+      "texture": "Textures/sponza/tex_50.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_67",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_67_meshes[67]",
+      "visible": true,
+      "parent": "sponza_mesh_0_67",
+      "model": "Models/sponza.glb#67",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_52_930A668C.fmat",
+      "texture": "Textures/sponza/tex_52.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_68",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_68_meshes[68]",
+      "visible": true,
+      "parent": "sponza_mesh_0_68",
+      "model": "Models/sponza.glb#68",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_50_56A4FD09.fmat",
+      "texture": "Textures/sponza/tex_50.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_69",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_69_meshes[69]",
+      "visible": true,
+      "parent": "sponza_mesh_0_69",
+      "model": "Models/sponza.glb#69",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_47_91558CE7.fmat",
+      "texture": "Textures/sponza/tex_47.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_70",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_70_meshes[70]",
+      "visible": true,
+      "parent": "sponza_mesh_0_70",
+      "model": "Models/sponza.glb#70",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_52_930A668C.fmat",
+      "texture": "Textures/sponza/tex_52.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_71",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_71_meshes[71]",
+      "visible": true,
+      "parent": "sponza_mesh_0_71",
+      "model": "Models/sponza.glb#71",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_50_56A4FD09.fmat",
+      "texture": "Textures/sponza/tex_50.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_72",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_72_meshes[72]",
+      "visible": true,
+      "parent": "sponza_mesh_0_72",
+      "model": "Models/sponza.glb#72",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_47_91558CE7.fmat",
+      "texture": "Textures/sponza/tex_47.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_73",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_73_meshes[73]",
+      "visible": true,
+      "parent": "sponza_mesh_0_73",
+      "model": "Models/sponza.glb#73",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_54_36642AEB.fmat",
+      "texture": "Textures/sponza/tex_54.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_74",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_74_meshes[74]",
+      "visible": true,
+      "parent": "sponza_mesh_0_74",
+      "model": "Models/sponza.glb#74",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_57_131DC589.fmat",
+      "texture": "Textures/sponza/tex_57.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_75",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_75_meshes[75]",
+      "visible": true,
+      "parent": "sponza_mesh_0_75",
+      "model": "Models/sponza.glb#75",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_54_36642AEB.fmat",
+      "texture": "Textures/sponza/tex_54.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_76",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_76_meshes[76]",
+      "visible": true,
+      "parent": "sponza_mesh_0_76",
+      "model": "Models/sponza.glb#76",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_57_131DC589.fmat",
+      "texture": "Textures/sponza/tex_57.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_77",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_77_meshes[77]",
+      "visible": true,
+      "parent": "sponza_mesh_0_77",
+      "model": "Models/sponza.glb#77",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_54_36642AEB.fmat",
+      "texture": "Textures/sponza/tex_54.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_78",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_78_meshes[78]",
+      "visible": true,
+      "parent": "sponza_mesh_0_78",
+      "model": "Models/sponza.glb#78",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_57_131DC589.fmat",
+      "texture": "Textures/sponza/tex_57.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_79",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_79_meshes[79]",
+      "visible": true,
+      "parent": "sponza_mesh_0_79",
+      "model": "Models/sponza.glb#79",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_54_36642AEB.fmat",
+      "texture": "Textures/sponza/tex_54.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_80",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_80_meshes[80]",
+      "visible": true,
+      "parent": "sponza_mesh_0_80",
+      "model": "Models/sponza.glb#80",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_57_131DC589.fmat",
+      "texture": "Textures/sponza/tex_57.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_81",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_81_meshes[81]",
+      "visible": true,
+      "parent": "sponza_mesh_0_81",
+      "model": "Models/sponza.glb#81",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_82",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_82_meshes[82]",
+      "visible": true,
+      "parent": "sponza_mesh_0_82",
+      "model": "Models/sponza.glb#82",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_83",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_83_meshes[83]",
+      "visible": true,
+      "parent": "sponza_mesh_0_83",
+      "model": "Models/sponza.glb#83",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_84",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_84_meshes[84]",
+      "visible": true,
+      "parent": "sponza_mesh_0_84",
+      "model": "Models/sponza.glb#84",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_85",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_85_meshes[85]",
+      "visible": true,
+      "parent": "sponza_mesh_0_85",
+      "model": "Models/sponza.glb#85",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_86",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_86_meshes[86]",
+      "visible": true,
+      "parent": "sponza_mesh_0_86",
+      "model": "Models/sponza.glb#86",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_87",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_87_meshes[87]",
+      "visible": true,
+      "parent": "sponza_mesh_0_87",
+      "model": "Models/sponza.glb#87",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_88",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_88_meshes[88]",
+      "visible": true,
+      "parent": "sponza_mesh_0_88",
+      "model": "Models/sponza.glb#88",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_89",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_89_meshes[89]",
+      "visible": true,
+      "parent": "sponza_mesh_0_89",
+      "model": "Models/sponza.glb#89",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_90",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_90_meshes[90]",
+      "visible": true,
+      "parent": "sponza_mesh_0_90",
+      "model": "Models/sponza.glb#90",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_91",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_91_meshes[91]",
+      "visible": true,
+      "parent": "sponza_mesh_0_91",
+      "model": "Models/sponza.glb#91",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_92",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_92_meshes[92]",
+      "visible": true,
+      "parent": "sponza_mesh_0_92",
+      "model": "Models/sponza.glb#92",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_93",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_93_meshes[93]",
+      "visible": true,
+      "parent": "sponza_mesh_0_93",
+      "model": "Models/sponza.glb#93",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_3_CDDEBF1E.fmat",
+      "texture": "Textures/sponza/tex_3.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_94",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_94_meshes[94]",
+      "visible": true,
+      "parent": "sponza_mesh_0_94",
+      "model": "Models/sponza.glb#94",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_6_D8CF671D.fmat",
+      "texture": "Textures/sponza/tex_6.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_95",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_95_meshes[95]",
+      "visible": true,
+      "parent": "sponza_mesh_0_95",
+      "model": "Models/sponza.glb#95",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_60_6B49F74B.fmat",
+      "texture": "Textures/sponza/tex_60.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_96",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_96_meshes[96]",
+      "visible": true,
+      "parent": "sponza_mesh_0_96",
+      "model": "Models/sponza.glb#96",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_63_011DCB0A.fmat",
+      "texture": "Textures/sponza/tex_63.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_97",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_97_meshes[97]",
+      "visible": true,
+      "parent": "sponza_mesh_0_97",
+      "model": "Models/sponza.glb#97",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_9_263EB83C.fmat",
+      "texture": "Textures/sponza/tex_9.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_98",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_98_meshes[98]",
+      "visible": true,
+      "parent": "sponza_mesh_0_98",
+      "model": "Models/sponza.glb#98",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_63_011DCB0A.fmat",
+      "texture": "Textures/sponza/tex_63.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_99",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_99_meshes[99]",
+      "visible": true,
+      "parent": "sponza_mesh_0_99",
+      "model": "Models/sponza.glb#99",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_9_263EB83C.fmat",
+      "texture": "Textures/sponza/tex_9.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_100",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_100_meshes[100]",
+      "visible": true,
+      "parent": "sponza_mesh_0_100",
+      "model": "Models/sponza.glb#100",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_101",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_101_meshes[101]",
+      "visible": true,
+      "parent": "sponza_mesh_0_101",
+      "model": "Models/sponza.glb#101",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_66_5B576158.fmat",
+      "texture": "Textures/sponza/tex_66.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_102",
+      "visible": true,
+      "parent": "sponza_nodes[103]",
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "sponza_mesh_0_102_meshes[102]",
+      "visible": true,
+      "parent": "sponza_mesh_0_102",
+      "model": "Models/sponza.glb#102",
+      "model_scale": [
+        0.016,
+        0.016,
+        0.016
+      ],
+      "material": "Materials/tex_12_1AD3F822.fmat",
+      "texture": "Textures/sponza/tex_12.png",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "new_directional_light",
+      "visible": true,
+      "light_type": "directional",
+      "light_color": [
+        1,
+        0.3,
+        0.2
+      ],
+      "light_intensity": 2,
+      "light_radius": 15,
+      "light_inner_cone": 0.2617994,
+      "light_outer_cone": 0.5235988,
+      "light_cast_shadows": true,
+      "light_shadow_bias": 0.001,
+      "light_dynamic": false,
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          2,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    }
+  ],
+  "player_spawn": {
+    "position": [
+      0,
+      1.4,
+      0
+    ],
+    "yaw": 0,
+    "pitch": 0
+  }
+}

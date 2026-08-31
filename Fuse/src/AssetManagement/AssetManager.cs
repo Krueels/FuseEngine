@@ -30,23 +30,25 @@ public class AssetManager
         private readonly string _path;
         private readonly Renderer.Texture _target;
         private readonly AssetPriority _priority;
+        private readonly int _maxDimension;
 
-        public TextureDecodeJob(string key, string path, Renderer.Texture target, AssetPriority priority)
+        public TextureDecodeJob(string key, string path, Renderer.Texture target, AssetPriority priority, int maxDimension)
         {
             _key = key;
             _path = path;
             _target = target;
             _priority = priority;
+            _maxDimension = maxDimension;
         }
 
         public void Execute(AssetManager manager)
         {
             // This stage performs file I/O and image decoding only. It never touches GL.
-            Renderer.TextureUploadData? data = Renderer.Texture.DecodeFile(_path);
+            Renderer.TextureUploadData? data = Renderer.Texture.DecodeFile(_path, _maxDimension);
             manager.EnqueueGpuUpload(_priority, () =>
             {
                 if (data != null)
-                    _target.ApplyUpload(data, _path);
+                    _target.ApplyUpload(data, _path, keepCpuPixels: _maxDimension <= 0);
                 else
                     _target.MarkFailed();
                 manager.CompleteTextureWaiters(_key, _target);
@@ -228,7 +230,7 @@ public class AssetManager
     public Renderer.Texture GetTexture(string path, Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear)
     {
         string filePath = ResolveAssetPath(path);
-        string key = $"{filePath.Replace('\\', '/')}|{colorSpace}";
+        string key = $"{filePath.Replace('\\', '/')}|{colorSpace}|0";
         if (_textures.TryGetValue(key, out var tex))
             return tex;
         tex = new Renderer.Texture(_gl, filePath, colorSpace);
@@ -244,10 +246,11 @@ public class AssetManager
     public Renderer.Texture RequestTexture(
         string path,
         Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear,
-        AssetPriority priority = AssetPriority.Normal)
+        AssetPriority priority = AssetPriority.Normal,
+        int maxDimension = 0)
     {
         string filePath = ResolveAssetPath(path);
-        string key = $"{filePath.Replace('\\', '/') }|{colorSpace}";
+        string key = $"{filePath.Replace('\\', '/') }|{colorSpace}|{System.Math.Max(0, maxDimension)}";
 
         lock (_textureGate)
         {
@@ -256,7 +259,8 @@ public class AssetManager
 
             Renderer.Texture placeholder = Renderer.Texture.CreatePlaceholder(_gl, colorSpace);
             _textures[key] = placeholder;
-            QueueBackground(new TextureDecodeJob(key, filePath, placeholder, priority), priority);
+            QueueBackground(new TextureDecodeJob(
+                key, filePath, placeholder, priority, System.Math.Max(0, maxDimension)), priority);
             return placeholder;
         }
     }
@@ -264,13 +268,14 @@ public class AssetManager
     public Task<Renderer.Texture> LoadTextureAsync(
         string path,
         Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear,
-        AssetPriority priority = AssetPriority.Normal)
+        AssetPriority priority = AssetPriority.Normal,
+        int maxDimension = 0)
     {
-        Renderer.Texture texture = RequestTexture(path, colorSpace, priority);
+        Renderer.Texture texture = RequestTexture(path, colorSpace, priority, maxDimension);
         if (texture.IsReady || texture.IsFailed)
             return Task.FromResult(texture);
 
-        string key = $"{ResolveAssetPath(path).Replace('\\', '/') }|{colorSpace}";
+        string key = $"{ResolveAssetPath(path).Replace('\\', '/') }|{colorSpace}|{System.Math.Max(0, maxDimension)}";
         var completion = new TaskCompletionSource<Renderer.Texture>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_textureGate)
         {
@@ -658,6 +663,29 @@ public class AssetManager
                 texture.Dispose();
         }
         return GetTexture(filePath, colorSpace);
+    }
+
+    /// <summary>
+    /// Removes one exact texture variant from the in-memory cache. This is
+    /// primarily used by editor previews after an asset is sent to the
+    /// recycle bin; full-resolution runtime textures are left untouched by
+    /// callers unless they explicitly request that variant.
+    /// </summary>
+    public bool RemoveTextureCacheEntry(
+        string path,
+        Renderer.TextureColorSpace colorSpace,
+        int maxDimension = 0)
+    {
+        string filePath = ResolveAssetPath(path);
+        string key = $"{filePath.Replace('\\', '/')}|{colorSpace}|{System.Math.Max(0, maxDimension)}";
+        lock (_textureGate)
+        {
+            if (!_textures.Remove(key, out Renderer.Texture? texture))
+                return false;
+
+            texture.Dispose();
+            return true;
+        }
     }
 
     public Renderer.LoadedModel? ReloadModel(string path)

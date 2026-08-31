@@ -5,6 +5,7 @@ using System.Numerics;
 using Fuse.Scene.Model;
 using Fuse.Renderer;
 using Fuse.Core;
+using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch;
 

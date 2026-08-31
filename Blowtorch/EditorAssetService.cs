@@ -13,12 +13,14 @@ using Mesh = Fuse.Renderer.Mesh;
 using Texture = Fuse.Renderer.Texture;
 using Fuse.Renderer.Materials;
 using Fuse.Scene.Geometry;
+using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch;
 
 public class EditorAssetService : IDisposable
 {
     public const string DefaultSkyboxPath = "Textures/" + Bible.Skybox;
+    private const int PreviewTextureMaxDimension = 256;
 
     private readonly GL _gl;
     private readonly AssetManager _assets;
@@ -256,6 +258,63 @@ public class EditorAssetService : IDisposable
             _geometryCatalog = null;
         }
         System.Threading.Interlocked.Increment(ref _assetRevision);
+    }
+
+    /// <summary>
+    /// Sends an editor asset to the operating system recycle bin instead of
+    /// permanently deleting it. The path is validated against Fuse/res so a
+    /// malformed catalog entry cannot delete an unrelated file.
+    /// </summary>
+    public bool SendAssetToRecycleBin(EditorAssetKind kind, string relativePath, out string error)
+    {
+        error = "";
+        string fullPath = ResolveEditorAssetPath(relativePath);
+        string resourceRoot = Path.GetFullPath(_fuseResPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        string normalizedFullPath = Path.GetFullPath(fullPath);
+
+        if (!normalizedFullPath.StartsWith(resourceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "The asset is outside Fuse/res and cannot be deleted from the editor.";
+            return false;
+        }
+
+        if (!File.Exists(normalizedFullPath))
+        {
+            error = $"Asset not found: {relativePath}";
+            RefreshCatalogs();
+            return false;
+        }
+
+        try
+        {
+            // Remove only the low-resolution browser preview. Runtime/full-
+            // resolution textures remain valid for the current scene.
+            if (kind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+            {
+                InvalidateTexture(relativePath);
+                _assets.RemoveTextureCacheEntry(
+                    normalizedFullPath,
+                    TextureColorSpace.Srgb,
+                    PreviewTextureMaxDimension);
+            }
+
+            Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                normalizedFullPath,
+                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+
+            RefreshCatalogs();
+            Logger.Info($"Asset moved to recycle bin: {normalizedFullPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not move asset to the recycle bin: {ex.Message}";
+            Logger.Warn($"Asset deletion failed for '{normalizedFullPath}': {ex.Message}");
+            return false;
+        }
     }
 
     public bool ReimportAsset(EditorAssetKind kind, string relativePath, out string error)
@@ -600,7 +659,11 @@ public class EditorAssetService : IDisposable
 
         try
         {
-            return _assets.RequestTexture(fullPath, TextureColorSpace.Srgb, AssetPriority.Low).ID;
+            return _assets.RequestTexture(
+                fullPath,
+                TextureColorSpace.Srgb,
+                AssetPriority.Low,
+                PreviewTextureMaxDimension).ID;
         }
         catch (Exception ex)
         {

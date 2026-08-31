@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	<UseWindowsForms>true</UseWindowsForms>
 	  <ApplicationIcon>blowtorch.ico</ApplicationIcon>
     <UserSecretsId>4d598b32-80af-492e-bb4d-59bade391cb1</UserSecretsId>
   </PropertyGroup>
@@ -24,5 +25,25 @@
     <PackageReference Include="StbTrueTypeSharp" Version="1.26.13" />
 	<FrameworkReference Include="Microsoft.WindowsDesktop.App" />
   </ItemGroup>
+
+  <!--
+    A ProjectReference copies Fuse.dll, but the Fuse apphost is not guaranteed
+    to be copied to the Blowtorch output directory. The editor launches the
+    game from that directory when F5/Play is used, so keep the complete Fuse
+    runtime beside Blowtorch.exe.
+  -->
+  <Target Name="CopyFuseRuntimeToBlowtorch" AfterTargets="Build">
+    <ItemGroup>
+      <FuseRuntimeFile Include="$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.exe" />
+      <FuseRuntimeFile Include="$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.dll" />
+      <FuseRuntimeFile Include="$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.deps.json" />
+      <FuseRuntimeFile Include="$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.runtimeconfig.json" />
+      <FuseRuntimeFile Include="$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.pdb" Condition="Exists('$(MSBuildProjectDirectory)\..\Fuse\bin\$(Configuration)\$(TargetFramework)\Fuse.pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FuseRuntimeFile)"
+          DestinationFolder="$(TargetDir)"
+          SkipUnchangedFiles="false"
+          Condition="Exists('%(FuseRuntimeFile.Identity)')" />
+  </Target>
 
 </Project>

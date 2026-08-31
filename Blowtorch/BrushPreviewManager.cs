@@ -4,6 +4,7 @@ using Fuse.Scene;
 using Fuse.Scene.Model;
 using Fuse.Debug;
 using ImGuiNET;
+using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch
 {

@@ -98,7 +98,7 @@ public unsafe class Texture : IDisposable
     /// Decodes an image without touching OpenGL. This is used by the AssetManager
     /// worker and is safe to call away from the render thread.
     /// </summary>
-    public static TextureUploadData? DecodeFile(string filepath)
+    public static TextureUploadData? DecodeFile(string filepath, int maxDimension = 0)
     {
         if (!File.Exists(filepath))
         {
@@ -113,6 +113,34 @@ public unsafe class Texture : IDisposable
             int width = image.Width;
             int height = image.Height;
             byte[] original = image.Data;
+
+            // Asset Browser thumbnails must never retain or upload the full
+            // source image. A single 8K RGBA image is already 256 MiB.
+            if (maxDimension > 0 && System.Math.Max(width, height) > maxDimension)
+            {
+                float scale = maxDimension / (float)System.Math.Max(width, height);
+                int resizedWidth = System.Math.Max(1, (int)MathF.Round(width * scale));
+                int resizedHeight = System.Math.Max(1, (int)MathF.Round(height * scale));
+                byte[] resized = new byte[resizedWidth * resizedHeight * 4];
+                for (int y = 0; y < resizedHeight; y++)
+                {
+                    int sourceY = System.Math.Min(height - 1, (int)(y / scale));
+                    for (int x = 0; x < resizedWidth; x++)
+                    {
+                        int sourceX = System.Math.Min(width - 1, (int)(x / scale));
+                        int sourceIndex = (sourceY * width + sourceX) * 4;
+                        int targetIndex = (y * resizedWidth + x) * 4;
+                        resized[targetIndex] = original[sourceIndex];
+                        resized[targetIndex + 1] = original[sourceIndex + 1];
+                        resized[targetIndex + 2] = original[sourceIndex + 2];
+                        resized[targetIndex + 3] = original[sourceIndex + 3];
+                    }
+                }
+                original = resized;
+                width = resizedWidth;
+                height = resizedHeight;
+            }
+
             byte[] flipped = new byte[original.Length];
             int rowSize = width * 4;
 
@@ -130,14 +158,14 @@ public unsafe class Texture : IDisposable
     }
 
     /// <summary>Must only be called on the thread that owns the OpenGL context.</summary>
-    internal void ApplyUpload(TextureUploadData data, string? logPath)
+    internal void ApplyUpload(TextureUploadData data, string? logPath, bool keepCpuPixels = true)
     {
         if (_disposed)
             return;
 
         _width = data.Width;
         _height = data.Height;
-        _pixelData = data.OriginalPixels;
+        _pixelData = keepCpuPixels ? data.OriginalPixels : null;
         _isFailed = false;
         _isPlaceholder = false;
         UploadPixels(data.FlippedPixels, data.Width, data.Height, logPath);

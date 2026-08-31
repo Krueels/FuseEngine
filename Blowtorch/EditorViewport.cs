@@ -514,21 +514,24 @@ public unsafe class EditorViewport : IDisposable
                 }
             }
 
-            if (doc.PlayerSpawn != null)
-            {
-                var sp = doc.PlayerSpawn;
-                _debugDrawer.DrawCapsule(sp.Position, Quaternion.Identity, 0.9f, 0.5f, new Vector3(0, 1, 0));
+        }
 
-                float yawRad = float.DegreesToRadians(sp.Yaw);
-                float pitchRad = float.DegreesToRadians(sp.Pitch);
-                var fwd = new Vector3(
-                    MathF.Cos(yawRad) * MathF.Cos(pitchRad),
-                    MathF.Sin(pitchRad),
-                    MathF.Sin(yawRad) * MathF.Cos(pitchRad)
-                );
-                Vector3 eyePos = sp.Position + new Vector3(0, 0.9f, 0);
-                _debugDrawer.PushLine(eyePos, eyePos + fwd * 1.5f, new Vector3(0, 1, 1));
-            }
+        // The player spawn marker is an editor gizmo, not a hitbox. Keep it
+        // visible even when collision/debug geometry is disabled.
+        if (doc.PlayerSpawn != null)
+        {
+            var sp = doc.PlayerSpawn;
+            _debugDrawer.DrawCapsule(sp.Position, Quaternion.Identity, 0.9f, 0.5f, new Vector3(0, 1, 0));
+
+            float yawRad = float.DegreesToRadians(sp.Yaw);
+            float pitchRad = float.DegreesToRadians(sp.Pitch);
+            var fwd = new Vector3(
+                MathF.Cos(yawRad) * MathF.Cos(pitchRad),
+                MathF.Sin(pitchRad),
+                MathF.Sin(yawRad) * MathF.Cos(pitchRad)
+            );
+            Vector3 eyePos = sp.Position + new Vector3(0, 0.9f, 0);
+            _debugDrawer.PushLine(eyePos, eyePos + fwd * 1.5f, new Vector3(0, 1, 1));
         }
 
         // Light icons are always available independently of the hitbox toggle.

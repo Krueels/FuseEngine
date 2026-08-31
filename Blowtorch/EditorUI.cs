@@ -8,6 +8,7 @@ using Fuse.Renderer;
 using Fuse.Core;
 using Fuse;
 using Fuse.Renderer.Materials;
+using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch;
 
@@ -16,6 +17,7 @@ public unsafe class EditorUI : IDisposable
     private const string DefaultMaterialPath = "Materials/Default.fmat";
     private const string DevBrushMaterialPath = "Materials/DevMeasureCrate.fmat";
 
+    private readonly BlowtorchSettings _settings = BlowtorchSettings.Load();
     private bool _showOpenDialog;
     private string[] _availableMaps = [];
     private int _selectedOpenMapIndex = -1;
@@ -30,6 +32,9 @@ public unsafe class EditorUI : IDisposable
     private string _hierarchyFilter = "";
     private string _documentError = "";
     private bool _showUnsavedChangesDialog;
+    private bool _showBlowtorchSettings;
+    private string _fuseExecutableDraft = "";
+    private string _settingsStatus = "";
     private bool _showOverwriteDialog;
     private string _pendingOpenPath = "";
     private string _pendingSavePath = "";
@@ -273,6 +278,8 @@ public unsafe class EditorUI : IDisposable
         }
 
         ImGui.End();
+
+        DrawBlowtorchSettingsWindow();
 
         SyncSkyboxPreview(sceneService, assetService, viewport3D, viewportTop, viewportFront, viewportSide);
 
@@ -1351,11 +1358,155 @@ public unsafe class EditorUI : IDisposable
         try
         {
             string mapFile = Path.GetFileName(sceneService.MapPath);
-            System.Diagnostics.Process.Start("Fuse.exe", mapFile);
+            string configuredFusePath = _settings.FuseExecutablePath.Trim().Trim('"');
+            string fuseExecutable = string.IsNullOrWhiteSpace(configuredFusePath)
+                ? Path.Combine(AppContext.BaseDirectory, "Fuse.exe")
+                : ResolveFusePath(configuredFusePath);
+            if (!File.Exists(fuseExecutable))
+            {
+                string source = string.IsNullOrWhiteSpace(configuredFusePath)
+                    ? "Fuse.exe was not found beside Blowtorch. Build Blowtorch first"
+                    : "The configured Fuse executable was not found. Choose another one in Edit > Blowtorch Settings";
+                ShowDocumentError($"{source}: {fuseExecutable}");
+                return;
+            }
+
+            var startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = fuseExecutable,
+                WorkingDirectory = AppContext.BaseDirectory,
+                UseShellExecute = false
+            };
+            startInfo.ArgumentList.Add(mapFile);
+            System.Diagnostics.Process.Start(startInfo);
         }
         catch (Exception ex)
         {
             ShowDocumentError($"Could not launch Fuse: {ex.Message}");
+        }
+    }
+
+    private void OpenBlowtorchSettings()
+    {
+        _fuseExecutableDraft = _settings.FuseExecutablePath;
+        _settingsStatus = "";
+        _showBlowtorchSettings = true;
+    }
+
+    private void DrawBlowtorchSettingsWindow()
+    {
+        if (!_showBlowtorchSettings)
+            return;
+
+        ImGui.SetNextWindowSize(new Vector2(620, 230), ImGuiCond.FirstUseEver);
+        bool open = _showBlowtorchSettings;
+        if (ImGui.Begin("Blowtorch Settings##BlowtorchSettings", ref open,
+                ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextColored(new Vector4(0.75f, 0.86f, 1.0f, 1.0f), "Blowtorch settings");
+            ImGui.Separator();
+            ImGui.TextWrapped("Configure which Fuse executable is launched by Play/F5. " +
+                              "Leave this empty to use Fuse.exe generated beside Blowtorch.");
+            ImGui.Spacing();
+
+            ImGui.TextUnformatted("Fuse executable");
+            ImGui.SetNextItemWidth(-110);
+            ImGui.InputText("##FuseExecutableSetting", ref _fuseExecutableDraft, 1024);
+            ImGui.SameLine();
+            if (ImGui.Button("Browse..."))
+                BrowseForFuseExecutable();
+
+            string previewPath = _fuseExecutableDraft.Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(previewPath))
+            {
+                ImGui.TextColored(new Vector4(0.60f, 0.75f, 0.90f, 1.0f),
+                    $"Automatic path: {Path.Combine(AppContext.BaseDirectory, "Fuse.exe")}");
+            }
+            else if (TryResolveFusePath(previewPath, out string resolvedPreviewPath) &&
+                     File.Exists(resolvedPreviewPath))
+            {
+                ImGui.TextColored(new Vector4(0.35f, 0.90f, 0.50f, 1.0f), "Executable found.");
+            }
+            else
+            {
+                ImGui.TextColored(new Vector4(1.0f, 0.68f, 0.25f, 1.0f),
+                    "File not found. Correct the path before using Play/F5.");
+            }
+
+            ImGui.Spacing();
+            if (ImGui.Button("Save settings", new Vector2(130, 0)))
+            {
+                _settings.FuseExecutablePath = previewPath;
+                _settingsStatus = _settings.Save(out string error)
+                    ? "Settings saved."
+                    : error;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Use automatic path", new Vector2(150, 0)))
+            {
+                _fuseExecutableDraft = "";
+                _settings.FuseExecutablePath = "";
+                _settingsStatus = _settings.Save(out string error)
+                    ? "Automatic Fuse path restored."
+                    : error;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Close", new Vector2(80, 0)))
+                open = false;
+
+            if (!string.IsNullOrEmpty(_settingsStatus))
+            {
+                ImGui.Spacing();
+                ImGui.TextDisabled(_settingsStatus);
+            }
+            ImGui.Spacing();
+            ImGui.TextDisabled($"Stored in: {BlowtorchSettings.StoragePath}");
+        }
+        ImGui.End();
+        _showBlowtorchSettings = open;
+    }
+
+    private void BrowseForFuseExecutable()
+    {
+        using var dialog = new System.Windows.Forms.OpenFileDialog
+        {
+            Title = "Select Fuse executable",
+            Filter = "Fuse executable (Fuse.exe)|Fuse.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = "Fuse.exe"
+        };
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            _fuseExecutableDraft = dialog.FileName;
+            _settingsStatus = "Executable selected. Save settings to keep it.";
+        }
+    }
+
+    private static string ResolveFusePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            return Path.GetFullPath(path);
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
+    }
+
+    private static bool TryResolveFusePath(string path, out string resolvedPath)
+    {
+        try
+        {
+            resolvedPath = ResolveFusePath(path);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            resolvedPath = "";
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            resolvedPath = "";
+            return false;
         }
     }
 
@@ -1485,6 +1636,8 @@ public unsafe class EditorUI : IDisposable
             {
                 if (ImGui.MenuItem("Undo", "Ctrl+Z", false, history.CanUndo)) history.Undo();
                 if (ImGui.MenuItem("Redo", "Ctrl+Y", false, history.CanRedo)) history.Redo();
+                if (ImGui.MenuItem("Blowtorch Settings..."))
+                    OpenBlowtorchSettings();
                 ImGui.EndMenu();
             }
             if (ImGui.BeginMenu("CSG"))
@@ -3555,9 +3708,27 @@ public unsafe class EditorUI : IDisposable
             return;
         }
 
-        // --- Snapping Controls ---
+        // --- Editor Settings ---
         if (ImGui.CollapsingHeader("Editor Settings & Snapping", ImGuiTreeNodeFlags.None))
         {
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.72f, 0.84f, 1.0f, 1.0f), "Camera");
+            ImGui.Separator();
+
+            float cameraFov = viewport3D.Camera.FieldOfView;
+            ImGui.SetNextItemWidth(220.0f);
+            if (ImGui.SliderFloat("3D Camera FOV", ref cameraFov, 20.0f, 120.0f, "%.1f deg"))
+            {
+                viewport3D.Camera.FieldOfView = cameraFov;
+                viewport3D.RequestRender();
+            }
+            ImGui.TextDisabled("Affects only the perspective 3D viewport.");
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.72f, 0.84f, 1.0f, 1.0f), "Snapping");
+            ImGui.Separator();
+
             ImGui.Checkbox("Enable Snapping", ref _snapEnabled);
             if (_snapEnabled)
             {
@@ -3581,25 +3752,74 @@ public unsafe class EditorUI : IDisposable
         // --- Creation Controls ---
         if (ImGui.CollapsingHeader("Create Objects", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            if (ImGui.Button("Add Box")) AddNewObject(sceneService, assetService, history, MapShapeType.Box);
+            ImGui.TextDisabled($"Objects in scene: {doc.Objects.Count}");
+
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.72f, 0.84f, 1.0f, 1.0f), "Primitives");
+            ImGui.Separator();
+
+            float itemSpacing = ImGui.GetStyle().ItemSpacing.X;
+            float primitiveWidth = MathF.Max(70.0f,
+                (ImGui.GetContentRegionAvail().X - itemSpacing * 2.0f) / 3.0f);
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.16f, 0.25f, 0.36f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.24f, 0.38f, 0.52f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.30f, 0.46f, 0.62f, 1.0f));
+            if (ImGui.Button("Box", new Vector2(primitiveWidth, 0)))
+                AddNewObject(sceneService, assetService, history, MapShapeType.Box);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a box brush.");
             ImGui.SameLine();
-            if (ImGui.Button("Add Sphere")) AddNewObject(sceneService, assetService, history, MapShapeType.Sphere);
+            if (ImGui.Button("Sphere", new Vector2(primitiveWidth, 0)))
+                AddNewObject(sceneService, assetService, history, MapShapeType.Sphere);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a sphere brush.");
             ImGui.SameLine();
-            if (ImGui.Button("Add Capsule")) AddNewObject(sceneService, assetService, history, MapShapeType.Capsule);
-            ImGui.SameLine();
-            if (ImGui.Button("Add Model"))
+            if (ImGui.Button("Capsule", new Vector2(primitiveWidth, 0)))
+                AddNewObject(sceneService, assetService, history, MapShapeType.Capsule);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a capsule brush.");
+            ImGui.PopStyleColor(3);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(0.78f, 0.66f, 0.95f, 1.0f), "Assets");
+            ImGui.Separator();
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.25f, 0.18f, 0.34f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.38f, 0.27f, 0.50f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.46f, 0.34f, 0.60f, 1.0f));
+            if (ImGui.Button("Model...", new Vector2(-1, 0)))
             {
                 _showModelImportDialog = true;
                 RefreshModelFileList(assetService.FuseResPath);
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Add Pt Light")) AddNewLight(sceneService, assetService, history, "point");
-            ImGui.SameLine();
-            if (ImGui.Button("Add Spot Light")) AddNewLight(sceneService, assetService, history, "spot");
-            ImGui.SameLine();
-            if (ImGui.Button("Add Dir Light")) AddNewLight(sceneService, assetService, history, "directional");
+            ImGui.PopStyleColor(3);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Import a model from the project assets.");
 
-            ImGui.Text($"Total Objects: {doc.Objects.Count}");
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.TextColored(new Vector4(1.0f, 0.82f, 0.38f, 1.0f), "Lights");
+            ImGui.Separator();
+            float lightWidth = MathF.Max(70.0f,
+                (ImGui.GetContentRegionAvail().X - itemSpacing * 2.0f) / 3.0f);
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.34f, 0.28f, 0.12f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.50f, 0.40f, 0.16f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.62f, 0.50f, 0.20f, 1.0f));
+            if (ImGui.Button("Point Light", new Vector2(lightWidth, 0)))
+                AddNewLight(sceneService, assetService, history, "point");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a point light.");
+            ImGui.SameLine();
+            if (ImGui.Button("Spot Light", new Vector2(lightWidth, 0)))
+                AddNewLight(sceneService, assetService, history, "spot");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a spot light.");
+            ImGui.SameLine();
+            if (ImGui.Button("Directional Light", new Vector2(lightWidth, 0)))
+                AddNewLight(sceneService, assetService, history, "directional");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a directional light.");
+            ImGui.PopStyleColor(3);
         }
 
         if (ImGui.CollapsingHeader("Environment", ImGuiTreeNodeFlags.DefaultOpen))

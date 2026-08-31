@@ -1,6 +1,7 @@
 using Silk.NET.GLFW;
 using ImGuiNET;
 using Fuse.Input;
+using Keys = Silk.NET.GLFW.Keys;
 
 namespace Blowtorch;
 
