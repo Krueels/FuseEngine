@@ -14,8 +14,6 @@ namespace Fuse.Animation;
 /// </summary>
 public sealed class ProceduralSpiderWalk : IGizmoDrawable
 {
-    private const float MinStepHeight = 0.55f;
-    private const float MaxStepHeight = 1.45f;
     private const float MinStepDistanceThreshold = 0.90f;
     private const float MaxStepDistanceThreshold = 2.60f;
     private const float StepSpeed = 6.0f;
@@ -24,6 +22,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
     private Skeleton _skeleton = null!;
     private readonly SpiderSurfaceSolver _surfaceSolver;
+    private readonly SpiderLocomotionProfile _profile;
     private LegState[] _legs = Array.Empty<LegState>();
     private readonly int[] _nextGaitPair = new int[2];
     private readonly int[] _activeGaitPair = { -1, -1 };
@@ -49,6 +48,11 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public float Length2;
         public float Length3;
         public float TipReach;
+        public float CalibratedLegLength;
+        public float FootRadiusWorld;
+        public float FootOffsetWorld;
+        public float MinimumStepLiftWorld;
+        public float MaximumStepLiftWorld;
         public Vector3 RestFootModel;
         public Vector3 RestOutwardModel;
         public Vector3 RestKneeDirectionModel;
@@ -64,6 +68,11 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public Vector3 StepStartNormalWorld;
         public SpiderSurfaceContact PlantedContact;
         public SpiderSurfaceContact TargetContact;
+        public SpiderSurfaceContact StableDesiredContact;
+        public BodyID PendingSurfaceBody;
+        public Vector3 PendingSurfaceNormal;
+        public int PendingSurfaceFrames;
+        public int BlockedStepFrames;
         public float StepUrgency;
         public bool WantsStep;
         public float StepProgress;
@@ -78,9 +87,13 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         public Vector3 DebugLandingPoint;
     }
 
-    public ProceduralSpiderWalk(SceneManager scene, SpiderSurfaceSolver surfaceSolver)
+    public ProceduralSpiderWalk(
+        SceneManager scene,
+        SpiderSurfaceSolver surfaceSolver,
+        SpiderLocomotionProfile? profile = null)
     {
         _surfaceSolver = surfaceSolver;
+        _profile = profile ?? SpiderLocomotionProfile.Default;
     }
 
     public void SetFinalBoneMatrices(Matrix4x4[] matrices) => FinalBoneMatrices = matrices;
@@ -153,6 +166,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 Length2 = length2,
                 Length3 = length3,
                 TipReach = tipReach,
+                CalibratedLegLength = length1 + length2 + length3,
                 RestFootModel = tipPosition,
                 // The pole is captured once from the authored pose. It stops
                 // the solver from choosing a different (inside-out) knee side
@@ -232,7 +246,24 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 outwardDirWorld = Vector3.Transform(i < 4 ? -Vector3.UnitX : Vector3.UnitX, modelWorldRotation);
 
             float reachScale = MathF.Max(modelScale.X, MathF.Max(modelScale.Y, modelScale.Z));
+            leg.FootRadiusWorld = System.Math.Clamp(
+                leg.CalibratedLegLength * reachScale * _profile.FootRadiusFractionOfLeg,
+                _profile.MinimumFootRadiusWorld,
+                _profile.MaximumFootRadiusWorld);
+            leg.FootOffsetWorld = System.Math.Clamp(
+                leg.CalibratedLegLength * reachScale * _profile.FootSurfaceOffsetFractionOfLeg,
+                _profile.MinimumFootOffsetWorld,
+                _profile.MaximumFootOffsetWorld);
+            leg.FootOffsetWorld = MathF.Max(leg.FootOffsetWorld, leg.FootRadiusWorld);
             float maxReach = (leg.Length1 + leg.TipReach) * reachScale * 0.995f;
+            leg.MinimumStepLiftWorld = System.Math.Clamp(
+                maxReach * _profile.MinimumStepLiftFractionOfReach,
+                _profile.MinimumStepLiftWorld,
+                _profile.MaximumStepLiftWorld);
+            leg.MaximumStepLiftWorld = System.Math.Clamp(
+                maxReach * _profile.MaximumStepLiftFractionOfReach,
+                leg.MinimumStepLiftWorld,
+                _profile.MaximumStepLiftWorld);
             // Contact selection must accept any physically reachable support.
             // Surface selection may use a very close contact. The IK solver
             // itself still clamps to its mechanical minimum afterwards.
@@ -246,11 +277,13 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 surfaceMinReach,
                 maxReach,
                 selfBody,
+                leg.PlantedContact,
                 out leg.DebugRayStart,
                 out leg.DebugRayEnd);
+            desiredSurface = StabilizeSurfaceCandidate(ref leg, desiredSurface);
             leg.DebugRaycastHit = desiredSurface.IsValid;
             Vector3 safeDesiredFoot = desiredSurface.IsValid
-                ? desiredSurface.Point
+                ? GetOffsetContactPoint(desiredSurface, leg.FootOffsetWorld)
                 : ClampToReachableBand(hipWorld, desiredFootWorld, surfaceMinReach, maxReach, bodyUp);
 
             if (!leg.HasPlantedFoot)
@@ -273,7 +306,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                     leg.PlantedContact = _surfaceSolver.Refresh(leg.PlantedContact);
                     if (leg.PlantedContact.IsValid)
                     {
-                        leg.CurrentFootWorld = leg.PlantedContact.Point;
+                        leg.CurrentFootWorld = GetOffsetContactPoint(leg.PlantedContact, leg.FootOffsetWorld);
                         leg.CurrentFootNormalWorld = leg.PlantedContact.Normal;
                     }
                 }
@@ -321,8 +354,10 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                         surfaceMinReach,
                         maxReach,
                         selfBody,
+                        leg.PlantedContact,
                         out _,
                         out _);
+                    landingSurface = StabilizeSurfaceCandidate(ref leg, landingSurface);
 
                     if (!landingSurface.IsValid)
                     {
@@ -333,20 +368,98 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                             ? desiredSurface
                             : new SpiderSurfaceContact(
                                 true,
-                                safeDesiredFoot,
+                                safeDesiredFoot - NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp) * leg.FootOffsetWorld,
                                 NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp),
                                 default,
                                 null,
-                                safeDesiredFoot,
+                                safeDesiredFoot - NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp) * leg.FootOffsetWorld,
                                 NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp),
                                 0f);
                     }
+
+                    Vector3 candidateTarget = GetOffsetContactPoint(landingSurface, leg.FootOffsetWorld);
+                    float candidateLiftHeight = GetStepLiftHeight(
+                        leg.CurrentFootWorld,
+                        candidateTarget,
+                        leg.CurrentFootNormalWorld,
+                        landingSurface.Normal,
+                        leg.MinimumStepLiftWorld,
+                        leg.MaximumStepLiftWorld);
+                    bool pathIsClear = _surfaceSolver.IsFootStepPathClear(
+                        leg.CurrentFootWorld,
+                        candidateTarget,
+                        leg.CurrentFootNormalWorld,
+                        landingSurface.Normal,
+                        candidateLiftHeight,
+                        leg.FootRadiusWorld,
+                        selfBody,
+                        leg.PlantedContact,
+                        landingSurface,
+                        out _);
+
+                    if (!pathIsClear &&
+                        leg.BlockedStepFrames < _profile.MaximumBlockedStepFrames)
+                    {
+                        // A blocked path may be transient while contacts change
+                        // at an edge. Delay briefly, but never let this veto the
+                        // procedural gait forever.
+                        leg.BlockedStepFrames++;
+                        goto FinishStepScheduling;
+                    }
+
+                    if (!pathIsClear)
+                    {
+                        // First try a shorter stride. If even that query is
+                        // ambiguous, retain the former fail-open behaviour so a
+                        // bad collision sample cannot pin a leg in world space.
+                        Vector3 shorterPoint = Vector3.Lerp(safeDesiredFoot, landingPoint, 0.45f);
+                        SpiderSurfaceContact shorterSurface = FindSupportSurface(
+                            hipWorld,
+                            shorterPoint,
+                            bodyUp,
+                            outwardDirWorld,
+                            surfaceMinReach,
+                            maxReach,
+                            selfBody,
+                            leg.PlantedContact,
+                            out _,
+                            out _);
+                        shorterSurface = StabilizeSurfaceCandidate(ref leg, shorterSurface);
+                        if (shorterSurface.IsValid)
+                        {
+                            Vector3 shorterTarget = GetOffsetContactPoint(shorterSurface, leg.FootOffsetWorld);
+                            float shorterLift = GetStepLiftHeight(
+                                leg.CurrentFootWorld,
+                                shorterTarget,
+                                leg.CurrentFootNormalWorld,
+                                shorterSurface.Normal,
+                                leg.MinimumStepLiftWorld,
+                                leg.MaximumStepLiftWorld);
+                            if (_surfaceSolver.IsFootStepPathClear(
+                                    leg.CurrentFootWorld,
+                                    shorterTarget,
+                                    leg.CurrentFootNormalWorld,
+                                    shorterSurface.Normal,
+                                    shorterLift,
+                                    leg.FootRadiusWorld,
+                                    selfBody,
+                                    leg.PlantedContact,
+                                    shorterSurface,
+                                    out _))
+                            {
+                                landingSurface = shorterSurface;
+                                candidateTarget = shorterTarget;
+                            }
+                        }
+                    }
+
+                    leg.BlockedStepFrames = 0;
 
                     leg.IsStepping = true;
                     leg.StepProgress = 0.0f;
                     leg.StepStartWorld = leg.CurrentFootWorld;
                     leg.StepStartNormalWorld = NormalizeOrFallback(leg.CurrentFootNormalWorld, bodyUp);
-                    leg.TargetFootWorld = landingSurface.Point;
+                    leg.TargetFootWorld = candidateTarget;
                     leg.TargetFootNormalWorld = landingSurface.Normal;
                     leg.TargetContact = landingSurface;
                     leg.WantsStep = false;
@@ -359,6 +472,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                     else group1IsStepping = true;
                 }
 
+            FinishStepScheduling:
                 UpdateFootStep(ref leg, i, dt, speed);
             }
 
@@ -421,7 +535,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         if (leg.TargetContact.IsValid)
         {
             leg.TargetContact = _surfaceSolver.Refresh(leg.TargetContact);
-            leg.TargetFootWorld = leg.TargetContact.Point;
+            leg.TargetFootWorld = GetOffsetContactPoint(leg.TargetContact, leg.FootOffsetWorld);
             leg.TargetFootNormalWorld = leg.TargetContact.Normal;
         }
 
@@ -454,13 +568,33 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
 
     private static float GetStepLiftHeight(in LegState leg)
     {
-        float strideLength = Vector3.Distance(leg.StepStartWorld, leg.TargetFootWorld);
+        return GetStepLiftHeight(
+            leg.StepStartWorld,
+            leg.TargetFootWorld,
+            leg.StepStartNormalWorld,
+            leg.TargetFootNormalWorld,
+            leg.MinimumStepLiftWorld,
+            leg.MaximumStepLiftWorld);
+    }
+
+    private static float GetStepLiftHeight(
+        Vector3 start,
+        Vector3 target,
+        Vector3 startNormal,
+        Vector3 targetNormal,
+        float minimumHeight,
+        float maximumHeight)
+    {
+        float strideLength = Vector3.Distance(start, target);
         float normalChange = 1f - System.Math.Clamp(Vector3.Dot(
-            NormalizeOrFallback(leg.StepStartNormalWorld, Vector3.UnitY),
-            NormalizeOrFallback(leg.TargetFootNormalWorld, Vector3.UnitY)),
+            NormalizeOrFallback(startNormal, Vector3.UnitY),
+            NormalizeOrFallback(targetNormal, Vector3.UnitY)),
             -1f,
             1f);
-        return System.Math.Clamp(MinStepHeight + strideLength * 0.20f + normalChange * 0.18f, MinStepHeight, MaxStepHeight);
+        return System.Math.Clamp(
+            minimumHeight + strideLength * 0.20f + normalChange * 0.18f,
+            minimumHeight,
+            maximumHeight);
     }
 
     private void ResetLegPose()
@@ -483,6 +617,14 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
     /// pose while the hip/knee drive the actual toe contact.
     /// </summary>
     private void SolveLegIK(ref LegState leg, Vector3 requestedTarget)
+    {
+        if (TrySolveThreeSegmentIK(ref leg, requestedTarget))
+            return;
+
+        SolveTwoBoneLegIK(ref leg, requestedTarget);
+    }
+
+    private void SolveTwoBoneLegIK(ref LegState leg, Vector3 requestedTarget)
     {
         _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
         _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
@@ -534,11 +676,20 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         _skeleton.ComputeGlobalTransforms();
     }
 
-    // Retained temporarily for comparison while stabilising the rig. It is not
-    // called because this particular GLB does not expose a straight 3-link IK
-    // chain.
-    private void SolveExperimentalThreeBoneIK(ref LegState leg, Vector3 requestedTarget)
+    /// <summary>
+    /// Attempts a limited three-segment FABRIK solve. Imported spider rigs are
+    /// not guaranteed to form a clean mechanical chain, so every result is
+    /// validated and the caller falls back to the established two-bone solve.
+    /// </summary>
+    private bool TrySolveThreeSegmentIK(ref LegState leg, Vector3 requestedTarget)
     {
+        if (!IsDescendantOf(leg.Knee, leg.Hip) ||
+            !IsDescendantOf(leg.Ankle, leg.Knee) ||
+            !IsDescendantOf(leg.Tip, leg.Ankle))
+        {
+            return false;
+        }
+
         _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
         _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
         _skeleton.Nodes[leg.Ankle].Local = leg.AnkleRestLocal;
@@ -552,7 +703,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         Vector3 toTarget = requestedTarget - root;
         float requestedDistance = toTarget.Length();
         if (requestedDistance <= Epsilon)
-            return;
+            return false;
 
         Vector3 targetDirection = toTarget / requestedDistance;
         float totalLength = leg.Length1 + leg.Length2 + leg.Length3;
@@ -601,26 +752,49 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         tip = ankle + NormalizeOrFallback(tip - ankle, restAnkleToTip) * leg.Length3;
 
         Vector3 originalKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
-        ApplyAimRotation(leg.Hip, leg.HipRestLocal, originalKnee - root, knee - root);
+        ApplyAimRotationLimited(leg.Hip, leg.HipRestLocal, originalKnee - root, knee - root, 105f);
         _skeleton.ComputeGlobalTransforms();
 
         Vector3 solvedKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
         Vector3 solvedAnkleBeforeKneeRotation = GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global);
-        ApplyAimRotation(
+        ApplyAimRotationLimited(
             leg.Knee,
             leg.KneeRestLocal,
             solvedAnkleBeforeKneeRotation - solvedKnee,
-            ankle - solvedKnee);
+            ankle - solvedKnee,
+            125f);
         _skeleton.ComputeGlobalTransforms();
 
         Vector3 solvedAnkle = GetSkeletonPoint(_skeleton.Nodes[leg.Ankle].Global);
         Vector3 solvedTipBeforeAnkleRotation = GetSkeletonPoint(_skeleton.Nodes[leg.Tip].Global);
-        ApplyAimRotation(
+        ApplyAimRotationLimited(
             leg.Ankle,
             leg.AnkleRestLocal,
             solvedTipBeforeAnkleRotation - solvedAnkle,
-            tip - solvedAnkle);
+            tip - solvedAnkle,
+            80f);
         _skeleton.ComputeGlobalTransforms();
+
+        Vector3 finalKnee = GetSkeletonPoint(_skeleton.Nodes[leg.Knee].Global);
+        Vector3 finalTip = GetSkeletonPoint(_skeleton.Nodes[leg.Tip].Global);
+        float residual = Vector3.Distance(finalTip, target);
+        Vector3 finalBend = ProjectOnPlane(finalKnee - root, targetDirection);
+        Vector3 preferredPole = ProjectOnPlane(pole, targetDirection);
+        bool bendIsValid = finalBend.LengthSquared() > Epsilon * Epsilon &&
+                           preferredPole.LengthSquared() > Epsilon * Epsilon &&
+                           Vector3.Dot(Vector3.Normalize(finalBend), Vector3.Normalize(preferredPole)) > -0.10f;
+        bool resultIsValid = IsFinite(finalKnee) &&
+                             IsFinite(finalTip) &&
+                             bendIsValid &&
+                             residual <= MathF.Max(0.025f, totalLength * 0.12f);
+        if (resultIsValid)
+            return true;
+
+        _skeleton.Nodes[leg.Hip].Local = leg.HipRestLocal;
+        _skeleton.Nodes[leg.Knee].Local = leg.KneeRestLocal;
+        _skeleton.Nodes[leg.Ankle].Local = leg.AnkleRestLocal;
+        _skeleton.ComputeGlobalTransforms();
+        return false;
     }
 
     private static Vector3 PullTowardPole(
@@ -664,6 +838,57 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         _skeleton.Nodes[nodeIndex].Local = translation * deltaRotation * orientationAndScale;
     }
 
+    private void ApplyAimRotationLimited(
+        int nodeIndex,
+        Matrix4x4 restLocal,
+        Vector3 fromModel,
+        Vector3 toModel,
+        float maximumAngleDegrees)
+    {
+        if (fromModel.LengthSquared() <= Epsilon * Epsilon ||
+            toModel.LengthSquared() <= Epsilon * Epsilon)
+        {
+            return;
+        }
+
+        int parentIndex = _skeleton.Nodes[nodeIndex].Parent;
+        Matrix4x4 parentGlobal = parentIndex >= 0
+            ? _skeleton.Nodes[parentIndex].Global
+            : Matrix4x4.Identity;
+        if (!Matrix4x4.Invert(parentGlobal, out Matrix4x4 inverseParentGlobal))
+            return;
+
+        Vector3 fromInParent = Vector3.Normalize(TransformSkeletonDirection(inverseParentGlobal, fromModel));
+        Vector3 toInParent = Vector3.Normalize(TransformSkeletonDirection(inverseParentGlobal, toModel));
+        Quaternion rotation = Quaternion.Normalize(RotationBetween(fromInParent, toInParent));
+        float angle = 2f * MathF.Acos(System.Math.Clamp(MathF.Abs(rotation.W), 0f, 1f));
+        float maximumAngle = maximumAngleDegrees * (MathF.PI / 180f);
+        if (angle > maximumAngle && angle > Epsilon)
+            rotation = Quaternion.Normalize(Quaternion.Slerp(Quaternion.Identity, rotation, maximumAngle / angle));
+
+        Matrix4x4 translation = CreateSkeletonTranslation(GetSkeletonTranslation(restLocal));
+        Matrix4x4 orientationAndScale = ClearSkeletonTranslation(restLocal);
+        _skeleton.Nodes[nodeIndex].Local =
+            translation * CreateSkeletonRotation(rotation) * orientationAndScale;
+    }
+
+    private bool IsDescendantOf(int nodeIndex, int ancestorIndex)
+    {
+        int current = nodeIndex;
+        int guard = _skeleton.Nodes.Length;
+        while (current >= 0 && current < _skeleton.Nodes.Length && guard-- > 0)
+        {
+            if (current == ancestorIndex)
+                return true;
+            current = _skeleton.Nodes[current].Parent;
+        }
+
+        return false;
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
     private SpiderSurfaceContact FindSupportSurface(
         Vector3 hipWorld,
         Vector3 idealFootWorld,
@@ -672,6 +897,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         float minReach,
         float maxReach,
         BodyID selfBody,
+        SpiderSurfaceContact preferredContact,
         out Vector3 rayStart,
         out Vector3 rayEnd)
     {
@@ -685,6 +911,7 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
                 minReach,
                 maxReach,
                 selfBody,
+                preferredContact,
                 out SpiderSurfaceContact contact))
         {
             rayEnd = contact.Point;
@@ -692,6 +919,74 @@ public sealed class ProceduralSpiderWalk : IGizmoDrawable
         }
 
         return default;
+    }
+
+    private SpiderSurfaceContact StabilizeSurfaceCandidate(
+        ref LegState leg,
+        SpiderSurfaceContact candidate)
+    {
+        if (!candidate.IsValid)
+            return candidate;
+
+        SpiderSurfaceContact previous = leg.StableDesiredContact.IsValid
+            ? _surfaceSolver.Refresh(leg.StableDesiredContact)
+            : leg.PlantedContact.IsValid
+                ? _surfaceSolver.Refresh(leg.PlantedContact)
+                : default;
+
+        if (!previous.IsValid)
+        {
+            leg.StableDesiredContact = candidate;
+            leg.PendingSurfaceFrames = 0;
+            return candidate;
+        }
+
+        float alignment = Vector3.Dot(
+            NormalizeOrFallback(previous.Normal, candidate.Normal),
+            NormalizeOrFallback(candidate.Normal, previous.Normal));
+        bool sameSurface = previous.BodyId == candidate.BodyId &&
+                           alignment >= _profile.SurfaceNormalContinuity;
+
+        if (sameSurface)
+        {
+            Vector3 filteredNormal = NormalizeOrFallback(
+                Vector3.Lerp(previous.Normal, candidate.Normal, 0.35f),
+                candidate.Normal);
+            SpiderSurfaceContact filtered = candidate.WithWorldPose(candidate.Point, filteredNormal);
+            leg.StableDesiredContact = filtered;
+            leg.PendingSurfaceFrames = 0;
+            return filtered;
+        }
+
+        Vector3 pendingNormal = NormalizeOrFallback(candidate.Normal, previous.Normal);
+        bool confirmsPendingSurface = leg.PendingSurfaceBody == candidate.BodyId &&
+                                      Vector3.Dot(
+                                          NormalizeOrFallback(leg.PendingSurfaceNormal, pendingNormal),
+                                          pendingNormal) >= _profile.SurfaceNormalContinuity;
+        leg.PendingSurfaceFrames = confirmsPendingSurface ? leg.PendingSurfaceFrames + 1 : 1;
+        leg.PendingSurfaceBody = candidate.BodyId;
+        leg.PendingSurfaceNormal = pendingNormal;
+
+        if (leg.PendingSurfaceFrames >= _profile.SurfaceSwitchConfirmationFrames)
+        {
+            leg.StableDesiredContact = candidate;
+            leg.PendingSurfaceFrames = 0;
+            return candidate;
+        }
+
+        // Keep the newly probed point so the gait can continue. Only the normal
+        // is damped while a sharp surface transition is being confirmed.
+        Vector3 transitionalNormal = NormalizeOrFallback(
+            Vector3.Lerp(previous.Normal, candidate.Normal, 0.18f),
+            candidate.Normal);
+        return candidate.WithWorldPose(candidate.Point, transitionalNormal);
+    }
+
+    private static Vector3 GetOffsetContactPoint(
+        in SpiderSurfaceContact contact,
+        float offset)
+    {
+        return contact.Point + NormalizeOrFallback(contact.Normal, Vector3.UnitY) * offset;
     }
 
     private bool IsValidNode(int nodeIndex) => nodeIndex >= 0 && nodeIndex < _skeleton.Nodes.Length;

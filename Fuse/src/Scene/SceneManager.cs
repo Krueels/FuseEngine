@@ -466,16 +466,32 @@ private void ClearCurrentMap()
 
     private static Vector3 FindClosestTriangleNormal(Vector3[] verts, uint[]? indices, Vector3 scale, Vector3 localRayOrigin, Vector3 localRayDir, Vector3 localHitPos)
     {
-        Vector3 bestNormal = -localRayDir;
-        float bestDistSq = float.MaxValue;
+        Vector3 closestHitNormal = -localRayDir;
+        float closestHitDistance = float.MaxValue;
+        bool foundTriangleHit = false;
+        Vector3 closestFallbackNormal = -localRayDir;
+        float closestFallbackDistanceSq = float.MaxValue;
 
         int triCount = indices != null ? indices.Length / 3 : verts.Length / 3;
 
         for (int i = 0; i < triCount; i++)
         {
-            Vector3 v0 = (indices != null ? verts[indices[i * 3]] : verts[i * 3]) * scale;
-            Vector3 v1 = (indices != null ? verts[indices[i * 3 + 1]] : verts[i * 3 + 1]) * scale;
-            Vector3 v2 = (indices != null ? verts[indices[i * 3 + 2]] : verts[i * 3 + 2]) * scale;
+            uint rawI0 = indices != null ? indices[i * 3] : (uint)(i * 3);
+            uint rawI1 = indices != null ? indices[i * 3 + 1] : (uint)(i * 3 + 1);
+            uint rawI2 = indices != null ? indices[i * 3 + 2] : (uint)(i * 3 + 2);
+            if (rawI0 >= (uint)verts.Length ||
+                rawI1 >= (uint)verts.Length ||
+                rawI2 >= (uint)verts.Length)
+            {
+                continue;
+            }
+
+            int i0 = (int)rawI0;
+            int i1 = (int)rawI1;
+            int i2 = (int)rawI2;
+            Vector3 v0 = verts[i0] * scale;
+            Vector3 v1 = verts[i1] * scale;
+            Vector3 v2 = verts[i2] * scale;
 
             Vector3 edge1 = v1 - v0;
             Vector3 edge2 = v2 - v0;
@@ -499,9 +515,11 @@ private void ClearCurrentMap()
                     if (v >= -0.05f && (u + v) <= 1.05f)
                     {
                         float t = f * Vector3.Dot(edge2, q);
-                        if (t > 0.001f)
+                        if (t > 0.001f && t < closestHitDistance)
                         {
-                            return triNormal;
+                            closestHitDistance = t;
+                            closestHitNormal = triNormal;
+                            foundTriangleHit = true;
                         }
                     }
                 }
@@ -509,14 +527,14 @@ private void ClearCurrentMap()
 
             Vector3 triCenter = (v0 + v1 + v2) / 3.0f;
             float dSq = Vector3.DistanceSquared(localHitPos, triCenter);
-            if (dSq < bestDistSq)
+            if (dSq < closestFallbackDistanceSq)
             {
-                bestDistSq = dSq;
-                bestNormal = triNormal;
+                closestFallbackDistanceSq = dSq;
+                closestFallbackNormal = triNormal;
             }
         }
 
-        return bestNormal;
+        return foundTriangleHit ? closestHitNormal : closestFallbackNormal;
     }
 
     public void Dispose()

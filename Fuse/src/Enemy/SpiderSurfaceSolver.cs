@@ -422,6 +422,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         float minReach,
         float maxReach,
         BodyID selfBody,
+        SpiderSurfaceContact preferredContact,
         out SpiderSurfaceContact contact)
     {
         expectedNormal = NormalizeOrZero(expectedNormal);
@@ -486,6 +487,15 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             float score = Vector3.DistanceSquared(hit.Hit.Position, desiredPosition) +
                           normalPenalty * normalWeight +
                           hit.Priority * 0.20f;
+            if (preferredContact.IsValid)
+            {
+                float preferredAlignment = MathF.Max(-1f, Vector3.Dot(
+                    NormalizeOrFallback(hit.Hit.Normal, expectedNormal),
+                    NormalizeOrFallback(preferredContact.Normal, expectedNormal)));
+                score += (1f - preferredAlignment) * 0.55f;
+                if (hit.Hit.BodyID == preferredContact.BodyId)
+                    score -= 0.30f;
+            }
             if (score < bestScore)
             {
                 best = hit;
@@ -503,6 +513,113 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         contact = CreateContact(selected.Hit, 1f / (1f + selected.Priority));
         _debugCandidates.Add(contact);
         return true;
+    }
+
+    /// <summary>
+    /// Sweeps a sphere through the same curved path used by the procedural
+    /// step. Contacts with the supporting surface are ignored only when their
+    /// penetration axis agrees with that surface normal; a wall belonging to
+    /// the same static mesh can therefore still block the step.
+    /// </summary>
+    public bool IsFootStepPathClear(
+        Vector3 start,
+        Vector3 end,
+        Vector3 startNormal,
+        Vector3 endNormal,
+        float liftHeight,
+        float radius,
+        BodyID selfBody,
+        SpiderSurfaceContact startContact,
+        SpiderSurfaceContact endContact,
+        out float blockedFraction)
+    {
+        blockedFraction = 1f;
+        radius = MathF.Max(radius, 0.01f);
+
+        using var sphere = new SphereShape(radius);
+        using var broadPhaseFilter = new DefaultBroadPhaseLayerFilter();
+        using var objectLayerFilter = new DefaultObjectLayerFilter();
+        using var bodyFilter = new EnemyBodyFilter(selfBody, _ignoredBodies);
+        using var shapeFilter = new DefaultShapeFilter();
+
+        const int segmentCount = 4;
+        Vector3 previous = start;
+        for (int segment = 0; segment < segmentCount; segment++)
+        {
+            float t = (segment + 1f) / segmentCount;
+            Vector3 normal = NormalizeOrFallback(
+                Vector3.Lerp(startNormal, endNormal, t),
+                endNormal);
+            Vector3 next = Vector3.Lerp(start, end, t) +
+                           normal * (MathF.Sin(t * MathF.PI) * liftHeight);
+            Vector3 direction = next - previous;
+            if (direction.LengthSquared() <= Epsilon * Epsilon)
+            {
+                previous = next;
+                continue;
+            }
+
+            Matrix4x4 transform = Matrix4x4.CreateTranslation(previous);
+            Vector3 scale = Vector3.One;
+            var hits = new List<ShapeCastResult>(8);
+            _scene.Physics.NarrowPhaseQuery.CastShape(
+                sphere,
+                in transform,
+                in scale,
+                in direction,
+                CollisionCollectorType.AllHit,
+                hits,
+                broadPhaseFilter,
+                objectLayerFilter,
+                bodyFilter,
+                shapeFilter);
+
+            foreach (ShapeCastResult hit in hits)
+            {
+                float pathFraction = (segment + System.Math.Clamp(hit.Fraction, 0f, 1f)) / segmentCount;
+                if (IsBenignSupportHit(
+                        hit,
+                        pathFraction,
+                        normal,
+                        startContact,
+                        endContact))
+                {
+                    continue;
+                }
+
+                blockedFraction = pathFraction;
+                return false;
+            }
+
+            previous = next;
+        }
+
+        return true;
+    }
+
+    private static bool IsBenignSupportHit(
+        in ShapeCastResult hit,
+        float pathFraction,
+        Vector3 pathNormal,
+        in SpiderSurfaceContact startContact,
+        in SpiderSurfaceContact endContact)
+    {
+        bool isStartSupport = startContact.IsValid && hit.BodyID2 == startContact.BodyId;
+        bool isEndSupport = endContact.IsValid && hit.BodyID2 == endContact.BodyId;
+        if (!isStartSupport && !isEndSupport)
+            return false;
+
+        Vector3 supportNormal = isEndSupport && pathFraction > 0.5f
+            ? endContact.Normal
+            : startContact.Normal;
+        Vector3 axis = NormalizeOrZero(hit.PenetrationAxis);
+        float surfaceAlignment = axis.LengthSquared() > Epsilon * Epsilon
+            ? MathF.Abs(Vector3.Dot(axis, NormalizeOrFallback(supportNormal, pathNormal)))
+            : 0f;
+
+        bool touchesPathSurface = surfaceAlignment >= 0.68f;
+        bool endpointContact = pathFraction <= 0.06f || pathFraction >= 0.94f;
+        return touchesPathSurface || endpointContact;
     }
 
     private bool TryProbeContact(

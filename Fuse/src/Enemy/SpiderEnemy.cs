@@ -15,6 +15,7 @@ namespace Fuse.Enemy;
 
 public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 {
+    private static readonly SpiderLocomotionProfile LocomotionProfile = SpiderLocomotionProfile.Default;
     private enum DeathState
     {
         Alive,
@@ -174,7 +175,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         // This kinematic body remains the render/hit proxy. Physical movement
         // is solved by SpiderSurfaceMotor's CharacterVirtual and copied here.
-        Body.SetCapsule(0.6f, 0.3f)
+        Body.SetCapsule(LocomotionProfile.BodyRadius, LocomotionProfile.BodyCylinderHeight)
             .SetPosition(safeSpawn)
             .SetKinematic(true)
             .SetFriction(0.5f)
@@ -209,7 +210,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             Entity.Animator = _animator; // Permite que a GPU leia as matrizes atualizadas
             Entity.Visible = true;
             Entity.ModelOffset = new Vector3(0f, 0f, 0f);
-            Entity.ModelScale = new Vector3(10f, 10f, 10f);
+            Entity.ModelScale = new Vector3(LocomotionProfile.VisualScale);
 
             LogBoneNames();
             ResolveLegBones();
@@ -233,7 +234,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             // hitboxes como uma superfície navegável.
             _surfaceSolver.SetIgnoredBodies(_damageBody.BodyIds);
 
-            _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver);
+            _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver, LocomotionProfile);
             _proceduralWalk.FootLanded += OnSpiderFootLanded;
             _proceduralWalk.Initialize(_model.Skeleton, _legs);
 
