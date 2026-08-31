@@ -14,10 +14,6 @@ vec4 MotionBlur(vec2 uv) {
     vec3 color = texture(uScene, uv).rgb;
     float depth = texture(uDepth, uv).r;
 
-    if (texture(uScene, uv).a > 0.5) {
-        return vec4(color, 1.0);
-    }
-
     vec3 worldPos = ReconstructWorldPos(uv, depth);
     vec4 prevClipPos = uPrevVP * vec4(worldPos, 1.0);
     vec2 prevUV = (prevClipPos.xy / prevClipPos.w) * 0.5 + 0.5;

@@ -35,7 +35,7 @@ public sealed class PostProcessSettings
 
 
     // Motion Blur
-    public bool MotionBlurEnabled = true;
+    public bool MotionBlurEnabled = false;
     public float MotionBlurIntensity = 1.0f;
     public int MotionBlurSamples = 8;
 
