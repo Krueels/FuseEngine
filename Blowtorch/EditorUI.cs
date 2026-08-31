@@ -66,6 +66,8 @@ public unsafe class EditorUI : IDisposable
     // Selection & Modes
     public enum EditorMode { Select, DrawBrush }
     public enum GizmoOperation { Translate, Rotate, Scale, Shear }
+    private enum BrushComponentMode { Object, Vertex, Edge, Face }
+    private enum BrushEditTool { None, Knife }
     
     private EditorMode _currentMode = EditorMode.Select;
     private GizmoOperation _gizmoOperation = GizmoOperation.Translate;
@@ -80,6 +82,21 @@ public unsafe class EditorUI : IDisposable
     private string? _detectedTexturePath = null;
     private bool _wasUsingGizmo = false;
     private EditorViewport? _activeDraggingViewport;
+
+    // Editable brush state. Component IDs live in the persistent brush topology,
+    // not in transient render vertices, so selections survive a mesh rebuild.
+    private BrushComponentMode _brushComponentMode = BrushComponentMode.Object;
+    private BrushEditTool _brushEditTool = BrushEditTool.None;
+    private readonly HashSet<int> _selectedBrushVertices = [];
+    private readonly HashSet<EditableBrushEdge> _selectedBrushEdges = [];
+    private readonly HashSet<int> _selectedBrushFaces = [];
+    private int _knifeFaceId = -1;
+    private Vector3? _knifeFirstPoint;
+    private float _brushExtrudeDistance = 0.25f;
+    private float _brushInsetAmount = 0.15f;
+    private float _brushBevelWidth = 0.1f;
+    private float _brushLoopCutFactor = 0.5f;
+    private double _lastBrushComponentSelectionTime = -10.0;
 
     // Brush Tool State
     private BrushPreviewManager _previewManager = new BrushPreviewManager();
@@ -178,9 +195,7 @@ public unsafe class EditorUI : IDisposable
         _frameBeginState = sceneService.CaptureSnapshot();
 
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            _activeDraggingViewport = null;
-        }
+            EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
 
         if (_focusCameraRequested && _selectedObject != null)
         {
@@ -270,6 +285,8 @@ public unsafe class EditorUI : IDisposable
 
         if (_showMapWindow)
             DrawMapWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
+
+        DrawBrushEditWindow(sceneService, assetService, history);
 
         if (_showJsonWindow)
             DrawJsonWindow(sceneService);
@@ -1477,7 +1494,7 @@ public unsafe class EditorUI : IDisposable
         return clicked;
     }
 
-    private void DrawEditorToolbar(EditorSceneService sceneService)
+    private void DrawEditorToolbar(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
     {
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 3.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8.0f, 5.0f));
@@ -1492,22 +1509,66 @@ public unsafe class EditorUI : IDisposable
             _currentMode = EditorMode.Select;
         ImGui.SameLine(0, 4);
         if (DrawToolbarButton("Brush", "B", _currentMode == EditorMode.DrawBrush))
+        {
+            EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
             _currentMode = EditorMode.DrawBrush;
+            ClearBrushComponentSelection();
+        }
+
+        ImGui.SameLine(0, 12);
+        ImGui.TextDisabled("COMPONENT");
+        ImGui.SameLine();
+        if (DrawToolbarButton("Object", "1", _brushComponentMode == BrushComponentMode.Object))
+            SetBrushComponentMode(BrushComponentMode.Object, sceneService, assetService, history);
+        ImGui.SameLine(0, 3);
+        if (DrawToolbarButton("Vertex", "2", _brushComponentMode == BrushComponentMode.Vertex))
+            SetBrushComponentMode(BrushComponentMode.Vertex, sceneService, assetService, history);
+        ImGui.SameLine(0, 3);
+        if (DrawToolbarButton("Edge", "3", _brushComponentMode == BrushComponentMode.Edge))
+            SetBrushComponentMode(BrushComponentMode.Edge, sceneService, assetService, history);
+        ImGui.SameLine(0, 3);
+        if (DrawToolbarButton("Face", "4", _brushComponentMode == BrushComponentMode.Face))
+            SetBrushComponentMode(BrushComponentMode.Face, sceneService, assetService, history);
 
         ImGui.SameLine(0, 12);
         ImGui.TextDisabled("TRANSFORM");
         ImGui.SameLine();
         if (DrawToolbarButton("Move", "W", _gizmoOperation == GizmoOperation.Translate))
-            _gizmoOperation = GizmoOperation.Translate;
+            SetGizmoOperation(GizmoOperation.Translate, sceneService, assetService, history);
         ImGui.SameLine(0, 4);
         if (DrawToolbarButton("Rotate", "E", _gizmoOperation == GizmoOperation.Rotate))
-            _gizmoOperation = GizmoOperation.Rotate;
+            SetGizmoOperation(GizmoOperation.Rotate, sceneService, assetService, history);
         ImGui.SameLine(0, 4);
         if (DrawToolbarButton("Scale", "R", _gizmoOperation == GizmoOperation.Scale))
-            _gizmoOperation = GizmoOperation.Scale;
+            SetGizmoOperation(GizmoOperation.Scale, sceneService, assetService, history);
         ImGui.SameLine(0, 4);
         if (DrawToolbarButton("Shear", "T", _gizmoOperation == GizmoOperation.Shear))
-            _gizmoOperation = GizmoOperation.Shear;
+            SetGizmoOperation(GizmoOperation.Shear, sceneService, assetService, history);
+
+        if (IsEditingBrushComponents)
+        {
+            ImGui.SameLine(0, 12);
+            ImGui.TextDisabled("MODEL");
+            ImGui.SameLine();
+            if (DrawToolbarButton("Extrude", "", false))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "Extrude");
+            ImGui.SameLine(0, 3);
+            if (DrawToolbarButton("Inset", "", false))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "Inset");
+            ImGui.SameLine(0, 3);
+            if (DrawToolbarButton("Bevel", "", false))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "Bevel");
+            ImGui.SameLine(0, 3);
+            if (DrawToolbarButton("Loop Cut", "", false))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "LoopCut");
+            ImGui.SameLine(0, 3);
+            if (DrawToolbarButton(_brushEditTool == BrushEditTool.Knife ? "Knife: Click" : "Knife", "", _brushEditTool == BrushEditTool.Knife))
+            {
+                _brushEditTool = _brushEditTool == BrushEditTool.Knife ? BrushEditTool.None : BrushEditTool.Knife;
+                _knifeFirstPoint = null;
+                _knifeFaceId = -1;
+            }
+        }
 
         string toolbarStatus = _selectedObjects.Count == 0
             ? (sceneService.IsDirty ? "Modified" : "Saved")
@@ -1521,6 +1582,238 @@ public unsafe class EditorUI : IDisposable
 
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
+    }
+
+    private bool IsEditingBrushComponents =>
+        _brushComponentMode != BrushComponentMode.Object &&
+        _currentMode == EditorMode.Select &&
+        _selectedObject is Brush brush && brush.IsEditableMesh;
+
+    private Brush? ActiveEditableBrush =>
+        _selectedObject is Brush brush && brush.IsEditableMesh ? brush : null;
+
+    private void EndEditorGizmoInteraction(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        bool finalizeEditableBrush)
+    {
+        bool hadActiveGizmo = EditorGizmo.IsUsing() || _wasUsingGizmo;
+        if (hadActiveGizmo && finalizeEditableBrush && _wasUsingGizmo && IsEditingBrushComponents && ActiveEditableBrush is Brush brush)
+        {
+            // Keep the pivot fixed throughout a component drag, then recenter
+            // once on release. This preserves world placement without making
+            // the gizmo jump while the mouse is still pressed.
+            RefreshEditableBrush(brush, sceneService, assetService, normalizeOrigin: true);
+        }
+
+        EditorGizmo.Reset();
+        _activeDraggingViewport = null;
+        if (_wasUsingGizmo)
+            Undo.ForceEnd(history, sceneService, assetService);
+        _wasUsingGizmo = false;
+    }
+
+    private void SetGizmoOperation(
+        GizmoOperation operation,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (_gizmoOperation == operation)
+            return;
+        EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+        _gizmoOperation = operation;
+    }
+
+    private void SetBrushComponentMode(
+        BrushComponentMode mode,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+        _brushComponentMode = mode;
+        _brushEditTool = BrushEditTool.None;
+        _knifeFirstPoint = null;
+        _knifeFaceId = -1;
+        ClearBrushComponentSelection();
+
+        if (mode == BrushComponentMode.Object || _selectedObject is not Brush brush || brush.IsEditableMesh)
+            return;
+
+        string pre = sceneService.Document.Serialize();
+        MapShapeType? previousShape = brush.Body?.Shape;
+        Vector3 previousPosition = brush.Body?.Position ?? Vector3.Zero;
+        Vector3? previousHalfExtents = brush.Body?.HalfExtents;
+        EditableBrushMesh topology = brush.EnsureEditableMesh();
+        if (!topology.TryValidate(out string error))
+        {
+            // The conversion is kept only when it produced valid topology. A
+            // malformed CSG brush can still be used by the legacy tools.
+            brush.EditableMesh = null;
+            brush.GeometryMode = BrushGeometryMode.PlaneCsg;
+            if (brush.Body != null && previousShape.HasValue)
+            {
+                brush.Body.Shape = previousShape.Value;
+                brush.Body.Position = previousPosition;
+                brush.Body.HalfExtents = previousHalfExtents;
+            }
+            ShowDocumentError($"Não foi possível converter o brush para edição de componentes: {error}");
+            return;
+        }
+
+        RefreshEditableBrush(brush, sceneService, assetService, normalizeOrigin: false);
+        CommitBrushTopologySnapshot(pre, sceneService, assetService, history);
+    }
+
+    private void ClearBrushComponentSelection()
+    {
+        _selectedBrushVertices.Clear();
+        _selectedBrushEdges.Clear();
+        _selectedBrushFaces.Clear();
+    }
+
+    private IEnumerable<int> GetSelectedComponentVertices(EditableBrushMesh topology)
+    {
+        return _brushComponentMode switch
+        {
+            BrushComponentMode.Vertex => _selectedBrushVertices,
+            BrushComponentMode.Edge => _selectedBrushEdges.SelectMany(edge => new[] { edge.A, edge.B }),
+            BrushComponentMode.Face => topology.Faces
+                .Where(face => _selectedBrushFaces.Contains(face.Id))
+                .SelectMany(face => face.Vertices),
+            _ => []
+        };
+    }
+
+    private void ExecuteBrushEditOperation(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        string operation)
+    {
+        Brush? brush = ActiveEditableBrush;
+        if (brush?.EditableMesh == null)
+        {
+            ShowDocumentError("Selecione um brush e entre no modo Vertex, Edge ou Face antes de editar a geometria.");
+            return;
+        }
+
+        string pre = sceneService.Document.Serialize();
+        EditableBrushMesh topology = brush.EditableMesh;
+        bool changed;
+        string error = string.Empty;
+        switch (operation)
+        {
+            case "Extrude":
+                changed = topology.TryExtrude(_selectedBrushFaces, _brushExtrudeDistance, out error);
+                break;
+            case "Inset":
+                changed = topology.TryInset(_selectedBrushFaces, _brushInsetAmount, out error);
+                break;
+            case "Bevel":
+                changed = topology.TryBevel(_selectedBrushEdges, _brushBevelWidth, out error);
+                break;
+            case "LoopCut":
+                EditableBrushEdge firstEdge = _selectedBrushEdges.FirstOrDefault();
+                changed = _selectedBrushEdges.Count > 0 && topology.TryLoopCut(firstEdge, _brushLoopCutFactor, out error);
+                if (_selectedBrushEdges.Count == 0)
+                    error = "Selecione uma aresta para criar o Loop Cut.";
+                break;
+            default:
+                return;
+        }
+
+        if (!changed)
+        {
+            ShowDocumentError(error);
+            return;
+        }
+
+        RefreshEditableBrush(brush, sceneService, assetService);
+        if (operation is "Bevel" or "LoopCut")
+            _selectedBrushEdges.Clear();
+        CommitBrushTopologySnapshot(pre, sceneService, assetService, history);
+    }
+
+    private void CommitBrushTopologySnapshot(
+        string pre,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        string post = sceneService.Document.Serialize();
+        if (string.Equals(pre, post, StringComparison.Ordinal))
+            return;
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+    }
+
+    private void RefreshEditableBrush(
+        Brush brush,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        bool normalizeOrigin = true)
+    {
+        if (normalizeOrigin)
+            brush.MarkGeometryChanged();
+        else
+            brush.UpdateEditableBounds();
+        assetService.InvalidateMesh(brush.Id);
+        var entity = sceneService.Scene.Entities.FirstOrDefault(candidate => candidate.Id == brush.Id);
+        if (entity == null)
+            return;
+        entity.Mesh = assetService.GetOrCreateMesh(brush);
+        entity.Transform.Scale = Vector3.One;
+        if (brush.Body != null)
+        {
+            entity.Transform.Position = brush.Body.Position;
+            entity.Transform.Rotation = brush.Body.Rotation;
+        }
+    }
+
+    private void DrawBrushEditWindow(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
+    {
+        if (!IsEditingBrushComponents || ActiveEditableBrush?.EditableMesh == null)
+            return;
+
+        ImGui.SetNextWindowSize(new Vector2(310, 215), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Brush Edit"))
+        {
+            ImGui.End();
+            return;
+        }
+
+        EditableBrushMesh topology = ActiveEditableBrush.EditableMesh;
+        ImGui.TextDisabled($"{topology.Vertices.Count} vertices  |  {topology.GetEdges().Count} edges  |  {topology.Faces.Count} faces");
+        ImGui.Separator();
+        ImGui.TextUnformatted("Face operations");
+        ImGui.SetNextItemWidth(115);
+        ImGui.DragFloat("Extrude distance", ref _brushExtrudeDistance, 0.01f, -10.0f, 10.0f, "%.3f");
+        ImGui.SameLine();
+        if (ImGui.Button("Extrude")) ExecuteBrushEditOperation(sceneService, assetService, history, "Extrude");
+        ImGui.SetNextItemWidth(115);
+        ImGui.DragFloat("Inset amount", ref _brushInsetAmount, 0.01f, 0.001f, 0.95f, "%.3f");
+        ImGui.SameLine();
+        if (ImGui.Button("Inset")) ExecuteBrushEditOperation(sceneService, assetService, history, "Inset");
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Edge operations");
+        ImGui.SetNextItemWidth(115);
+        ImGui.DragFloat("Bevel width", ref _brushBevelWidth, 0.01f, 0.001f, 10.0f, "%.3f");
+        ImGui.SameLine();
+        if (ImGui.Button("Bevel")) ExecuteBrushEditOperation(sceneService, assetService, history, "Bevel");
+        ImGui.SetNextItemWidth(115);
+        ImGui.SliderFloat("Loop Cut", ref _brushLoopCutFactor, 0.02f, 0.98f, "%.2f");
+        ImGui.SameLine();
+        if (ImGui.Button("Cut")) ExecuteBrushEditOperation(sceneService, assetService, history, "LoopCut");
+
+        ImGui.Separator();
+        ImGui.TextDisabled(_brushEditTool == BrushEditTool.Knife
+            ? "Knife: clique duas vezes na mesma face. Os pontos encaixam na borda."
+            : "Knife divide uma face entre dois pontos da borda.");
+        ImGui.End();
     }
 
     private void DrawViewportWindow(
@@ -1538,7 +1831,7 @@ public unsafe class EditorUI : IDisposable
 
         if (ImGui.Begin("Scene Viewports", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
         {
-            DrawEditorToolbar(sceneService);
+            DrawEditorToolbar(sceneService, assetService, history);
 
             if (inputService.IsMapContext &&
                 !ImGui.IsMouseDown(ImGuiMouseButton.Right) &&
@@ -1546,6 +1839,7 @@ public unsafe class EditorUI : IDisposable
             {
                 if (ImGui.IsKeyPressed(ImGuiKey.Escape))
                 {
+                    EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
                     if (_currentMode == EditorMode.DrawBrush)
                     {
                         _currentMode = EditorMode.Select;
@@ -1556,13 +1850,23 @@ public unsafe class EditorUI : IDisposable
                     {
                         _selectedObject = null;
                         _selectedObjects.Clear();
+                        ClearBrushComponentSelection();
                     }
                 }
-                if (ImGui.IsKeyPressed(ImGuiKey.B)) _currentMode = EditorMode.DrawBrush;
-                if (ImGui.IsKeyPressed(ImGuiKey.W)) _gizmoOperation = GizmoOperation.Translate;
-                if (ImGui.IsKeyPressed(ImGuiKey.E)) _gizmoOperation = GizmoOperation.Rotate;
-                if (ImGui.IsKeyPressed(ImGuiKey.R)) _gizmoOperation = GizmoOperation.Scale;
-                if (ImGui.IsKeyPressed(ImGuiKey.T)) _gizmoOperation = GizmoOperation.Shear;
+                if (ImGui.IsKeyPressed(ImGuiKey.B))
+                {
+                    EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+                    _currentMode = EditorMode.DrawBrush;
+                    ClearBrushComponentSelection();
+                }
+                if (ImGui.IsKeyPressed(ImGuiKey._1)) SetBrushComponentMode(BrushComponentMode.Object, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey._2)) SetBrushComponentMode(BrushComponentMode.Vertex, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey._3)) SetBrushComponentMode(BrushComponentMode.Edge, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey._4)) SetBrushComponentMode(BrushComponentMode.Face, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey.W)) SetGizmoOperation(GizmoOperation.Translate, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey.E)) SetGizmoOperation(GizmoOperation.Rotate, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey.R)) SetGizmoOperation(GizmoOperation.Scale, sceneService, assetService, history);
+                if (ImGui.IsKeyPressed(ImGuiKey.T)) SetGizmoOperation(GizmoOperation.Shear, sceneService, assetService, history);
                 
                 if (_currentMode == EditorMode.DrawBrush && _previewManager.HasPreview && ImGui.IsKeyPressed(ImGuiKey.Enter))
                 {
@@ -1636,7 +1940,10 @@ public unsafe class EditorUI : IDisposable
         bool isPreview = false;
         Span<Vector2> handlePositions = stackalloc Vector2[10];
 
-        if (viewport.Camera.IsOrthographic)
+        // Component mode owns the left mouse button. The brush-level Hammer
+        // resize handles must stay out of this path or they can capture a
+        // vertex/edge click and leave the viewport in a drag state.
+        if (viewport.Camera.IsOrthographic && !IsEditingBrushComponents)
         {
             if (_currentMode == EditorMode.DrawBrush && _previewManager.HasPreview)
             {
@@ -1749,7 +2056,13 @@ public unsafe class EditorUI : IDisposable
 
         // Hammer-style: suppress translation and scale gizmos when the entire selection is made of brushes
         bool allSelectedAreBrushes = _selectedObjects.Count > 0 && _selectedObjects.All(o => o is Brush);
-        bool suppressGizmoForBrushes = allSelectedAreBrushes && _gizmoOperation != GizmoOperation.Rotate;
+        bool editingBrushComponents = IsEditingBrushComponents;
+        bool suppressGizmoForBrushes = editingBrushComponents || (allSelectedAreBrushes && _gizmoOperation != GizmoOperation.Rotate);
+
+        if (editingBrushComponents && !_isDraggingHandle)
+        {
+            HandleBrushComponentGizmo(viewport, vpPos, vpSize, isHovered, sceneService, assetService, history);
+        }
 
         if (_selectedObject != null && _selectedObject.Body != null && sceneService.Document.Objects.Contains(_selectedObject) && !_isDraggingHandle && !suppressGizmoForBrushes)
         {
@@ -1950,7 +2263,16 @@ public unsafe class EditorUI : IDisposable
             }
         }
 
-        if (allowPicking && _currentMode == EditorMode.Select)
+        bool componentClickHandled = false;
+        if (allowPicking && _currentMode == EditorMode.Select && IsEditingBrushComponents && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        {
+            EditorGizmo.GetMouseRay(ImGui.GetIO().MousePos, viewport.Camera.ViewMatrix, viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y), vpPos, vpSize, out Vector3 rayOrigin, out Vector3 rayDir);
+            componentClickHandled = _brushEditTool == BrushEditTool.Knife
+                ? HandleKnifeClick(rayOrigin, rayDir, sceneService, assetService, history)
+                : TryPickBrushComponent(ImGui.GetIO().MousePos, rayOrigin, rayDir, viewport, vpPos, vpSize, ImGui.GetIO().KeyCtrl);
+        }
+
+        if (allowPicking && _currentMode == EditorMode.Select && !componentClickHandled)
         {
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             {
@@ -2008,6 +2330,8 @@ public unsafe class EditorUI : IDisposable
                         _selectedObjects.Clear();
                         _selectedObjects.Add(hitObj);
                         _selectedObject = hitObj;
+                        if (_brushComponentMode != BrushComponentMode.Object && _selectedObject is Brush selectedBrush && !selectedBrush.IsEditableMesh)
+                            SetBrushComponentMode(_brushComponentMode, sceneService, assetService, history);
                     }
                 }
                 else
@@ -2492,6 +2816,266 @@ public unsafe class EditorUI : IDisposable
             }
         }
         return hits.OrderBy(h => h.dist).Select(h => h.obj).ToList();
+    }
+
+    private bool TryPickBrushComponent(
+        Vector2 mousePosition,
+        Vector3 worldRayOrigin,
+        Vector3 worldRayDirection,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        bool toggleSelection)
+    {
+        Brush? brush = ActiveEditableBrush;
+        if (brush?.EditableMesh == null || brush.Body == null)
+            return false;
+
+        EditableBrushMesh topology = brush.EditableMesh;
+        Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(brush.Body.Rotation) * Matrix4x4.CreateTranslation(brush.Body.Position);
+        if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse))
+            return false;
+
+        Vector3 localRayOrigin = Vector3.Transform(worldRayOrigin, inverse);
+        Vector3 localRayDirection = Vector3.Normalize(Vector3.TransformNormal(worldRayDirection, inverse));
+        Vector3 ToWorld(Vector3 local) => brush.Body.Position + Vector3.Transform(local, brush.Body.Rotation);
+        int visibleFaceId = topology.TryRaycastFace(localRayOrigin, localRayDirection, out int rayFaceId, out _, out _)
+            ? rayFaceId
+            : -1;
+        EditableBrushFace? visibleFace = visibleFaceId >= 0 ? topology.FindFace(visibleFaceId) : null;
+
+        switch (_brushComponentMode)
+        {
+            case BrushComponentMode.Vertex:
+            {
+                int closest = -1;
+                float closestDistance = 11.0f;
+                foreach (EditableBrushVertex vertex in topology.Vertices)
+                {
+                    if (visibleFace != null && !visibleFace.Vertices.Contains(vertex.Id))
+                        continue;
+                    if (!TryWorldToScreen(ToWorld(vertex.Position), viewport, vpPos, vpSize, out Vector2 screenPosition))
+                        continue;
+                    float distance = Vector2.Distance(mousePosition, screenPosition);
+                    if (distance < closestDistance)
+                    {
+                        closest = vertex.Id;
+                        closestDistance = distance;
+                    }
+                }
+                if (closest < 0)
+                    return false;
+                UpdateComponentSelection(_selectedBrushVertices, closest, toggleSelection);
+                _lastBrushComponentSelectionTime = ImGui.GetTime();
+                return true;
+            }
+            case BrushComponentMode.Edge:
+            {
+                EditableBrushEdge? closest = null;
+                float closestDistance = 9.0f;
+                foreach (EditableBrushEdge edge in topology.GetEdges())
+                {
+                    if (visibleFaceId >= 0 && !topology.GetFacesUsingEdge(edge).Any(face => face.Id == visibleFaceId))
+                        continue;
+                    if (!TryWorldToScreen(ToWorld(topology.GetPosition(edge.A)), viewport, vpPos, vpSize, out Vector2 first) ||
+                        !TryWorldToScreen(ToWorld(topology.GetPosition(edge.B)), viewport, vpPos, vpSize, out Vector2 second))
+                        continue;
+                    float distance = DistanceToSegment(mousePosition, first, second);
+                    if (distance < closestDistance)
+                    {
+                        closest = edge;
+                        closestDistance = distance;
+                    }
+                }
+                if (closest is not EditableBrushEdge edgeHit)
+                    return false;
+                UpdateComponentSelection(_selectedBrushEdges, edgeHit, toggleSelection);
+                _lastBrushComponentSelectionTime = ImGui.GetTime();
+                return true;
+            }
+            case BrushComponentMode.Face:
+            {
+                if (!topology.TryRaycastFace(localRayOrigin, localRayDirection, out int faceId, out _, out _))
+                    return false;
+                UpdateComponentSelection(_selectedBrushFaces, faceId, toggleSelection);
+                _lastBrushComponentSelectionTime = ImGui.GetTime();
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private void HandleBrushComponentGizmo(
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        bool isHovered,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        Brush? brush = ActiveEditableBrush;
+        if (brush?.EditableMesh == null || brush.Body == null)
+            return;
+
+        int[] vertexIds = GetSelectedComponentVertices(brush.EditableMesh).Distinct().ToArray();
+        if (vertexIds.Length == 0)
+        {
+            // Mode changes clear component selection. Never leave a static
+            // EditorGizmo drag alive while there is no possible owner.
+            if (EditorGizmo.IsUsing() || _wasUsingGizmo)
+                EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+            return;
+        }
+
+        Vector3 localPivot = Vector3.Zero;
+        foreach (int vertexId in vertexIds)
+            localPivot += brush.EditableMesh.GetPosition(vertexId);
+        localPivot /= vertexIds.Length;
+
+        Vector3 worldPivot = brush.Body.Position + Vector3.Transform(localPivot, brush.Body.Rotation);
+        Matrix4x4 view = viewport.Camera.ViewMatrix;
+        Matrix4x4 projection = viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y);
+        float snap = _snapEnabled ? _snapGrid : 0.0f;
+        float angleSnap = _snapEnabled ? _snapAngle : 0.0f;
+        bool changed = false;
+        bool canManipulate = (isHovered && _activeDraggingViewport == null) || _activeDraggingViewport == viewport;
+        bool selectionDelayActive = ImGui.GetTime() - _lastBrushComponentSelectionTime < 0.12;
+        bool interactive = canManipulate && (!selectionDelayActive || EditorGizmo.IsUsing());
+
+        if (canManipulate && _gizmoOperation == GizmoOperation.Translate &&
+            EditorGizmo.ManipulateTranslation(worldPivot, view, projection, vpPos, vpSize, out Vector3 newPivot, snap, interactive))
+        {
+            Vector3 worldDelta = newPivot - worldPivot;
+            if (worldDelta.LengthSquared() > 0.000001f)
+            {
+                Quaternion inverseRotation = Quaternion.Inverse(brush.Body.Rotation);
+                Vector3 localDelta = Vector3.Transform(worldDelta, inverseRotation);
+                foreach (int vertexId in vertexIds)
+                {
+                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                    if (vertex != null)
+                        vertex.Position += localDelta;
+                }
+                changed = true;
+            }
+        }
+        else if (canManipulate && _gizmoOperation == GizmoOperation.Rotate &&
+            EditorGizmo.ManipulateRotation(worldPivot, Quaternion.Identity, view, projection, vpPos, vpSize, out Quaternion rotation, angleSnap, interactive))
+        {
+            Quaternion delta = Quaternion.Normalize(rotation);
+            if (MathF.Abs(delta.X) + MathF.Abs(delta.Y) + MathF.Abs(delta.Z) > 0.00001f)
+            {
+                Quaternion inverseRotation = Quaternion.Inverse(brush.Body.Rotation);
+                foreach (int vertexId in vertexIds)
+                {
+                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                    if (vertex == null)
+                        continue;
+                    Vector3 world = brush.Body.Position + Vector3.Transform(vertex.Position, brush.Body.Rotation);
+                    Vector3 rotatedWorld = worldPivot + Vector3.Transform(world - worldPivot, delta);
+                    vertex.Position = Vector3.Transform(rotatedWorld - brush.Body.Position, inverseRotation);
+                }
+                changed = true;
+            }
+        }
+        else if (canManipulate && _gizmoOperation == GizmoOperation.Scale &&
+            EditorGizmo.ManipulateScale(worldPivot, Vector3.One, view, projection, vpPos, vpSize, out Vector3 newScale, snap, interactive))
+        {
+            Vector3 scale = Vector3.Max(new Vector3(0.001f), newScale);
+            if (Vector3.DistanceSquared(scale, Vector3.One) > 0.000001f)
+            {
+                foreach (int vertexId in vertexIds)
+                {
+                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                    if (vertex != null)
+                        vertex.Position = localPivot + (vertex.Position - localPivot) * scale;
+                }
+                changed = true;
+            }
+        }
+
+        if (changed)
+            RefreshEditableBrush(brush, sceneService, assetService, normalizeOrigin: false);
+
+        bool usingNow = EditorGizmo.IsUsing();
+        if (usingNow && _activeDraggingViewport == null)
+            _activeDraggingViewport = viewport;
+        if (usingNow && !_wasUsingGizmo)
+            Undo.RecordState(_frameBeginState);
+        if (!usingNow && _wasUsingGizmo)
+            Undo.ForceEnd(history, sceneService, assetService);
+        _wasUsingGizmo = usingNow;
+    }
+
+    private bool HandleKnifeClick(
+        Vector3 worldRayOrigin,
+        Vector3 worldRayDirection,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        Brush? brush = ActiveEditableBrush;
+        if (brush?.EditableMesh == null || brush.Body == null)
+            return false;
+
+        Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(brush.Body.Rotation) * Matrix4x4.CreateTranslation(brush.Body.Position);
+        if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse))
+            return false;
+
+        Vector3 localOrigin = Vector3.Transform(worldRayOrigin, inverse);
+        Vector3 localDirection = Vector3.Normalize(Vector3.TransformNormal(worldRayDirection, inverse));
+        if (!brush.EditableMesh.TryRaycastFace(localOrigin, localDirection, out int faceId, out Vector3 point, out _))
+            return false;
+
+        if (_knifeFirstPoint == null || _knifeFaceId != faceId)
+        {
+            _knifeFaceId = faceId;
+            _knifeFirstPoint = point;
+            _selectedBrushFaces.Clear();
+            _selectedBrushFaces.Add(faceId);
+            return true;
+        }
+
+        string pre = sceneService.Document.Serialize();
+        if (!brush.EditableMesh.TryKnifeCut(faceId, _knifeFirstPoint.Value, point, out string error))
+        {
+            ShowDocumentError(error);
+            _knifeFirstPoint = null;
+            _knifeFaceId = -1;
+            return true;
+        }
+
+        RefreshEditableBrush(brush, sceneService, assetService);
+        _selectedBrushFaces.Clear();
+        _selectedBrushFaces.Add(faceId);
+        _knifeFirstPoint = null;
+        _knifeFaceId = -1;
+        CommitBrushTopologySnapshot(pre, sceneService, assetService, history);
+        return true;
+    }
+
+    private static void UpdateComponentSelection<T>(HashSet<T> selection, T item, bool toggleSelection) where T : notnull
+    {
+        if (toggleSelection)
+        {
+            if (!selection.Add(item))
+                selection.Remove(item);
+            return;
+        }
+        selection.Clear();
+        selection.Add(item);
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 first, Vector2 second)
+    {
+        Vector2 segment = second - first;
+        float lengthSquared = segment.LengthSquared();
+        if (lengthSquared < 0.0001f)
+            return Vector2.Distance(point, first);
+        float t = float.Clamp(Vector2.Dot(point - first, segment) / lengthSquared, 0.0f, 1.0f);
+        return Vector2.Distance(point, Vector2.Lerp(first, second, t));
     }
 
     private bool RaySphereIntersect(Vector3 ro, Vector3 rd, Vector3 center, float radius, out float t)
@@ -4680,6 +5264,11 @@ public unsafe class EditorUI : IDisposable
     {
         var targetBrushes = _selectedObjects.OfType<Brush>().ToList();
         if (targetBrushes.Count == 0) return;
+        if (targetBrushes.Any(brush => !brush.SupportsPlaneCsg))
+        {
+            ShowDocumentError("CSG funciona somente com brushes convexos. O brush selecionado foi convertido para malha editável e precisa ser simplificado ou usado fora do fluxo CSG.");
+            return;
+        }
 
         string pre = sceneService.Document.Serialize();
         bool changed = false;
@@ -4775,7 +5364,61 @@ public unsafe class EditorUI : IDisposable
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         DrawWorldAxes(drawList, viewport, vpPos, vpSize);
         DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, assetService);
+        DrawBrushComponentOverlay(drawList, viewport, vpPos, vpSize);
         DrawOrientationWidget(drawList, viewport, vpPos, vpSize);
+    }
+
+    private void DrawBrushComponentOverlay(ImDrawListPtr drawList, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)
+    {
+        Brush? brush = ActiveEditableBrush;
+        if (!IsEditingBrushComponents || brush?.EditableMesh == null || brush.Body == null)
+            return;
+
+        EditableBrushMesh topology = brush.EditableMesh;
+        uint edgeColor = ImGui.GetColorU32(new Vector4(0.34f, 0.78f, 1.0f, 0.52f));
+        uint selectedColor = ImGui.GetColorU32(new Vector4(1.0f, 0.58f, 0.08f, 1.0f));
+        uint vertexColor = ImGui.GetColorU32(new Vector4(0.72f, 0.88f, 1.0f, 0.95f));
+
+        Vector3 ToWorld(Vector3 local) => brush.Body.Position + Vector3.Transform(local, brush.Body.Rotation);
+        foreach (EditableBrushEdge edge in topology.GetEdges())
+        {
+            if (!TryWorldToScreen(ToWorld(topology.GetPosition(edge.A)), viewport, vpPos, vpSize, out Vector2 first) ||
+                !TryWorldToScreen(ToWorld(topology.GetPosition(edge.B)), viewport, vpPos, vpSize, out Vector2 second))
+                continue;
+            bool selected = _selectedBrushEdges.Contains(edge) ||
+                (_brushComponentMode == BrushComponentMode.Vertex && (_selectedBrushVertices.Contains(edge.A) || _selectedBrushVertices.Contains(edge.B)));
+            drawList.AddLine(first, second, selected ? selectedColor : edgeColor, selected ? 3.0f : 1.2f);
+        }
+
+        if (_brushComponentMode == BrushComponentMode.Face)
+        {
+            foreach (EditableBrushFace face in topology.Faces)
+            {
+                if (!_selectedBrushFaces.Contains(face.Id))
+                    continue;
+                for (int index = 0; index < face.Vertices.Count; index++)
+                {
+                    Vector3 firstLocal = topology.GetPosition(face.Vertices[index]);
+                    Vector3 secondLocal = topology.GetPosition(face.Vertices[(index + 1) % face.Vertices.Count]);
+                    if (TryWorldToScreen(ToWorld(firstLocal), viewport, vpPos, vpSize, out Vector2 first) &&
+                        TryWorldToScreen(ToWorld(secondLocal), viewport, vpPos, vpSize, out Vector2 second))
+                    {
+                        drawList.AddLine(first, second, selectedColor, 4.0f);
+                    }
+                }
+            }
+        }
+
+        foreach (EditableBrushVertex vertex in topology.Vertices)
+        {
+            if (!TryWorldToScreen(ToWorld(vertex.Position), viewport, vpPos, vpSize, out Vector2 position))
+                continue;
+            bool selected = _selectedBrushVertices.Contains(vertex.Id) ||
+                (_brushComponentMode == BrushComponentMode.Edge && _selectedBrushEdges.Any(edge => edge.Contains(vertex.Id))) ||
+                (_brushComponentMode == BrushComponentMode.Face && topology.Faces.Any(face => _selectedBrushFaces.Contains(face.Id) && face.Vertices.Contains(vertex.Id)));
+            drawList.AddCircleFilled(position, selected ? 5.2f : 3.6f, selected ? selectedColor : vertexColor, 12);
+            drawList.AddCircle(position, selected ? 6.5f : 4.7f, ImGui.GetColorU32(new Vector4(0.02f, 0.03f, 0.05f, 0.95f)), 12, 1.0f);
+        }
     }
 
     private void DrawWorldAxes(ImDrawListPtr drawList, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)

@@ -206,6 +206,14 @@ public class MapDocument
                     brush.AddFace(ParseFace(faceNode.AsObject()));
                 }
             }
+
+            if (obj.TryGetPropertyValue("geometry_mode", out var geometryModeNode) &&
+                string.Equals((string?)geometryModeNode, "editable_mesh", StringComparison.OrdinalIgnoreCase) &&
+                obj.TryGetPropertyValue("editable_mesh", out var editableMeshNode) && editableMeshNode is JsonObject editableMeshObject)
+            {
+                brush.EditableMesh = ParseEditableBrushMesh(editableMeshObject);
+                brush.GeometryMode = BrushGeometryMode.EditableMesh;
+            }
         }
 
         return mo;
@@ -276,6 +284,12 @@ public class MapDocument
                 facesArray.Add(SerializeFace(face));
             }
             j["faces"] = facesArray;
+
+            if (brush.IsEditableMesh)
+            {
+                j["geometry_mode"] = "editable_mesh";
+                j["editable_mesh"] = SerializeEditableBrushMesh(brush.EditableMesh!);
+            }
         }
 
         if (obj.IsModel)
@@ -424,6 +438,110 @@ public class MapDocument
         if (face.MaterialSlot != 0)
             result["material_slot"] = face.MaterialSlot;
 
+        return result;
+    }
+
+    private static EditableBrushMesh ParseEditableBrushMesh(JsonObject source)
+    {
+        var mesh = new EditableBrushMesh
+        {
+            NextVertexId = source.TryGetPropertyValue("next_vertex_id", out var nextVertexNode) ? (int)nextVertexNode! : 1,
+            NextFaceId = source.TryGetPropertyValue("next_face_id", out var nextFaceNode) ? (int)nextFaceNode! : 1
+        };
+
+        if (source.TryGetPropertyValue("vertices", out var verticesNode) && verticesNode is JsonArray vertices)
+        {
+            foreach (JsonNode? node in vertices)
+            {
+                if (node is not JsonObject vertex)
+                    continue;
+                if (!vertex.TryGetPropertyValue("id", out var idNode) || !vertex.TryGetPropertyValue("position", out var positionNode))
+                    continue;
+                mesh.Vertices.Add(new EditableBrushVertex
+                {
+                    Id = (int)idNode!,
+                    Position = Vec3FromJson(positionNode!.AsArray())
+                });
+            }
+        }
+
+        if (source.TryGetPropertyValue("faces", out var facesNode) && facesNode is JsonArray faces)
+        {
+            foreach (JsonNode? node in faces)
+            {
+                if (node is not JsonObject face ||
+                    !face.TryGetPropertyValue("id", out var idNode) ||
+                    !face.TryGetPropertyValue("vertices", out var faceVerticesNode) ||
+                    faceVerticesNode is not JsonArray faceVertices)
+                    continue;
+
+                var parsed = new EditableBrushFace
+                {
+                    Id = (int)idNode!,
+                    Texture = face.TryGetPropertyValue("texture", out var textureNode) ? (string?)textureNode ?? "default" : "default",
+                    MaterialSlot = face.TryGetPropertyValue("material_slot", out var slotNode) ? (int)slotNode! : 0,
+                    UAxis = face.TryGetPropertyValue("u_axis", out var uAxisNode) ? Vec3FromJson(uAxisNode!.AsArray()) : Vector3.UnitX,
+                    VAxis = face.TryGetPropertyValue("v_axis", out var vAxisNode) ? Vec3FromJson(vAxisNode!.AsArray()) : -Vector3.UnitZ,
+                    UScale = face.TryGetPropertyValue("u_scale", out var uScaleNode) ? (float)uScaleNode! : 1.0f,
+                    VScale = face.TryGetPropertyValue("v_scale", out var vScaleNode) ? (float)vScaleNode! : 1.0f,
+                    UOffset = face.TryGetPropertyValue("u_offset", out var uOffsetNode) ? (float)uOffsetNode! : 0.0f,
+                    VOffset = face.TryGetPropertyValue("v_offset", out var vOffsetNode) ? (float)vOffsetNode! : 0.0f,
+                    Rotation = face.TryGetPropertyValue("rotation", out var rotationNode) ? (float)rotationNode! : 0.0f
+                };
+                foreach (JsonNode? vertexId in faceVertices)
+                {
+                    if (vertexId != null)
+                        parsed.Vertices.Add(vertexId.GetValue<int>());
+                }
+                mesh.Faces.Add(parsed);
+            }
+        }
+
+        return mesh;
+    }
+
+    private static JsonObject SerializeEditableBrushMesh(EditableBrushMesh mesh)
+    {
+        var result = new JsonObject
+        {
+            ["next_vertex_id"] = mesh.NextVertexId,
+            ["next_face_id"] = mesh.NextFaceId
+        };
+
+        var vertices = new JsonArray();
+        foreach (EditableBrushVertex vertex in mesh.Vertices)
+        {
+            vertices.Add(new JsonObject
+            {
+                ["id"] = vertex.Id,
+                ["position"] = Vec3ToJson(vertex.Position)
+            });
+        }
+        result["vertices"] = vertices;
+
+        var faces = new JsonArray();
+        foreach (EditableBrushFace face in mesh.Faces)
+        {
+            var faceVertices = new JsonArray();
+            foreach (int vertexId in face.Vertices)
+                faceVertices.Add(vertexId);
+
+            faces.Add(new JsonObject
+            {
+                ["id"] = face.Id,
+                ["vertices"] = faceVertices,
+                ["texture"] = face.Texture,
+                ["material_slot"] = face.MaterialSlot,
+                ["u_axis"] = Vec3ToJson(face.UAxis),
+                ["v_axis"] = Vec3ToJson(face.VAxis),
+                ["u_scale"] = face.UScale,
+                ["v_scale"] = face.VScale,
+                ["u_offset"] = face.UOffset,
+                ["v_offset"] = face.VOffset,
+                ["rotation"] = face.Rotation
+            });
+        }
+        result["faces"] = faces;
         return result;
     }
 

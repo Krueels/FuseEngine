@@ -31,6 +31,10 @@ public static class EditorGizmo
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
         bool isMouseDown = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        // Release must be handled before projection tests. Otherwise a gizmo
+        // whose pivot leaves the viewport can keep its static active axis forever.
+        if (!isMouseDown)
+            Reset();
 
         Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
         uint[] colors = { 0xFF0000FF, 0xFF00FF00, 0xFFFF0000 };
@@ -133,8 +137,6 @@ public static class EditorGizmo
                 }
             }
         }
-
-        if (!isMouseDown) _activeAxis = -1;
 
         // Render planes
         for (int i = 0; i < 3; i++)
@@ -257,6 +259,8 @@ public static class EditorGizmo
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
         bool isMouseDown = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        if (!isMouseDown)
+            Reset();
 
         Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
         uint[] colors = { 0xFF0000FF, 0xFF00FF00, 0xFFFF0000 };
@@ -299,8 +303,6 @@ public static class EditorGizmo
             Ray mouseRay = ScreenToWorldRay(mousePos, view, proj, vpPos, vpSize);
             _dragStartOffset = GetRayAxisIntersection(mouseRay, objectPos, axes[_activeAxis], view);
         }
-
-        if (!isMouseDown) _activeAxis = -1;
 
         for (int i = 0; i < 3; i++)
         {
@@ -363,6 +365,8 @@ public static class EditorGizmo
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
         bool isMouseDown = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        if (!isMouseDown)
+            Reset();
 
         Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
         uint[] colors = { 0xFF0000FF, 0xFF00FF00, 0xFFFF0000 };
@@ -425,8 +429,6 @@ public static class EditorGizmo
             _dragStartAngle = GetRayPlaneAngle(mouseRay, objectPos, axes[_activeAxis]);
         }
 
-        if (!isMouseDown) _activeAxis = -1;
-
         for (int i = 0; i < 3; i++)
         {
             if (axisValidPoints[i] > 1)
@@ -473,6 +475,23 @@ public static class EditorGizmo
 
     public static bool IsHovered { get; private set; }
     public static bool IsUsing() => _activeAxis != -1;
+
+    /// <summary>
+    /// Clears global gizmo ownership when the editor changes context, selection
+    /// or tool. The gizmo is shared by all editor viewports, so this must not
+    /// depend on a later viewport callback to recover from a drag.
+    /// </summary>
+    public static void Reset()
+    {
+        _activeAxis = -1;
+        _dragStartOffset = 0.0f;
+        _dragStartObjectPos = Vector3.Zero;
+        _dragStartHitPos = Vector3.Zero;
+        _dragStartAngle = 0.0f;
+        _dragStartRotation = Quaternion.Identity;
+        _dragStartObjectScale = Vector3.One;
+        IsHovered = false;
+    }
 
     private static bool WorldToScreen(Vector3 worldPos, Matrix4x4 view, Matrix4x4 proj, Vector2 vpPos, Vector2 vpSize, out Vector2 screenPos)
     {

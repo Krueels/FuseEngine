@@ -12,6 +12,9 @@ public static class MeshGenerator
 
     public static MeshData Generate(Brush brush)
     {
+        if (brush.IsEditableMesh)
+            return brush.EditableMesh!.GenerateMeshData();
+
         // Correct degenerate UV projection axes (e.g. U/V parallel to the normal)
         foreach (var face in brush.Faces)
         {

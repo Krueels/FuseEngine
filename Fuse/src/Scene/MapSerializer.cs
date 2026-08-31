@@ -381,14 +381,15 @@ public static class MapSerializer
             Renderer.Mesh? mesh = null;
             System.Numerics.Vector3[]? brushCollVerts = null;
             uint[]? brushCollIndices = null;
+            Brush? loadedBrush = null;
             string modelPath = meshKey;
             if (resPath != null && isModel && !Path.IsPathRooted(meshKey))
                 modelPath = Path.GetFullPath(Path.Combine(resPath, meshKey));
 
             if (isBrush)
             {
-                var brushObj = (Brush)MapDocument.ParseObject(obj);
-                var meshData = MeshGenerator.Generate(brushObj);
+                loadedBrush = (Brush)MapDocument.ParseObject(obj);
+                var meshData = MeshGenerator.Generate(loadedBrush);
                 mesh = new Renderer.Mesh(assets.Gl, meshData.Vertices, meshData.Indices, meshData.LineIndices, meshData.Parts);
                 brushCollVerts = new System.Numerics.Vector3[meshData.Vertices.Length];
                 for (int i = 0; i < meshData.Vertices.Length; i++) brushCollVerts[i] = meshData.Vertices[i].Position;
@@ -576,7 +577,26 @@ public static class MapSerializer
                 {
                     if (isBrush && brushCollVerts != null)
                     {
-                        body.SetConvexHull(brushCollVerts); // Brushes always use ConvexHull
+                        // Plane brushes stay on their legacy convex hull path.
+                        // An editable brush may be concave after face operations,
+                        // so its static collider must use the same triangles that
+                        // were generated for rendering.
+                        if (loadedBrush?.IsEditableMesh == true && brushCollIndices is { Length: > 0 })
+                        {
+                            if (body.Mass > 0.0f)
+                            {
+                                Logger.Warn($"Editable brush '{id}' requested dynamic trimesh collision; using a convex hull instead.");
+                                body.SetConvexHull(brushCollVerts);
+                            }
+                            else
+                            {
+                                body.SetTrimesh(brushCollVerts, brushCollIndices);
+                            }
+                        }
+                        else
+                        {
+                            body.SetConvexHull(brushCollVerts);
+                        }
                     }
                     else
                     {

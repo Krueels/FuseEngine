@@ -5,6 +5,14 @@ namespace Fuse.Scene.Model;
 public class Brush : MapObject
 {
     public List<Face> Faces { get; set; } = new();
+    public BrushGeometryMode GeometryMode { get; set; } = BrushGeometryMode.PlaneCsg;
+    public EditableBrushMesh? EditableMesh { get; set; }
+
+    public bool IsEditableMesh => GeometryMode == BrushGeometryMode.EditableMesh && EditableMesh != null;
+    // CSG still operates on the authored plane list. Once a brush owns polygon
+    // topology, even a currently convex result must not be fed back into the
+    // plane-only CSG implementation or it would discard component edits.
+    public bool SupportsPlaneCsg => !IsEditableMesh;
 
     public void AddFace(Face face)
     {
@@ -13,6 +21,14 @@ public class Brush : MapObject
 
     public void ApplyTransformMatrix(System.Numerics.Matrix4x4 transform)
     {
+        if (IsEditableMesh)
+        {
+            foreach (EditableBrushVertex vertex in EditableMesh!.Vertices)
+                vertex.Position = System.Numerics.Vector3.Transform(vertex.Position, transform);
+            MarkGeometryChanged();
+            return;
+        }
+
         if (System.Numerics.Matrix4x4.Invert(transform, out var inverted))
         {
             var invTranspose = System.Numerics.Matrix4x4.Transpose(inverted);
@@ -36,6 +52,14 @@ public class Brush : MapObject
 
     public void ScalePlanes(System.Numerics.Vector3 scale)
     {
+        if (IsEditableMesh)
+        {
+            foreach (EditableBrushVertex vertex in EditableMesh!.Vertices)
+                vertex.Position *= scale;
+            MarkGeometryChanged();
+            return;
+        }
+
         for (int i = 0; i < Faces.Count; i++)
         {
             var face = Faces[i];
@@ -64,6 +88,54 @@ public class Brush : MapObject
                     Rotation = face.Rotation
                 };
             }
+        }
+    }
+
+    /// <summary>
+    /// Converts a legacy plane brush on demand. This is intentionally lazy: maps
+    /// and CSG continue to use their original representation until the user edits
+    /// a vertex, edge or face in Blowtorch.
+    /// </summary>
+    public EditableBrushMesh EnsureEditableMesh()
+    {
+        if (IsEditableMesh)
+            return EditableMesh!;
+
+        EditableMesh = EditableBrushMesh.FromPlaneBrush(this);
+        GeometryMode = BrushGeometryMode.EditableMesh;
+        MarkGeometryChanged();
+        return EditableMesh;
+    }
+
+    /// <summary>
+    /// Keeps the brush body centered around editable geometry. The local shift is
+    /// moved into the body's world transform so existing placement does not jump.
+    /// </summary>
+    public void MarkGeometryChanged()
+    {
+        if (!IsEditableMesh || Body == null)
+            return;
+
+        System.Numerics.Vector3 localCenter = EditableMesh!.NormalizeOrigin();
+        Body.Position += System.Numerics.Vector3.Transform(localCenter, Body.Rotation);
+        UpdateEditableBounds();
+    }
+
+    /// <summary>
+    /// Refreshes the brush bounds without changing its local origin. Dragging
+    /// component vertices uses this path so the gizmo pivot stays stable until
+    /// the drag is finished.
+    /// </summary>
+    public void UpdateEditableBounds()
+    {
+        EditableBrushMesh? editableMesh = EditableMesh;
+        if (!IsEditableMesh || editableMesh == null || Body == null)
+            return;
+
+        if (editableMesh.TryGetBounds(out System.Numerics.Vector3 min, out System.Numerics.Vector3 max))
+        {
+            Body.HalfExtents = System.Numerics.Vector3.Max(new System.Numerics.Vector3(0.01f), (max - min) * 0.5f);
+            Body.Shape = MapShapeType.Trimesh;
         }
     }
 
