@@ -8,6 +8,8 @@ public class MapObject
 
     public string? Mesh { get; set; }
     public string? Model { get; set; }
+    /// <summary>Optional CPU geometry graph asset, stored relative to res/.</summary>
+    public string? GeometryGraphPath { get; set; }
     public System.Numerics.Vector3 ModelScale { get; set; } = System.Numerics.Vector3.One;
     public System.Numerics.Vector2 UvScale { get; set; } = System.Numerics.Vector2.One;
     public System.Numerics.Vector2 UvOffset { get; set; } = System.Numerics.Vector2.Zero;

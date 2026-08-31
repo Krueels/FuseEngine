@@ -47,6 +47,7 @@ public unsafe class EditorUI : IDisposable
     private bool _showJsonWindow = false;
     private bool _showAssetBrowser = false;
     private readonly MaterialEditorWindow _materialEditor = new();
+    private readonly GeometryGraphEditorWindow _geometryEditor = new();
     private readonly AssetBrowserWindow _assetBrowser = new();
     private bool _newMaterialPopupRequested;
     private string _newMaterialName = "NewMaterial";
@@ -167,7 +168,11 @@ public unsafe class EditorUI : IDisposable
     public bool RequiresContinuousViewportRender =>
         _currentMode == EditorMode.DrawBrush || _isDraggingHandle || EditorGizmo.IsUsing() || ImGui.IsAnyItemActive();
 
-    public void Dispose() => _materialEditor.Dispose();
+    public void Dispose()
+    {
+        _materialEditor.Dispose();
+        _geometryEditor.Dispose();
+    }
 
     public void Draw(
         EditorWindow window,
@@ -287,8 +292,11 @@ public unsafe class EditorUI : IDisposable
             assetService,
             sceneService,
             _materialEditor,
+            _geometryEditor,
             entry => ActivateAssetFromBrowser(entry, sceneService, assetService, history, viewport3D));
         _showAssetBrowser = _assetBrowser.IsOpen;
+
+        _geometryEditor.Draw(assetService, sceneService, inputService);
 
         DrawViewportWindow(window, viewport3D, viewportTop, viewportFront, viewportSide, sceneService, assetService, history, inputService);
 
@@ -336,6 +344,9 @@ public unsafe class EditorUI : IDisposable
             case EditorAssetKind.Skybox:
                 ApplySkyboxFromAsset(entry.RelativePath, sceneService, assetService, history, viewport3D);
                 break;
+            case EditorAssetKind.GeometryGraph:
+                _geometryEditor.Open(entry.RelativePath);
+                break;
         }
     }
 
@@ -367,6 +378,9 @@ public unsafe class EditorUI : IDisposable
                     break;
                 case EditorAssetKind.Skybox:
                     ApplySkyboxFromAsset(path, sceneService, assetService, history, viewport);
+                    break;
+                case EditorAssetKind.GeometryGraph when viewport.Camera.ViewType == CameraViewType.Perspective3D:
+                    AddGeometryGraphFromAsset(path, sceneService, assetService, history, viewport);
                     break;
             }
         }
@@ -411,6 +425,48 @@ public unsafe class EditorUI : IDisposable
         _selectedObjects.Add(obj);
         sceneService.PopulateScene(assetService);
 
+        string post = document.Serialize();
+        sceneService.MarkModified(post);
+        history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+    }
+
+    private void AddGeometryGraphFromAsset(
+        string graphPath,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport)
+    {
+        string fullPath = assetService.ResolveEditorAssetPath(graphPath);
+        if (!File.Exists(fullPath))
+            return;
+
+        MapDocument document = sceneService.Document;
+        string pre = document.Serialize();
+        string baseName = Path.GetFileNameWithoutExtension(graphPath);
+        var obj = new MapObject
+        {
+            Id = baseName,
+            Visible = true,
+            GeometryGraphPath = graphPath.Replace('\\', '/'),
+            MaterialPath = DefaultMaterialPath,
+            Body = new MapBody
+            {
+                Shape = MapShapeType.Trimesh,
+                HalfExtents = new Vector3(0.5f),
+                Position = GetAssetDropPosition(viewport),
+                Rotation = Quaternion.Identity,
+                Mass = 0,
+                Friction = 0.5f,
+                Restitution = 0
+            }
+        };
+        document.Objects.Add(obj);
+        SceneNameManager.EnsureAllUnique(document);
+        _selectedObject = obj;
+        _selectedObjects.Clear();
+        _selectedObjects.Add(obj);
+        sceneService.PopulateScene(assetService);
         string post = document.Serialize();
         sceneService.MarkModified(post);
         history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
@@ -1467,6 +1523,17 @@ public unsafe class EditorUI : IDisposable
                 ImGui.Separator();
                 if (ImGui.MenuItem("Convert Legacy Textures to Materials"))
                     ConvertLegacyTexturesToMaterials(sceneService, assetService, history);
+                ImGui.EndMenu();
+            }
+            if (ImGui.BeginMenu("Geometry"))
+            {
+                if (ImGui.MenuItem("Open Geometry Graph"))
+                    _geometryEditor.OpenStandalone();
+                if (ImGui.MenuItem("Create Geometry Graph"))
+                {
+                    _geometryEditor.OpenStandalone();
+                    _showAssetBrowser = false;
+                }
                 ImGui.EndMenu();
             }
             if (ImGui.BeginMenu("View"))
@@ -4125,6 +4192,40 @@ public unsafe class EditorUI : IDisposable
                     else
                     {
                         ImGui.Text($"Model File: {obj.Model}");
+                    }
+                }
+
+                if (!obj.IsLight && ImGui.CollapsingHeader("Geometry Nodes", ImGuiTreeNodeFlags.DefaultOpen))
+                {
+                    string graphPath = obj.GeometryGraphPath ?? "";
+                    ImGui.TextDisabled("Optional procedural geometry asset");
+                    ImGui.TextWrapped(string.IsNullOrWhiteSpace(graphPath) ? "(None - use the regular mesh/brush)" : graphPath);
+                    if (ImGui.Button("Select Geometry Graph##inspectGeometryGraph"))
+                    {
+                        _showAssetBrowser = true;
+                        _assetBrowser.OpenGeometryPicker(selectedPath =>
+                        {
+                            Undo.RecordState(_frameBeginState);
+                            assetService.InvalidateMesh(obj.Id);
+                            obj.GeometryGraphPath = selectedPath;
+                            sceneService.PopulateScene(assetService);
+                            Undo.ForceEnd(history, sceneService, assetService);
+                        });
+                    }
+                    if (!string.IsNullOrWhiteSpace(graphPath))
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.Button("Open##inspectGeometryGraphOpen"))
+                            _geometryEditor.Open(graphPath);
+                        ImGui.SameLine();
+                        if (ImGui.Button("Clear##inspectGeometryGraphClear"))
+                        {
+                            Undo.RecordState(_frameBeginState);
+                            obj.GeometryGraphPath = null;
+                            assetService.InvalidateMesh(obj.Id);
+                            sceneService.PopulateScene(assetService);
+                            Undo.ForceEnd(history, sceneService, assetService);
+                        }
                     }
                 }
 

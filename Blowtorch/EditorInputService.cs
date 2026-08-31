@@ -7,7 +7,8 @@ namespace Blowtorch;
 public enum EditorInputContext
 {
     Map,
-    MaterialGraph
+    MaterialGraph,
+    GeometryGraph
 }
 
 public unsafe class EditorInputService
@@ -16,6 +17,7 @@ public unsafe class EditorInputService
 
     public bool IsMapContext => ActiveContext == EditorInputContext.Map;
     public bool IsMaterialGraphContext => ActiveContext == EditorInputContext.MaterialGraph;
+    public bool IsGeometryGraphContext => ActiveContext == EditorInputContext.GeometryGraph;
 
     public void Initialize(Glfw glfw, WindowHandle* windowHandle)
     {

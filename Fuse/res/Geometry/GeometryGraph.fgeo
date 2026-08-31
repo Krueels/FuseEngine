@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "name": "GeometryGraph",
+  "nodes": [
+    {
+      "id": "group_input",
+      "type": "GroupInput",
+      "name": "Group Input",
+      "position": [
+        582.95233,
+        76.99801
+      ],
+      "properties": {}
+    },
+    {
+      "id": "group_output",
+      "type": "GroupOutput",
+      "name": "Group Output",
+      "position": [
+        560,
+        150
+      ],
+      "properties": {}
+    },
+    {
+      "id": "fab46d42e2ad45dd8470f8c9f182a1c9",
+      "type": "Cylinder",
+      "name": "Cylinder",
+      "position": [
+        -374.51685,
+        276.73166
+      ],
+      "properties": {
+        "radius": 0.5,
+        "depth": 1,
+        "segments": 24
+      }
+    },
+    {
+      "id": "182e770b4aa34c4ab69bd69a4dc0135d",
+      "type": "Plane",
+      "name": "Plane",
+      "position": [
+        -269.1948,
+        82.12724
+      ],
+      "properties": {
+        "size": [
+          2,
+          2
+        ]
+      }
+    },
+    {
+      "id": "04c40d1837044f23b4f1c6ee5cb10143",
+      "type": "DistributePointsOnFaces",
+      "name": "DistributePointsOnFaces",
+      "position": [
+        1.7642975E-05,
+        111.02389
+      ],
+      "properties": {
+        "density": 4.3,
+        "min": 0.5,
+        "max": 1.9,
+        "seed": 8,
+        "level": 1,
+        "segments": 17
+      }
+    },
+    {
+      "id": "2aaf1346b95547c180375524129e6451",
+      "type": "InstanceOnPoints",
+      "name": "InstanceOnPoints",
+      "position": [
+        252.46533,
+        114.065674
+      ],
+      "properties": {}
+    }
+  ],
+  "links": [
+    {
+      "from_node": "182e770b4aa34c4ab69bd69a4dc0135d",
+      "from_socket": "Geometry",
+      "to_node": "04c40d1837044f23b4f1c6ee5cb10143",
+      "to_socket": "Mesh"
+    },
+    {
+      "from_node": "04c40d1837044f23b4f1c6ee5cb10143",
+      "from_socket": "Geometry",
+      "to_node": "2aaf1346b95547c180375524129e6451",
+      "to_socket": "Points"
+    },
+    {
+      "from_node": "2aaf1346b95547c180375524129e6451",
+      "from_socket": "Geometry",
+      "to_node": "group_output",
+      "to_socket": "Geometry"
+    },
+    {
+      "from_node": "fab46d42e2ad45dd8470f8c9f182a1c9",
+      "from_socket": "Geometry",
+      "to_node": "2aaf1346b95547c180375524129e6451",
+      "to_socket": "Instance"
+    }
+  ]
+}

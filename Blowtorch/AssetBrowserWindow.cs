@@ -17,6 +17,7 @@ public sealed class AssetBrowserWindow
     private string _status = "";
     private bool _refreshRequested = true;
     private Action<string>? _texturePickerCallback;
+    private Action<string>? _geometryPickerCallback;
 
     public bool IsOpen { get; set; }
 
@@ -29,10 +30,21 @@ public sealed class AssetBrowserWindow
         IsOpen = true;
     }
 
+    public void OpenGeometryPicker(Action<string> onSelected)
+    {
+        _geometryPickerCallback = onSelected;
+        _texturePickerCallback = null;
+        _filter = 5;
+        _search = "";
+        _status = "Select a geometry graph.";
+        IsOpen = true;
+    }
+
     public void Draw(
         EditorAssetService assetService,
         EditorSceneService sceneService,
         MaterialEditorWindow materialEditor,
+        GeometryGraphEditorWindow geometryEditor,
         Action<EditorAssetEntry>? activate)
     {
         if (!IsOpen)
@@ -47,13 +59,19 @@ public sealed class AssetBrowserWindow
         {
             IsOpen = open;
             if (!open)
+            {
                 _texturePickerCallback = null;
+                _geometryPickerCallback = null;
+            }
             ImGui.End();
             return;
         }
         IsOpen = open;
         if (!open)
+        {
             _texturePickerCallback = null;
+            _geometryPickerCallback = null;
+        }
 
         if (ImGui.BeginMenuBar())
         {
@@ -66,7 +84,7 @@ public sealed class AssetBrowserWindow
 
         ImGui.InputTextWithHint("##AssetSearch", "Search assets...", ref _search, 256);
         ImGui.SameLine();
-        string[] filters = ["All", "Models", "Materials", "Textures", "Skyboxes"];
+        string[] filters = ["All", "Models", "Materials", "Textures", "Skyboxes", "Geometry Graphs"];
         ImGui.SetNextItemWidth(130);
         ImGui.Combo("##AssetType", ref _filter, filters, filters.Length);
         ImGui.SameLine();
@@ -81,17 +99,17 @@ public sealed class AssetBrowserWindow
         Vector2 available = ImGui.GetContentRegionAvail();
         float detailsWidth = Math.Clamp(available.X * 0.28f, 230, 320);
         ImGui.BeginChild("AssetTiles", new Vector2(MathF.Max(300, available.X - detailsWidth - 8), available.Y), ImGuiChildFlags.Borders);
-        DrawTiles(assetService, materialEditor, activate);
+        DrawTiles(assetService, materialEditor, geometryEditor, activate);
         ImGui.EndChild();
         ImGui.SameLine();
         ImGui.BeginChild("AssetDetails", new Vector2(detailsWidth, available.Y), ImGuiChildFlags.Borders);
-        DrawDetails(assetService, materialEditor, activate);
+        DrawDetails(assetService, materialEditor, geometryEditor, activate);
         ImGui.EndChild();
 
         ImGui.End();
     }
 
-    private void DrawTiles(EditorAssetService assetService, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    private void DrawTiles(EditorAssetService assetService, MaterialEditorWindow materialEditor, GeometryGraphEditorWindow geometryEditor, Action<EditorAssetEntry>? activate)
     {
         const float tileWidth = 142;
         const float tileHeight = 142;
@@ -138,7 +156,7 @@ public sealed class AssetBrowserWindow
             if (clicked)
                 _selectedPath = entry.RelativePath;
             if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-                Activate(entry, materialEditor, activate);
+                Activate(entry, materialEditor, geometryEditor, activate);
 
             if (ImGui.BeginDragDropSource())
             {
@@ -205,7 +223,7 @@ public sealed class AssetBrowserWindow
         draw.AddText(center - new Vector2(12, 7), ImGui.GetColorU32(ImGuiCol.TextDisabled), "3D");
     }
 
-    private void DrawDetails(EditorAssetService assetService, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    private void DrawDetails(EditorAssetService assetService, MaterialEditorWindow materialEditor, GeometryGraphEditorWindow geometryEditor, Action<EditorAssetEntry>? activate)
     {
         EditorAssetEntry? entry = FindSelected();
         if (entry == null)
@@ -225,7 +243,7 @@ public sealed class AssetBrowserWindow
             entry.Kind,
             entry.RelativePath,
             out string currentError,
-            validateContents: entry.Kind == EditorAssetKind.Material);
+            validateContents: entry.Kind is EditorAssetKind.Material or EditorAssetKind.GeometryGraph);
         if (!string.IsNullOrEmpty(currentError))
         {
             entry.Broken = true;
@@ -249,15 +267,16 @@ public sealed class AssetBrowserWindow
         }
 
         ImGui.Spacing();
-        string activateLabel = _texturePickerCallback != null ? "Use Selected Texture" : "Open / Apply";
+        string activateLabel = _texturePickerCallback != null ? "Use Selected Texture"
+            : _geometryPickerCallback != null ? "Use Selected Graph" : "Open / Apply";
         if (ImGui.Button(activateLabel, new Vector2(-1, 0)))
-            Activate(entry, materialEditor, activate);
+            Activate(entry, materialEditor, geometryEditor, activate);
         if (ImGui.Button("Reimport", new Vector2(-1, 0)))
             ReimportSelected(assetService, null, activate);
         ImGui.TextDisabled("Drag this asset to a viewport or to the Material Graph.");
     }
 
-    private void Activate(EditorAssetEntry entry, MaterialEditorWindow materialEditor, Action<EditorAssetEntry>? activate)
+    private void Activate(EditorAssetEntry entry, MaterialEditorWindow materialEditor, GeometryGraphEditorWindow geometryEditor, Action<EditorAssetEntry>? activate)
     {
         _selectedPath = entry.RelativePath;
         if (_texturePickerCallback != null &&
@@ -270,8 +289,19 @@ public sealed class AssetBrowserWindow
             IsOpen = false;
             return;
         }
+        if (_geometryPickerCallback != null && entry.Kind == EditorAssetKind.GeometryGraph)
+        {
+            Action<string> callback = _geometryPickerCallback;
+            _geometryPickerCallback = null;
+            callback(entry.RelativePath);
+            _status = $"Selected {entry.DisplayName}.";
+            IsOpen = false;
+            return;
+        }
         if (entry.Kind == EditorAssetKind.Material)
             materialEditor.Open(entry.RelativePath);
+        if (entry.Kind == EditorAssetKind.GeometryGraph)
+            geometryEditor.Open(entry.RelativePath);
         activate?.Invoke(entry);
     }
 
@@ -287,7 +317,7 @@ public sealed class AssetBrowserWindow
             _refreshRequested = true;
             if (sceneService != null)
             {
-                if (entry.Kind == EditorAssetKind.Model)
+                if (entry.Kind is EditorAssetKind.Model or EditorAssetKind.GeometryGraph)
                     sceneService.PopulateScene(assetService);
                 else
                     sceneService.RefreshMaterials(assetService);
@@ -305,6 +335,7 @@ public sealed class AssetBrowserWindow
         _entries.Clear();
         AddEntries(assetService.EnumerateModels(), EditorAssetKind.Model, assetService);
         AddEntries(assetService.EnumerateMaterials(), EditorAssetKind.Material, assetService);
+        AddEntries(assetService.EnumerateGeometryGraphs(), EditorAssetKind.GeometryGraph, assetService);
         HashSet<string> skyboxes = assetService.EnumerateSkyboxes().ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (string texture in assetService.EnumerateTextures())
             AddEntry(assetService, texture, skyboxes.Contains(texture) ? EditorAssetKind.Skybox : EditorAssetKind.Texture);
@@ -344,6 +375,7 @@ public sealed class AssetBrowserWindow
             2 => EditorAssetKind.Material,
             3 => EditorAssetKind.Texture,
             4 => EditorAssetKind.Skybox,
+            5 => EditorAssetKind.GeometryGraph,
             _ => null
         };
         return _entries.Where(entry =>
@@ -357,6 +389,7 @@ public sealed class AssetBrowserWindow
         EditorAssetKind.Model => "Model",
         EditorAssetKind.Material => "Material",
         EditorAssetKind.Skybox => "Skybox",
+        EditorAssetKind.GeometryGraph => "Geometry Graph",
         _ => "Texture"
     };
 

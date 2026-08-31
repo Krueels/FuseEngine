@@ -142,6 +142,7 @@ public class MapDocument
         mo.ParentId = obj.TryGetPropertyValue("parent", out var parentNode) ? (string)parentNode! : null;
         mo.Mesh = obj.TryGetPropertyValue("mesh", out var meshNode) ? (string)meshNode! : null;
         mo.Model = obj.TryGetPropertyValue("model", out var modelNode) ? (string)modelNode! : null;
+        mo.GeometryGraphPath = obj.TryGetPropertyValue("geometry_graph", out var graphNode) ? (string?)graphNode : null;
         if (obj.TryGetPropertyValue("model_scale", out var scaleNode))
         {
             if (scaleNode is JsonArray arr && arr.Count >= 3)
@@ -318,6 +319,9 @@ public class MapDocument
                 materialSlots.Add(slot);
             j["material_slots"] = materialSlots;
         }
+
+        if (!string.IsNullOrWhiteSpace(obj.GeometryGraphPath))
+            j["geometry_graph"] = obj.GeometryGraphPath.Replace('\\', '/');
 
         // Legacy compatibility. New objects normally use material/material_slots.
         if (!string.IsNullOrEmpty(obj.Texture))

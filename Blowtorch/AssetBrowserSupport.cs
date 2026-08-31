@@ -8,7 +8,8 @@ public enum EditorAssetKind
     Model,
     Material,
     Texture,
-    Skybox
+    Skybox,
+    GeometryGraph
 }
 
 public sealed class EditorAssetEntry

@@ -12,6 +12,7 @@ using Shader = Fuse.Renderer.Shader;
 using Mesh = Fuse.Renderer.Mesh;
 using Texture = Fuse.Renderer.Texture;
 using Fuse.Renderer.Materials;
+using Fuse.Scene.Geometry;
 
 namespace Blowtorch;
 
@@ -33,14 +34,19 @@ public class EditorAssetService : IDisposable
     private ImageBasedLighting? _imageBasedLighting;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, Mesh?> _meshCache = [];
+    private readonly Dictionary<string, GeometryGraphAsset> _liveGeometryGraphs = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _brushMeshKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _geometryMeshKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _catalogLock = new();
     private readonly ConcurrentQueue<string> _pendingTextureInvalidations = new();
     private readonly ConcurrentQueue<string> _pendingMaterialReloads = new();
+    private readonly ConcurrentQueue<string> _pendingGeometryReloads = new();
     private IReadOnlyList<string>? _materialCatalog;
     private IReadOnlyList<string>? _textureCatalog;
+    private IReadOnlyList<string>? _geometryCatalog;
     private FileSystemWatcher? _materialWatcher;
     private FileSystemWatcher? _textureWatcher;
+    private FileSystemWatcher? _geometryWatcher;
     private long _assetRevision;
     private string _fuseResPath = "";
 
@@ -139,6 +145,26 @@ public class EditorAssetService : IDisposable
             .ToArray();
     }
 
+    public IReadOnlyList<string> EnumerateGeometryGraphs()
+    {
+        lock (_catalogLock)
+        {
+            if (_geometryCatalog != null)
+                return _geometryCatalog;
+        }
+
+        string geometryDirectory = Path.Combine(_fuseResPath, "Geometry");
+        if (!Directory.Exists(geometryDirectory))
+            return [];
+        IReadOnlyList<string> catalog = Directory.EnumerateFiles(geometryDirectory, "*.fgeo", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        lock (_catalogLock)
+            _geometryCatalog ??= catalog;
+        return _geometryCatalog;
+    }
+
     public string ResolveEditorAssetPath(string relativePath)
     {
         if (Path.IsPathRooted(relativePath))
@@ -164,13 +190,25 @@ public class EditorAssetService : IDisposable
             return false;
         }
 
-        // Catalog refreshes must remain cheap. Material parsing is deferred to
-        // the details pane so opening Asset Browser never blocks on every .fmat.
-        if (kind != EditorAssetKind.Material || !validateContents)
+        // Catalog refreshes must remain cheap. Material and geometry parsing is
+        // deferred to the details pane so opening Asset Browser never blocks on
+        // every graph asset.
+        if (kind != EditorAssetKind.Material && kind != EditorAssetKind.GeometryGraph || !validateContents)
             return true;
 
         try
         {
+            if (kind == EditorAssetKind.GeometryGraph)
+            {
+                GeometryGraphAsset graph = GeometryGraphAsset.Load(fullPath);
+                if (graph.Graph.FindOutput() == null)
+                {
+                    error = "Geometry graph has no output node.";
+                    return false;
+                }
+                return true;
+            }
+
             MaterialAsset material = MaterialAsset.Load(fullPath);
             foreach (MaterialGraphNode node in material.Graph.Nodes)
             {
@@ -215,6 +253,7 @@ public class EditorAssetService : IDisposable
         {
             _materialCatalog = null;
             _textureCatalog = null;
+            _geometryCatalog = null;
         }
         System.Threading.Interlocked.Increment(ref _assetRevision);
     }
@@ -251,6 +290,10 @@ public class EditorAssetService : IDisposable
                     if (_meshCache.Remove(modelKey, out Mesh? mesh))
                         mesh?.Dispose();
                     _assets.ReloadModel(modelKey);
+                    break;
+                case EditorAssetKind.GeometryGraph:
+                    GeometryGraphCache.Invalidate(fullPath);
+                    InvalidateGeneratedGeometryMeshes();
                     break;
             }
 
@@ -385,10 +428,99 @@ public class EditorAssetService : IDisposable
             if (textureId != 0)
                 _gl.DeleteTexture(textureId);
         }
+
+        bool geometryUsedByScene = false;
+        var processedGeometry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (_pendingGeometryReloads.TryDequeue(out string? geometryPath))
+        {
+            string fullPath = Path.GetFullPath(geometryPath);
+            if (!processedGeometry.Add(fullPath))
+                continue;
+
+            GeometryGraphCache.Invalidate(fullPath);
+            _liveGeometryGraphs.Remove(fullPath);
+            if (sceneService != null && sceneService.Document.Objects.Any(obj =>
+                    !string.IsNullOrWhiteSpace(obj.GeometryGraphPath) &&
+                    PathsEqual(ResolveEditorAssetPath(obj.GeometryGraphPath!), fullPath)))
+            {
+                geometryUsedByScene = true;
+            }
+        }
+
+        if (processedGeometry.Count > 0)
+        {
+            // FileSystemWatcher callbacks run on a worker thread. Dispose and
+            // recreate OpenGL meshes only from the editor/render thread.
+            InvalidateGeneratedGeometryMeshes();
+            if (geometryUsedByScene && sceneService != null)
+                sceneService.PopulateScene(this);
+        }
+    }
+
+    public void InvalidateGeneratedGeometryMeshes()
+    {
+        foreach (string key in _geometryMeshKeys.ToArray())
+        {
+            if (_meshCache.Remove(key, out Mesh? generated))
+                generated?.Dispose();
+        }
+        _geometryMeshKeys.Clear();
+    }
+
+    public void SetLiveGeometryGraph(string graphPath, GeometryGraphAsset graph, EditorSceneService sceneService)
+    {
+        string fullPath = Path.GetFullPath(graphPath);
+        _liveGeometryGraphs[fullPath] = graph;
+        GeometryGraphCache.Invalidate(fullPath);
+        InvalidateGeneratedGeometryMeshes();
+
+        if (sceneService.Document.Objects.Any(obj =>
+                !string.IsNullOrWhiteSpace(obj.GeometryGraphPath) &&
+                PathsEqual(ResolveEditorAssetPath(obj.GeometryGraphPath!), fullPath)))
+        {
+            sceneService.PopulateScene(this);
+            System.Threading.Interlocked.Increment(ref _assetRevision);
+        }
+    }
+
+    public void ClearLiveGeometryGraph(string graphPath, EditorSceneService? sceneService = null)
+    {
+        bool removed = _liveGeometryGraphs.Remove(Path.GetFullPath(graphPath));
+        GeometryGraphCache.Invalidate(graphPath);
+        if (removed && sceneService != null)
+        {
+            InvalidateGeneratedGeometryMeshes();
+            sceneService.PopulateScene(this);
+            System.Threading.Interlocked.Increment(ref _assetRevision);
+        }
     }
 
     public Mesh? GetOrCreateMesh(MapObject mapObj)
     {
+        if (!string.IsNullOrWhiteSpace(mapObj.GeometryGraphPath))
+        {
+            string graphPath = ResolveEditorAssetPath(mapObj.GeometryGraphPath);
+            string cacheKey = $"geometry:{mapObj.Id}";
+            if (_meshCache.TryGetValue(cacheKey, out Mesh? generatedMesh))
+                return generatedMesh;
+
+            MeshData? inputMesh = mapObj is Brush graphBrush ? MeshGenerator.Generate(graphBrush) : null;
+            bool evaluated = _liveGeometryGraphs.TryGetValue(graphPath, out GeometryGraphAsset? liveGraph)
+                ? GeometryGraphEvaluator.TryEvaluate(liveGraph, new GeometryEvaluationContext { InputMesh = inputMesh }, out GeometryEvaluationResult? result, out string error)
+                : GeometryGraphCache.TryEvaluateFile(graphPath, inputMesh, out result, out error);
+            if (evaluated && result != null)
+            {
+                if (!string.IsNullOrWhiteSpace(result.MaterialPath))
+                    mapObj.MaterialPath = result.MaterialPath;
+                generatedMesh = new Mesh(_gl, result.Mesh.Vertices, result.Mesh.Indices, result.Mesh.LineIndices, result.Mesh.Parts);
+                _meshCache[cacheKey] = generatedMesh;
+                _geometryMeshKeys.Add(cacheKey);
+                return generatedMesh;
+            }
+
+            Logger.Warn($"Geometry graph '{mapObj.GeometryGraphPath}' could not be evaluated for '{mapObj.Id}': {error}");
+        }
+
         if (mapObj is Brush brush)
         {
             if (!_meshCache.TryGetValue(brush.Id, out var mesh))
@@ -492,11 +624,16 @@ public class EditorAssetService : IDisposable
 
     public void InvalidateMesh(string key)
     {
-        if (_meshCache.TryGetValue(key, out var mesh))
+        string[] keys = _meshCache.Keys
+            .Where(candidate => candidate.Equals(key, StringComparison.OrdinalIgnoreCase) ||
+                                candidate.Equals($"geometry:{key}", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        foreach (string cacheKey in keys)
         {
-            mesh?.Dispose();
-            _meshCache.Remove(key);
-            _brushMeshKeys.Remove(key);
+            if (_meshCache.Remove(cacheKey, out Mesh? mesh))
+                mesh?.Dispose();
+            _brushMeshKeys.Remove(cacheKey);
+            _geometryMeshKeys.Remove(cacheKey);
         }
     }
 
@@ -510,12 +647,19 @@ public class EditorAssetService : IDisposable
             }
         }
         _brushMeshKeys.Clear();
+        foreach (string key in _geometryMeshKeys.ToArray())
+        {
+            if (_meshCache.Remove(key, out Mesh? mesh))
+                mesh?.Dispose();
+        }
+        _geometryMeshKeys.Clear();
     }
 
     public void Dispose()
     {
         _materialWatcher?.Dispose();
         _textureWatcher?.Dispose();
+        _geometryWatcher?.Dispose();
         foreach (var texId in _texCache.Values)
         {
             if (texId != 0) _gl.DeleteTexture(texId);
@@ -531,6 +675,7 @@ public class EditorAssetService : IDisposable
     {
         string materials = Path.Combine(_fuseResPath, "Materials");
         string textures = Path.Combine(_fuseResPath, "Textures");
+        string geometry = Path.Combine(_fuseResPath, "Geometry");
         if (Directory.Exists(materials))
         {
             _materialWatcher = CreateWatcher(materials, "*.fmat", (_, args) =>
@@ -559,6 +704,15 @@ public class EditorAssetService : IDisposable
                 System.Threading.Interlocked.Increment(ref _assetRevision);
             });
         }
+        if (Directory.Exists(geometry))
+        {
+            _geometryWatcher = CreateWatcher(geometry, "*.fgeo", (_, args) =>
+            {
+                lock (_catalogLock) _geometryCatalog = null;
+                _pendingGeometryReloads.Enqueue(args.FullPath);
+                System.Threading.Interlocked.Increment(ref _assetRevision);
+            });
+        }
     }
 
     private static FileSystemWatcher CreateWatcher(
@@ -578,6 +732,9 @@ public class EditorAssetService : IDisposable
         watcher.Renamed += (_, args) => handler(watcher, args);
         return watcher;
     }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 
     private string NormalizeTexturePath(string path)
     {

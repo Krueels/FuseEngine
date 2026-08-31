@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Fuse.Core;
 using Fuse.Physics;
 using Fuse.Scene.Model;
+using Fuse.Scene.Geometry;
 
 namespace Fuse.Scene;
 
@@ -153,6 +154,9 @@ public static class MapSerializer
                     slots.Add(materialPath);
                 obj["material_slots"] = slots;
             }
+
+            if (e.MapData != null && e.MapData.TryGetPropertyValue("geometry_graph", out var graphNode) && graphNode != null)
+                obj["geometry_graph"] = (string?)graphNode;
 
             if (!string.IsNullOrEmpty(e.InteractableType))
                 obj["interactable"] = e.InteractableType;
@@ -336,6 +340,8 @@ public static class MapSerializer
                 ? (string)modelNode!
                 : (obj.TryGetPropertyValue("mesh", out var meshNode)
                     ? (string)meshNode! : (isBrush ? id : ""));
+            string geometryGraphPath = obj.TryGetPropertyValue("geometry_graph", out var graphPathNode)
+                ? (string?)graphPathNode ?? "" : "";
 
             Vector3 modelScale = Vector3.One;
             if (obj.TryGetPropertyValue("model_scale", out var scaleNode))
@@ -379,6 +385,7 @@ public static class MapSerializer
             }
 
             Renderer.Mesh? mesh = null;
+            MeshData? generatedGeometry = null;
             System.Numerics.Vector3[]? brushCollVerts = null;
             uint[]? brushCollIndices = null;
             Brush? loadedBrush = null;
@@ -390,10 +397,7 @@ public static class MapSerializer
             {
                 loadedBrush = (Brush)MapDocument.ParseObject(obj);
                 var meshData = MeshGenerator.Generate(loadedBrush);
-                mesh = new Renderer.Mesh(assets.Gl, meshData.Vertices, meshData.Indices, meshData.LineIndices, meshData.Parts);
-                brushCollVerts = new System.Numerics.Vector3[meshData.Vertices.Length];
-                for (int i = 0; i < meshData.Vertices.Length; i++) brushCollVerts[i] = meshData.Vertices[i].Position;
-                brushCollIndices = meshData.Indices;
+                generatedGeometry = meshData;
             }
             else if (isModel)
             {
@@ -403,6 +407,35 @@ public static class MapSerializer
             else
             {
                 mesh = assets.GetMesh(meshKey);
+            }
+
+            if (!string.IsNullOrWhiteSpace(geometryGraphPath))
+            {
+                string graphPath = geometryGraphPath.Replace('\\', '/');
+                if (graphPath.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+                    graphPath = graphPath[4..];
+                string fullGraphPath = resPath == null || Path.IsPathRooted(graphPath)
+                    ? Path.GetFullPath(graphPath)
+                    : Path.GetFullPath(Path.Combine(resPath, graphPath));
+                if (GeometryGraphCache.TryEvaluateFile(fullGraphPath, generatedGeometry, out GeometryEvaluationResult? evaluated, out string graphError) && evaluated != null)
+                {
+                    generatedGeometry = evaluated.Mesh;
+                    mesh = new Renderer.Mesh(assets.Gl, generatedGeometry.Vertices, generatedGeometry.Indices,
+                        generatedGeometry.LineIndices, generatedGeometry.Parts);
+                    if (!string.IsNullOrWhiteSpace(evaluated.MaterialPath))
+                        materialPath = evaluated.MaterialPath;
+                }
+                else
+                {
+                    Logger.Warn($"Map load: geometry graph '{geometryGraphPath}' failed for '{id}': {graphError}");
+                }
+            }
+
+            if (generatedGeometry != null)
+            {
+                brushCollVerts = new System.Numerics.Vector3[generatedGeometry.Vertices.Length];
+                for (int i = 0; i < generatedGeometry.Vertices.Length; i++) brushCollVerts[i] = generatedGeometry.Vertices[i].Position;
+                brushCollIndices = generatedGeometry.Indices;
             }
 
             // Check for inline light properties
@@ -455,7 +488,7 @@ public static class MapSerializer
             }
 
             var entity = scene.Add(mesh, id);
-            entity.MeshOwnedByEntity = isBrush;
+            entity.MeshOwnedByEntity = isBrush || generatedGeometry != null && !string.IsNullOrWhiteSpace(geometryGraphPath);
             entity.MapData = obj;
             entity.MeshKey = meshKey;
             entity.MaterialPath = materialPath;
@@ -575,7 +608,14 @@ public static class MapSerializer
 
                 if (isTrimesh || isConvexHull)
                 {
-                    if (isBrush && brushCollVerts != null)
+                    if (generatedGeometry != null && brushCollVerts != null)
+                    {
+                        if (isConvexHull || body.Mass > 0.0f)
+                            body.SetConvexHull(brushCollVerts);
+                        else
+                            body.SetTrimesh(brushCollVerts, brushCollIndices ?? []);
+                    }
+                    else if (isBrush && brushCollVerts != null)
                     {
                         // Plane brushes stay on their legacy convex hull path.
                         // An editable brush may be concave after face operations,
