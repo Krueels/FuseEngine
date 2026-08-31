@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
 using ImGuiNET;
 using Fuse.Core;
 using Fuse.Renderer.Materials;
@@ -31,10 +32,12 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     private MaterialPreviewShape _previewShape = MaterialPreviewShape.Cube;
     private float _previewYaw = 0.72f;
     private float _previewPitch = -0.32f;
+    private int _previewOutputMode;
     private bool _previewDragging;
     private string _previewSignature = "";
     private string _failedPreviewSignature = "";
     private string _materialFilter = "";
+    private string _nodeSearch = "";
     private Vector2 _contextMenuPosition;
     private string _hoveredNodeId = "";
     private string _contextNodeId = "";
@@ -49,6 +52,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     private enum PendingMaterialAction { None, Open, Reload, Close }
     private PendingMaterialAction _pendingMaterialAction;
     private readonly Dictionary<string, (long Stamp, Vector4 Color)> _materialSwatches = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<MaterialGraphNode> _clipboardNodes = [];
+    private readonly List<MaterialGraphLink> _clipboardLinks = [];
+    private string _instanceName = "MaterialInstance";
+    private bool _showCreateInstanceDialog;
 
     public bool IsOpen { get; private set; }
     public string CurrentPath => _path;
@@ -119,6 +126,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             DisposePreviewMaterial();
             _previewSignature = "";
             _failedPreviewSignature = "";
+            _previewOutputMode = 0;
             IsOpen = true;
         }
         catch (Exception ex)
@@ -211,6 +219,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
 
         ImGui.End();
         DrawUnsavedMaterialDialog(assetService, sceneService);
+        DrawCreateInstanceDialog(assetService, sceneService);
     }
 
     private void DrawMaterialGallery(EditorAssetService assetService)
@@ -291,9 +300,28 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 OpenImmediate(_path);
             }
         }
+        if (ImGui.MenuItem("Create Material Instance...", "", false, _asset != null))
+            CreateMaterialInstance(assetService);
+
+        if (ImGui.BeginMenu("Edit", _asset != null))
+        {
+            if (ImGui.MenuItem("Copy Nodes", "Ctrl+C", false, _selectedNodeIds.Count > 0))
+                CopySelectedNodes();
+            if (ImGui.MenuItem("Paste Nodes", "Ctrl+V", false, _clipboardNodes.Count > 0))
+                PasteNodes(_contextMenuPosition == Vector2.Zero ? ImGui.GetMousePos() : _contextMenuPosition);
+            if (ImGui.MenuItem("Duplicate Nodes", "Ctrl+D", false, _selectedNodeIds.Count > 0))
+                DuplicateSelectedNodes();
+            ImGui.Separator();
+            if (ImGui.MenuItem("Create Frame / Group", "Ctrl+G", false, _selectedNodeIds.Count > 0))
+                CreateFrameForSelection();
+            if (ImGui.MenuItem("Auto Layout", "Ctrl+L", false, _asset != null))
+                AutoLayout();
+            ImGui.EndMenu();
+        }
 
         if (ImGui.BeginMenu("Add Node", _asset != null))
         {
+            ImGui.InputTextWithHint("##AddNodeSearch", "Search nodes...", ref _nodeSearch, 96);
             DrawAddNodeItems(ImGui.GetMousePos());
             ImGui.EndMenu();
         }
@@ -306,10 +334,12 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 ZoomFromMenu(_canvasZoom / CanvasZoomStep);
             if (ImGui.MenuItem("Reset Zoom"))
                 ZoomFromMenu(1.0f);
-            if (ImGui.MenuItem("Frame All", "Home"))
+            if (ImGui.MenuItem("Frame All", "Home", false, _asset != null))
                 FrameNodes(_asset!.Graph.Nodes);
             if (ImGui.MenuItem("Frame Selected", "F", false, _selectedNodeIds.Count > 0))
                 FrameNodes(_asset!.Graph.Nodes.Where(node => _selectedNodeIds.Contains(node.Id)));
+            if (ImGui.MenuItem("Auto Layout", "Ctrl+L", false, _asset != null))
+                AutoLayout();
             ImGui.Separator();
             ImGui.TextDisabled($"Zoom: {_canvasZoom * 100.0f:0}%");
             ImGui.TextDisabled("Mouse wheel over canvas");
@@ -338,6 +368,21 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.A) && _asset != null)
             SetSelection(_asset.Graph.Nodes.Select(node => node.Id), false);
 
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.C) && _selectedNodeIds.Count > 0)
+            CopySelectedNodes();
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.V) && _clipboardNodes.Count > 0)
+            PasteNodes(ImGui.GetMousePos());
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.D) && _selectedNodeIds.Count > 0)
+            DuplicateSelectedNodes();
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.G) && _selectedNodeIds.Count > 0)
+            CreateFrameForSelection();
+
+        if (ImGui.GetIO().KeyCtrl && ImGui.IsKeyPressed(ImGuiKey.L) && _asset != null)
+            AutoLayout();
+
         if (ImGui.IsKeyPressed(ImGuiKey.Home) && _asset != null)
             FrameNodes(_asset.Graph.Nodes);
 
@@ -362,6 +407,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         MaterialGraph graph = _asset.Graph;
         foreach (MaterialNodeDefinition definition in MaterialNodeCatalog.Definitions)
         {
+            if (!string.IsNullOrWhiteSpace(_nodeSearch) &&
+                !definition.DisplayName.Contains(_nodeSearch, StringComparison.OrdinalIgnoreCase) &&
+                !definition.Type.Contains(_nodeSearch, StringComparison.OrdinalIgnoreCase))
+                continue;
             bool alreadyHasOutput = definition.Type == "PBROutput" && graph.FindOutput() != null;
             if (!ImGui.MenuItem(definition.DisplayName, "", false, !alreadyHasOutput))
                 continue;
@@ -435,6 +484,194 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         _dirty = true;
     }
 
+    private void CopySelectedNodes()
+    {
+        if (_asset == null || _selectedNodeIds.Count == 0)
+            return;
+
+        _clipboardNodes.Clear();
+        _clipboardLinks.Clear();
+        _clipboardNodes.AddRange(_asset.Graph.Nodes
+            .Where(node => _selectedNodeIds.Contains(node.Id))
+            .Select(node => node.Clone()));
+        _clipboardLinks.AddRange(_asset.Graph.Links
+            .Where(link => _selectedNodeIds.Contains(link.FromNode) && _selectedNodeIds.Contains(link.ToNode))
+            .Select(link => link.Clone()));
+        _status = $"Copied {_clipboardNodes.Count} node(s).";
+    }
+
+    private void PasteNodes(Vector2 screenPosition)
+    {
+        if (_asset == null || _clipboardNodes.Count == 0)
+            return;
+
+        Vector2 origin = _clipboardNodes.Aggregate(Vector2.Zero, (sum, node) => sum + node.Position) / _clipboardNodes.Count;
+        Vector2 target = screenPosition == Vector2.Zero || _lastCanvasMin == Vector2.Zero
+            ? origin + new Vector2(40, 40)
+            : (screenPosition - _lastCanvasMin - _canvasPan) / _canvasZoom;
+        Vector2 offset = target - origin;
+        var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pasted = new List<MaterialGraphNode>(_clipboardNodes.Count);
+
+        foreach (MaterialGraphNode source in _clipboardNodes)
+        {
+            MaterialGraphNode node = source.Clone();
+            node.Id = Guid.NewGuid().ToString("N");
+            node.Position += offset;
+            idMap[source.Id] = node.Id;
+            pasted.Add(node);
+            _asset.Graph.Nodes.Add(node);
+        }
+
+        foreach (MaterialGraphLink source in _clipboardLinks)
+        {
+            if (idMap.TryGetValue(source.FromNode, out string? from) && idMap.TryGetValue(source.ToNode, out string? to))
+                _asset.Graph.Links.Add(new MaterialGraphLink
+                {
+                    FromNode = from,
+                    FromSocket = source.FromSocket,
+                    ToNode = to,
+                    ToSocket = source.ToSocket
+                });
+        }
+
+        SetSelection(pasted.Select(node => node.Id), false);
+        _dirty = true;
+        _status = $"Pasted {pasted.Count} node(s).";
+    }
+
+    private void DuplicateSelectedNodes()
+    {
+        CopySelectedNodes();
+        if (_clipboardNodes.Count > 0)
+            PasteNodes(Vector2.Zero);
+    }
+
+    private void CreateFrameForSelection()
+    {
+        if (_asset == null || _selectedNodeIds.Count == 0)
+            return;
+
+        MaterialGraphNode[] selected = _asset.Graph.Nodes
+            .Where(node => _selectedNodeIds.Contains(node.Id) && node.Type is not "Frame" and not "Comment")
+            .ToArray();
+        if (selected.Length == 0)
+            return;
+
+        Vector2 min = selected.Select(node => node.Position).Aggregate(Vector2.Min);
+        Vector2 max = selected.Select(node => node.Position + GetNodeSize(node)).Aggregate(Vector2.Max);
+        const float padding = 28.0f;
+        MaterialGraphNode frame = MaterialNodeCatalog.CreateNode("Frame", min - new Vector2(padding));
+        frame.Name = MaterialAsset.GetString(frame.Properties, "comment", "Group");
+        frame.Properties["width"] = MathF.Max(220, max.X - min.X + padding * 2);
+        frame.Properties["height"] = MathF.Max(120, max.Y - min.Y + padding * 2);
+        _asset.Graph.Nodes.Insert(0, frame);
+        foreach (MaterialGraphNode node in selected)
+            node.Properties["frame_id"] = frame.Id;
+        SelectNode(frame.Id, false);
+        _dirty = true;
+        _status = "Frame created around selected nodes.";
+    }
+
+    private void AutoLayout()
+    {
+        if (_asset == null)
+            return;
+
+        MaterialGraph graph = _asset.Graph;
+        MaterialGraphNode[] nodes = graph.Nodes
+            .Where(node => node.Type is not "Frame" and not "Comment")
+            .ToArray();
+        MaterialGraphNode? output = graph.FindOutput();
+        if (nodes.Length == 0 || output == null)
+            return;
+
+        var depths = new Dictionary<string, int>(StringComparer.Ordinal) { [output.Id] = 0 };
+        var pending = new Queue<string>();
+        pending.Enqueue(output.Id);
+        while (pending.Count > 0)
+        {
+            string targetId = pending.Dequeue();
+            int targetDepth = depths[targetId];
+            foreach (MaterialGraphLink link in graph.Links.Where(candidate => candidate.ToNode == targetId))
+            {
+                if (depths.ContainsKey(link.FromNode))
+                    continue;
+                depths[link.FromNode] = targetDepth + 1;
+                pending.Enqueue(link.FromNode);
+            }
+        }
+
+        int fallbackDepth = depths.Values.DefaultIfEmpty(0).Max() + 1;
+        foreach (MaterialGraphNode node in nodes)
+        {
+            int depth = depths.GetValueOrDefault(node.Id, fallbackDepth);
+            int index = nodes.Where(candidate =>
+                    depths.GetValueOrDefault(candidate.Id, fallbackDepth) == depth)
+                .OrderBy(candidate => candidate.Id, StringComparer.Ordinal)
+                .ToList().IndexOf(node);
+            node.Position = new Vector2(720 - depth * 260, 80 + Math.Max(0, index) * 150);
+        }
+
+        _dirty = true;
+        _status = "Graph automatically arranged.";
+    }
+
+    private void CreateMaterialInstance(EditorAssetService assetService)
+    {
+        if (_asset == null || string.IsNullOrWhiteSpace(_path))
+            return;
+        _instanceName = _asset.Name + "_Instance";
+        _showCreateInstanceDialog = true;
+    }
+
+    private void DrawCreateInstanceDialog(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!_showCreateInstanceDialog || _asset == null)
+            return;
+
+        ImGui.OpenPopup("Create Material Instance");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Create Material Instance", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextUnformatted("Create an editable material instance from the current graph.");
+            ImGui.InputText("Name", ref _instanceName, 128);
+            ImGui.Separator();
+            if (ImGui.Button("Create", new Vector2(110, 0)))
+            {
+                string safeName = string.Join("_", _instanceName.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+                if (string.IsNullOrWhiteSpace(safeName))
+                    safeName = "MaterialInstance";
+                string directory = Path.GetDirectoryName(_path)!;
+                string instancePath = Path.Combine(directory, safeName + ".fmat");
+                int suffix = 2;
+                while (File.Exists(instancePath))
+                    instancePath = Path.Combine(directory, $"{safeName}_{suffix++}.fmat");
+
+                MaterialAsset instance = _asset.Clone();
+                instance.Name = Path.GetFileNameWithoutExtension(instancePath);
+                instance.ParentMaterialPath = MaterialAsset.NormalizeAssetPath(
+                    Path.GetRelativePath(assetService.FuseResPath, _path));
+                instance.ParameterOverrides.Clear();
+                instance.Save(instancePath);
+                assetService.ReloadMaterial(instancePath);
+                sceneService.RefreshMaterials(assetService);
+                _showCreateInstanceDialog = false;
+                ImGui.CloseCurrentPopup();
+                OpenImmediate(instancePath);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(110, 0)))
+            {
+                _showCreateInstanceDialog = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+        if (!open)
+            _showCreateInstanceDialog = false;
+    }
+
     private void DrawCanvas(EditorAssetService assetService)
     {
         MaterialGraph graph = _asset!.Graph;
@@ -459,6 +696,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         if (canvasHovered && ImGui.IsMouseDragging(ImGuiMouseButton.Middle))
             _canvasPan += ImGui.GetIO().MouseDelta;
 
+        MaterialGraphNode[] nodes = graph.Nodes.ToArray();
+        foreach (MaterialGraphNode frame in nodes.Where(node => node.Type is "Frame" or "Comment"))
+            DrawNode(frame, canvasMin, mouse, drawList);
+
         foreach (MaterialGraphLink link in graph.Links)
         {
             MaterialGraphNode? from = graph.FindNode(link.FromNode);
@@ -472,8 +713,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 ImGui.ColorConvertFloat4ToU32(new Vector4(0.82f, 0.64f, 0.2f, 1)), 2.5f);
         }
 
-        MaterialGraphNode[] nodes = graph.Nodes.ToArray();
-        foreach (MaterialGraphNode node in nodes)
+        foreach (MaterialGraphNode node in nodes.Where(node => node.Type is not "Frame" and not "Comment"))
             DrawNode(node, canvasMin, mouse, drawList);
 
         if (_draggingNodes)
@@ -483,8 +723,15 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 Vector2 delta = (mouse - _nodeDragLastMouse) / _canvasZoom;
                 if (delta.LengthSquared() > 0.000001f)
                 {
-                    foreach (MaterialGraphNode selectedNode in graph.Nodes
-                                 .Where(selectedNode => _selectedNodeIds.Contains(selectedNode.Id)))
+                    HashSet<string> movingIds = _selectedNodeIds.ToHashSet(StringComparer.Ordinal);
+                    foreach (MaterialGraphNode selectedFrame in graph.Nodes.Where(node =>
+                                 _selectedNodeIds.Contains(node.Id) && node.Type == "Frame"))
+                    {
+                        foreach (MaterialGraphNode child in graph.Nodes.Where(node =>
+                                     MaterialAsset.GetString(node.Properties, "frame_id", "") == selectedFrame.Id))
+                            movingIds.Add(child.Id);
+                    }
+                    foreach (MaterialGraphNode selectedNode in graph.Nodes.Where(node => movingIds.Contains(node.Id)))
                     {
                         selectedNode.Position += delta;
                     }
@@ -558,6 +805,20 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 if (ImGui.MenuItem("Select"))
                     SelectNode(contextNode.Id, ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift);
 
+                if (ImGui.MenuItem("Copy"))
+                {
+                    SelectNode(contextNode.Id, false);
+                    CopySelectedNodes();
+                }
+                if (ImGui.MenuItem("Duplicate", "Ctrl+D"))
+                {
+                    SelectNode(contextNode.Id, false);
+                    DuplicateSelectedNodes();
+                }
+                if (ImGui.MenuItem("Create Frame Around Selection", "Ctrl+G", false,
+                        _selectedNodeIds.Count > 0))
+                    CreateFrameForSelection();
+
                 bool canDelete = contextNode.Type != "PBROutput";
                 if (ImGui.MenuItem("Delete Node", "Delete", false, canDelete))
                 {
@@ -572,9 +833,14 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         {
             if (ImGui.BeginMenu("Add Node"))
             {
+                ImGui.InputTextWithHint("##ContextAddNodeSearch", "Search nodes...", ref _nodeSearch, 96);
                 DrawAddNodeItems(_contextMenuPosition);
                 ImGui.EndMenu();
             }
+            if (ImGui.MenuItem("Paste", "Ctrl+V", false, _clipboardNodes.Count > 0))
+                PasteNodes(_contextMenuPosition);
+            if (ImGui.MenuItem("Auto Layout", "Ctrl+L", false, _asset != null))
+                AutoLayout();
             if (ImGui.MenuItem("Reset View"))
             {
                 _canvasPan = new Vector2(40, 40);
@@ -620,7 +886,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                         node.Name = Path.GetFileNameWithoutExtension(AssetDragDrop.CurrentPath);
                         node.Properties["path"] = MaterialAsset.NormalizeAssetPath(AssetDragDrop.CurrentPath);
                         node.Properties["color_space"] = "sRGB";
-                        _asset.Graph.Nodes.Add(node);
+                        graph.Nodes.Add(node);
                         SelectNode(node.Id, false);
                         _dirty = true;
                         _status = "Texture node added from Asset Browser.";
@@ -642,10 +908,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         if (definition == null)
             return;
 
-        int rowCount = Math.Max(1, Math.Max(definition.Inputs.Length, definition.Outputs.Length));
-        float height = HeaderHeight + 12 + rowCount * SocketSpacing;
+        Vector2 nodeSize = GetNodeSize(node);
+        float height = nodeSize.Y;
         Vector2 min = canvasMin + _canvasPan + node.Position * _canvasZoom;
-        Vector2 max = min + new Vector2(NodeWidth, height) * _canvasZoom;
+        Vector2 max = min + nodeSize * _canvasZoom;
         if (mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y)
             _hoveredNodeId = node.Id;
         bool selected = _selectedNodeIds.Contains(node.Id);
@@ -656,20 +922,33 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         uint bodyColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.12f, 0.13f, 0.16f, 0.98f));
         uint headerColor = ImGui.ColorConvertFloat4ToU32(node.Type == "PBROutput"
             ? new Vector4(0.42f, 0.16f, 0.12f, 1)
+            : node.Type == "Frame"
+                ? new Vector4(0.18f, 0.36f, 0.55f, 0.92f)
+                : node.Type == "Comment"
+                    ? new Vector4(0.34f, 0.30f, 0.16f, 0.95f)
             : new Vector4(0.14f, 0.28f, 0.42f, 1));
         uint borderColor = ImGui.ColorConvertFloat4ToU32(selected
             ? new Vector4(1, 0.58f, 0.16f, 1)
             : new Vector4(0.35f, 0.38f, 0.44f, 1));
 
+        if (node.Type is "Frame" or "Comment")
+        {
+            Vector3 frameColor = MaterialAsset.GetVector3(node.Properties, "color",
+                node.Type == "Comment" ? new Vector3(0.34f, 0.30f, 0.16f) : new Vector3(0.18f, 0.32f, 0.48f));
+            bodyColor = ImGui.ColorConvertFloat4ToU32(new Vector4(frameColor, 0.16f));
+        }
         drawList.AddRectFilled(min, max, bodyColor, rounding);
         drawList.AddRectFilled(min, min + new Vector2(NodeWidth, HeaderHeight) * _canvasZoom, headerColor, rounding,
             ImDrawFlags.RoundCornersTop);
         drawList.AddRect(min, max, borderColor, rounding, ImDrawFlags.None,
             (selected ? 2.5f : 1.0f) * MathF.Max(0.65f, _canvasZoom));
-        drawList.AddText(ImGui.GetFont(), fontSize, min + new Vector2(10, 6) * _canvasZoom, 0xffffffff, node.Name);
+        string title = node.Type is "Frame" or "Comment"
+            ? MaterialAsset.GetString(node.Properties, "comment", node.Name)
+            : node.Name;
+        drawList.AddText(ImGui.GetFont(), fontSize, min + new Vector2(10, 6) * _canvasZoom, 0xffffffff, title);
 
         ImGui.SetCursorScreenPos(min);
-        ImGui.InvisibleButton($"node_surface_{node.Id}", new Vector2(NodeWidth, height) * _canvasZoom);
+        ImGui.InvisibleButton($"node_surface_{node.Id}", nodeSize * _canvasZoom);
         if (ImGui.IsItemClicked())
         {
             bool additive = ImGui.GetIO().KeyCtrl || ImGui.GetIO().KeyShift;
@@ -689,6 +968,9 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 _nodeDragLastMouse = mouse;
             }
         }
+
+        if (node.Type is "Frame" or "Comment")
+            return;
 
         float pinHitRadius = MathF.Max(8.0f, 8.0f * _canvasZoom);
         float pinHitRadiusSquared = pinHitRadius * pinHitRadius;
@@ -755,8 +1037,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         if (sourceNode == null || sourceSocket == null)
             return;
 
-        bool compatible = sourceSocket.Value.Type == targetType ||
-            sourceSocket.Value.Type == MaterialValueType.Float || targetType == MaterialValueType.Float;
+        bool compatible = MaterialGraphValidator.CanConvert(sourceSocket.Value.Type, targetType);
         if (!compatible)
         {
             _status = $"Cannot connect {sourceSocket.Value.Type} to {targetType}.";
@@ -774,12 +1055,17 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         _pendingNodeId = "";
         _pendingSocket = "";
         _dirty = true;
-        _status = "";
+        _status = sourceSocket.Value.Type == targetType
+            ? ""
+            : $"Connected with automatic {sourceSocket.Value.Type} → {targetType} conversion.";
     }
 
     private void DrawInspector(EditorAssetService assetService, Action? openTextureBrowser)
     {
         DrawPreview(assetService);
+        DrawGraphDiagnostics();
+        DrawOutputPreviews();
+        DrawExposedParameters();
         ImGui.TextUnformatted("Material Settings");
         ImGui.Separator();
         string name = _asset!.Name;
@@ -872,6 +1158,220 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         }
     }
 
+    private void DrawGraphDiagnostics()
+    {
+        IReadOnlyList<MaterialGraphDiagnostic> diagnostics = MaterialGraphValidator.Validate(_asset!);
+        string label = diagnostics.Any(diagnostic => diagnostic.Severity == MaterialGraphDiagnosticSeverity.Error)
+            ? $"Validation ({diagnostics.Count} issue(s))"
+            : diagnostics.Count == 0 ? "Validation (OK)" : $"Validation ({diagnostics.Count} warning(s))";
+        if (!ImGui.CollapsingHeader(label, ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        if (diagnostics.Count == 0)
+        {
+            ImGui.TextColored(new Vector4(0.35f, 0.9f, 0.5f, 1), "Graph is valid.");
+            return;
+        }
+
+        foreach (MaterialGraphDiagnostic diagnostic in diagnostics.Take(12))
+        {
+            Vector4 color = diagnostic.Severity switch
+            {
+                MaterialGraphDiagnosticSeverity.Error => new Vector4(1, 0.3f, 0.25f, 1),
+                MaterialGraphDiagnosticSeverity.Warning => new Vector4(1, 0.75f, 0.25f, 1),
+                _ => new Vector4(0.55f, 0.75f, 1, 1)
+            };
+            ImGui.TextColored(color, $"[{diagnostic.Severity}] {diagnostic.Message}");
+        }
+        if (diagnostics.Count > 12)
+            ImGui.TextDisabled($"...and {diagnostics.Count - 12} more.");
+    }
+
+    private void DrawOutputPreviews()
+    {
+        if (!ImGui.CollapsingHeader("Output Previews", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+
+        MaterialGraphNode? output = _asset!.Graph.FindOutput();
+        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find("PBROutput");
+        if (output == null || definition == null)
+        {
+            ImGui.TextDisabled("Add a Material Output node to preview outputs.");
+            return;
+        }
+
+        foreach (MaterialSocketDefinition socket in definition.Inputs)
+        {
+            Vector4 color = EvaluateOutputPreview(output, socket.Name, 0);
+            MaterialGraphLink? link = _asset.Graph.Links.LastOrDefault(candidate =>
+                candidate.ToNode == output.Id && candidate.ToSocket == socket.Name);
+            if (ImGui.ColorButton($"##output_preview_{socket.Name}", color,
+                ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoDragDrop, new Vector2(18, 18)))
+            {
+                _previewOutputMode = OutputPreviewMode(socket.Name);
+            }
+            ImGui.SameLine();
+            string active = _previewOutputMode == OutputPreviewMode(socket.Name) ? " [previewing]" : "";
+            ImGui.TextDisabled($"{socket.Name}: {(link == null ? "default" : "connected")}{active}");
+        }
+    }
+
+    private static int OutputPreviewMode(string socket) => socket switch
+    {
+        "BaseColor" => 1,
+        "Normal" => 2,
+        "Roughness" => 3,
+        "Metallic" => 4,
+        "Emission" => 5,
+        "Alpha" => 6,
+        "AO" => 7,
+        _ => 0
+    };
+
+    private Vector4 EvaluateOutputPreview(MaterialGraphNode target, string socket, int depth)
+    {
+        if (depth > 24)
+            return new Vector4(1, 0, 1, 1);
+        MaterialGraphLink? link = _asset!.Graph.Links.LastOrDefault(candidate =>
+            candidate.ToNode == target.Id && candidate.ToSocket == socket);
+        if (link == null)
+        {
+            return socket switch
+            {
+                "BaseColor" => new Vector4(MaterialAsset.GetVector3(target.Properties, "base_color", Vector3.One), 1),
+                "Normal" => new Vector4(0.5f, 0.5f, 1, 1),
+                "Roughness" => new Vector4(MaterialAsset.GetFloat(target.Properties, "roughness", 0.5f)),
+                "Metallic" => new Vector4(MaterialAsset.GetFloat(target.Properties, "metallic", 0)),
+                "Emission" => new Vector4(MaterialAsset.GetVector3(target.Properties, "emission", Vector3.Zero), 1),
+                "Alpha" => new Vector4(MaterialAsset.GetFloat(target.Properties, "alpha", 1)),
+                "AO" => new Vector4(MaterialAsset.GetFloat(target.Properties, "ao", 1)),
+                _ => new Vector4(0.5f, 0.5f, 0.5f, 1)
+            };
+        }
+
+        MaterialGraphNode? source = _asset.Graph.FindNode(link.FromNode);
+        if (source == null)
+            return new Vector4(1, 0, 1, 1);
+        return EvaluateNodePreview(source, link.FromSocket, depth + 1);
+    }
+
+    private Vector4 EvaluateNodePreview(MaterialGraphNode node, string socket, int depth)
+    {
+        if (depth > 24)
+            return new Vector4(1, 0, 1, 1);
+        switch (node.Type)
+        {
+            case "Color":
+            case "Vector3":
+                return new Vector4(MaterialAsset.GetVector3(node.Properties, "value", Vector3.Zero), 1);
+            case "Float":
+                return new Vector4(MaterialAsset.GetFloat(node.Properties, "value", 0.5f));
+            case "Texture2D":
+                return new Vector4(0.55f, 0.55f, 0.55f, 1);
+            case "NormalMap":
+                return new Vector4(0.5f, 0.5f, 1, 1);
+            case "Reroute":
+            {
+                MaterialGraphLink? link = _asset!.Graph.Links.LastOrDefault(candidate =>
+                    candidate.ToNode == node.Id && candidate.ToSocket == "Input");
+                MaterialGraphNode? source = link == null ? null : _asset.Graph.FindNode(link.FromNode);
+                return source == null ? new Vector4(0.5f, 0.5f, 0.5f, 1) : EvaluateNodePreview(source, link!.FromSocket, depth + 1);
+            }
+            case "Add":
+            case "Multiply":
+            {
+                Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
+                Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
+                return node.Type == "Add" ? Vector4.Clamp(a + b, Vector4.Zero, Vector4.One) : a * b;
+            }
+            case "Lerp":
+            {
+                Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
+                Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
+                float factor = EvaluateInputPreview(node, "Factor", depth + 1).X;
+                return Vector4.Lerp(a, b, Math.Clamp(factor, 0, 1));
+            }
+            default:
+                return new Vector4(0.5f, 0.5f, 0.5f, 1);
+        }
+    }
+
+    private Vector4 EvaluateInputPreview(MaterialGraphNode node, string socket, int depth)
+    {
+        MaterialGraphLink? link = _asset!.Graph.Links.LastOrDefault(candidate =>
+            candidate.ToNode == node.Id && candidate.ToSocket == socket);
+        MaterialGraphNode? source = link == null ? null : _asset.Graph.FindNode(link.FromNode);
+        return source == null ? new Vector4(0.5f, 0.5f, 0.5f, 1) : EvaluateNodePreview(source, link!.FromSocket, depth);
+    }
+
+    private void DrawExposedParameters()
+    {
+        _asset!.SyncExposedParameters();
+        if (!ImGui.CollapsingHeader("Exposed Parameters", ImGuiTreeNodeFlags.DefaultOpen))
+            return;
+        if (_asset.ExposedParameters.Count == 0)
+        {
+            ImGui.TextDisabled("Expose a Color, Vector3, or Float node to create material parameters.");
+            return;
+        }
+
+        foreach (MaterialExposedParameter parameter in _asset.ExposedParameters)
+        {
+            MaterialGraphNode? node = _asset.Graph.Nodes.FirstOrDefault(candidate =>
+                MaterialAsset.GetBool(candidate.Properties, "expose", false) &&
+                MaterialAsset.GetString(candidate.Properties, "parameter_name", "")
+                    .Equals(parameter.Name, StringComparison.OrdinalIgnoreCase));
+            if (node == null)
+                continue;
+
+            JsonNode? value = _asset.GetParameterValue(node);
+            bool changed = parameter.Type == MaterialValueType.Float
+                ? DrawExposedFloat(parameter.Name, value?.GetValue<float>() ?? 0)
+                : DrawExposedVector(parameter.Name, value is JsonArray array && array.Count >= 3
+                    ? new Vector3(array[0]!.GetValue<float>(), array[1]!.GetValue<float>(), array[2]!.GetValue<float>())
+                    : Vector3.Zero);
+            if (!changed)
+                continue;
+
+            if (parameter.Type == MaterialValueType.Float)
+            {
+                float edited = _lastEditedFloat;
+                SetExposedValue(node, edited);
+            }
+            else
+            {
+                SetExposedValue(node, _lastEditedVector);
+            }
+        }
+    }
+
+    private float _lastEditedFloat;
+    private Vector3 _lastEditedVector;
+
+    private bool DrawExposedFloat(string label, float value)
+    {
+        _lastEditedFloat = value;
+        return ImGui.DragFloat(label, ref _lastEditedFloat, 0.01f);
+    }
+
+    private bool DrawExposedVector(string label, Vector3 value)
+    {
+        _lastEditedVector = value;
+        return ImGui.ColorEdit3(label, ref _lastEditedVector);
+    }
+
+    private void SetExposedValue(MaterialGraphNode node, object value)
+    {
+        JsonNode jsonValue = value is float scalar
+            ? JsonValue.Create(scalar)!
+            : MaterialAsset.Vec3ToJson((Vector3)value);
+        if (!string.IsNullOrWhiteSpace(_asset!.ParentMaterialPath))
+            _asset.ParameterOverrides[MaterialAsset.GetString(node.Properties, "parameter_name", "")] = jsonValue;
+        else
+            node.Properties["value"] = jsonValue;
+        _dirty = true;
+    }
+
     private void DrawNodeProperties(
         MaterialGraphNode node,
         EditorAssetService assetService,
@@ -919,6 +1419,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                     node.Properties["value"] = MaterialAsset.Vec3ToJson(value);
                     _dirty = true;
                 }
+                DrawParameterExposure(node);
                 break;
             }
             case "Float":
@@ -929,6 +1430,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                     node.Properties["value"] = value;
                     _dirty = true;
                 }
+                DrawParameterExposure(node);
                 break;
             }
             case "NormalMap":
@@ -944,6 +1446,43 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             case "PBROutput":
                 DrawOutputDefaults(node);
                 break;
+            case "Frame":
+            case "Comment":
+            {
+                string comment = MaterialAsset.GetString(node.Properties, "comment", node.Name);
+                if (ImGui.InputText("Comment", ref comment, 256))
+                {
+                    node.Properties["comment"] = comment;
+                    node.Name = comment;
+                    _dirty = true;
+                }
+                float width = MaterialAsset.GetFloat(node.Properties, "width", node.Type == "Frame" ? 360 : 260);
+                float height = MaterialAsset.GetFloat(node.Properties, "height", node.Type == "Frame" ? 220 : 84);
+                if (ImGui.DragFloat("Width", ref width, 1, 120, 2000)) { node.Properties["width"] = width; _dirty = true; }
+                if (ImGui.DragFloat("Height", ref height, 1, 48, 2000)) { node.Properties["height"] = height; _dirty = true; }
+                break;
+            }
+        }
+    }
+
+    private void DrawParameterExposure(MaterialGraphNode node)
+    {
+        bool exposed = MaterialAsset.GetBool(node.Properties, "expose", false);
+        if (ImGui.Checkbox("Expose as Material Parameter", ref exposed))
+        {
+            node.Properties["expose"] = exposed;
+            _asset!.SyncExposedParameters();
+            _dirty = true;
+        }
+        if (!exposed)
+            return;
+
+        string parameterName = MaterialAsset.GetString(node.Properties, "parameter_name", node.Name);
+        if (ImGui.InputText("Parameter Name", ref parameterName, 96))
+        {
+            node.Properties["parameter_name"] = parameterName;
+            _asset!.SyncExposedParameters();
+            _dirty = true;
         }
     }
 
@@ -983,7 +1522,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                     (int)size,
                     (int)size,
                     _previewYaw,
-                    _previewPitch);
+                    _previewPitch,
+                    _previewOutputMode);
                 ImGui.Image((IntPtr)_previewRenderer.ColorTexture, new Vector2(size, size),
                     new Vector2(0, 1), new Vector2(1, 0));
 
@@ -1163,9 +1703,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         Vector2 max = new(float.MinValue);
         foreach (MaterialGraphNode node in selection)
         {
-            MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
-            int rows = Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0);
-            Vector2 nodeSize = new(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing);
+            Vector2 nodeSize = GetNodeSize(node);
             min = Vector2.Min(min, node.Position);
             max = Vector2.Max(max, node.Position + nodeSize);
         }
@@ -1193,6 +1731,20 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             (node.Position + new Vector2(NodeWidth, HeaderHeight + 20 + Math.Max(index, 0) * SocketSpacing)) * _canvasZoom;
     }
 
+    private static Vector2 GetNodeSize(MaterialGraphNode node)
+    {
+        if (node.Type is "Frame" or "Comment")
+        {
+            float width = MaterialAsset.GetFloat(node.Properties, "width", node.Type == "Frame" ? 360.0f : 260.0f);
+            float height = MaterialAsset.GetFloat(node.Properties, "height", node.Type == "Frame" ? 220.0f : 84.0f);
+            return new Vector2(MathF.Max(120.0f, width), MathF.Max(48.0f, height));
+        }
+
+        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
+        int rows = Math.Max(1, Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0));
+        return new Vector2(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing);
+    }
+
     private static void DrawPin(ImDrawListPtr drawList, Vector2 position, MaterialValueType type, bool output, float zoom)
     {
         Vector4 color = type switch
@@ -1207,10 +1759,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
 
     private bool IsInsideNode(MaterialGraphNode node, Vector2 canvasMin, Vector2 mouse)
     {
-        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
-        int rows = Math.Max(1, Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0));
         Vector2 min = canvasMin + _canvasPan + node.Position * _canvasZoom;
-        Vector2 max = min + new Vector2(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing) * _canvasZoom;
+        Vector2 max = min + GetNodeSize(node) * _canvasZoom;
         return mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y;
     }
 
@@ -1220,10 +1770,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         Vector2 selectionMin,
         Vector2 selectionMax)
     {
-        MaterialNodeDefinition? definition = MaterialNodeCatalog.Find(node.Type);
-        int rows = Math.Max(1, Math.Max(definition?.Inputs.Length ?? 0, definition?.Outputs.Length ?? 0));
         Vector2 nodeMin = canvasMin + _canvasPan + node.Position * _canvasZoom;
-        Vector2 nodeMax = nodeMin + new Vector2(NodeWidth, HeaderHeight + 12 + rows * SocketSpacing) * _canvasZoom;
+        Vector2 nodeMax = nodeMin + GetNodeSize(node) * _canvasZoom;
         return nodeMin.X <= selectionMax.X && nodeMax.X >= selectionMin.X &&
                nodeMin.Y <= selectionMax.Y && nodeMax.Y >= selectionMin.Y;
     }

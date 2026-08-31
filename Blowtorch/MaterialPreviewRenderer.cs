@@ -59,7 +59,8 @@ public unsafe sealed class MaterialPreviewRenderer : IDisposable
         int width,
         int height,
         float yaw,
-        float pitch)
+        float pitch,
+        int outputMode = 0)
     {
         EnsureFramebuffer(Math.Max(width, 64), Math.Max(height, 64));
 
@@ -110,6 +111,7 @@ public unsafe sealed class MaterialPreviewRenderer : IDisposable
         shader.SetBool("uIsEmissive", false);
         shader.SetVec3("uEmissiveColor", Vector3.Zero);
         shader.SetFloat("uEmissiveStrength", 0.0f);
+        shader.SetInt("uMaterialPreviewOutput", outputMode);
         shader.SetFloat("uIsViewmodel", 0.0f);
         shader.SetBool("uOutputSrgb", true);
         if (_imageBasedLighting != null)

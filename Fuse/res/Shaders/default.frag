@@ -51,6 +51,7 @@ uniform sampler2D uBrdfLut;
 uniform bool uUseIbl;
 uniform float uIblIntensity;
 uniform bool uOutputSrgb;
+uniform int uMaterialPreviewOutput;
 
 struct MaterialSurface {
     vec3 baseColor;
@@ -402,6 +403,23 @@ void main()
     if (uDebugView == 6)
     {
         fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+        fragEmissive = vec4(0.0);
+        return;
+    }
+
+    // Material Graph output preview. Runtime rendering leaves this at zero;
+    // the editor uses it to inspect an individual graph output without
+    // changing the actual PBR lighting path.
+    if (uMaterialPreviewOutput > 0)
+    {
+        vec3 preview = material.baseColor;
+        if (uMaterialPreviewOutput == 2) preview = material.tangentNormal * 0.5 + 0.5;
+        else if (uMaterialPreviewOutput == 3) preview = vec3(material.roughness);
+        else if (uMaterialPreviewOutput == 4) preview = vec3(material.metallic);
+        else if (uMaterialPreviewOutput == 5) preview = material.emission;
+        else if (uMaterialPreviewOutput == 6) preview = vec3(material.alpha);
+        else if (uMaterialPreviewOutput == 7) preview = vec3(material.ao);
+        fragColor = vec4(max(preview, vec3(0.0)), 1.0);
         fragEmissive = vec4(0.0);
         return;
     }

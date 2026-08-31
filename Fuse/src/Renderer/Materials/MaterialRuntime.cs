@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json.Nodes;
 using Fuse.AssetManagement;
 using Fuse.Core;
 
@@ -44,7 +45,7 @@ public sealed class MaterialRuntime : IDisposable
     public static MaterialRuntime Load(AssetManager assets, string path)
     {
         string fullPath = ResolveAssetPath(path);
-        MaterialAsset asset = MaterialAsset.Load(fullPath);
+        MaterialAsset asset = MaterialAsset.LoadResolved(fullPath);
         return CreateInMemory(assets, asset, fullPath);
     }
 
@@ -55,6 +56,7 @@ public sealed class MaterialRuntime : IDisposable
     /// </summary>
     public static MaterialRuntime CreateInMemory(AssetManager assets, MaterialAsset asset, string sourcePath)
     {
+        asset.SyncExposedParameters();
         MaterialGraphCompilation compilation = MaterialGraphCompiler.Compile(asset, Bible.Shader(Bible.ShaderDefaultFrag));
 
         (Shader staticShader, Shader skinnedShader) = assets.AcquireMaterialShaders(compilation);
@@ -151,16 +153,21 @@ public sealed class MaterialRuntime : IDisposable
             MaterialGraphNode? node = Asset.Graph.FindNode(uniform.NodeId);
             if (node == null)
                 continue;
+            JsonNode? value = Asset.GetParameterValue(node);
             switch (uniform.Type)
             {
                 case MaterialValueType.Float:
-                    shader.SetFloat(uniform.UniformName, MaterialAsset.GetFloat(node.Properties, "value", 0.0f));
+                    shader.SetFloat(uniform.UniformName, value?.GetValue<float>() ?? 0.0f);
                     break;
                 case MaterialValueType.Vector2:
-                    shader.SetVec2(uniform.UniformName, Vector2.Zero);
+                    shader.SetVec2(uniform.UniformName, value is JsonArray vector2
+                        ? new Vector2(vector2[0]!.GetValue<float>(), vector2[1]!.GetValue<float>())
+                        : Vector2.Zero);
                     break;
                 case MaterialValueType.Vector3:
-                    shader.SetVec3(uniform.UniformName, MaterialAsset.GetVector3(node.Properties, "value", Vector3.Zero));
+                    shader.SetVec3(uniform.UniformName, value is JsonArray vector3 && vector3.Count >= 3
+                        ? new Vector3(vector3[0]!.GetValue<float>(), vector3[1]!.GetValue<float>(), vector3[2]!.GetValue<float>())
+                        : Vector3.Zero);
                     break;
             }
         }

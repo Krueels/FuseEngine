@@ -37,6 +37,10 @@ public static class MaterialNodeCatalog
             [new("Result", MaterialValueType.Vector3)]),
         new("NormalMap", "Normal Map", [new("Color", MaterialValueType.Vector3), new("Strength", MaterialValueType.Float)],
             [new("Normal", MaterialValueType.Vector3)]),
+        new("Reroute", "Reroute", [new("Input", MaterialValueType.Vector3)],
+            [new("Output", MaterialValueType.Vector3)]),
+        new("Frame", "Frame / Group", [], []),
+        new("Comment", "Comment", [], []),
         new("PBROutput", "Material Output",
             [
                 new("BaseColor", MaterialValueType.Vector3),
@@ -88,6 +92,20 @@ public static class MaterialNodeCatalog
                 break;
             case "NormalMap":
                 node.Properties["strength"] = 1.0f;
+                break;
+            case "Reroute":
+                node.Properties["value_type"] = nameof(MaterialValueType.Vector3);
+                break;
+            case "Frame":
+                node.Properties["comment"] = "Group";
+                node.Properties["width"] = 360.0f;
+                node.Properties["height"] = 220.0f;
+                node.Properties["color"] = MaterialAsset.Vec3ToJson(new System.Numerics.Vector3(0.18f, 0.32f, 0.48f));
+                break;
+            case "Comment":
+                node.Properties["comment"] = "Comment";
+                node.Properties["width"] = 260.0f;
+                node.Properties["height"] = 84.0f;
                 break;
             case "PBROutput":
                 node.Properties["base_color"] = MaterialAsset.Vec3ToJson(System.Numerics.Vector3.One);

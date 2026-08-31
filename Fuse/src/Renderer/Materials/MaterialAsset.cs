@@ -11,6 +11,20 @@ public enum MaterialAlphaMode
     Blend
 }
 
+public sealed class MaterialExposedParameter
+{
+    public string Name { get; set; } = "Parameter";
+    public MaterialValueType Type { get; set; } = MaterialValueType.Float;
+    public JsonNode? DefaultValue { get; set; } = 0.0f;
+
+    public MaterialExposedParameter Clone() => new()
+    {
+        Name = Name,
+        Type = Type,
+        DefaultValue = DefaultValue?.DeepClone()
+    };
+}
+
 public sealed class MaterialGraphNode
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -62,7 +76,7 @@ public sealed class MaterialGraph
 
 public sealed class MaterialAsset
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; } = CurrentVersion;
     public string Name { get; set; } = "Material";
@@ -71,7 +85,28 @@ public sealed class MaterialAsset
     public bool TwoSided { get; set; }
     public bool CastShadows { get; set; } = true;
     public bool ReceiveShadows { get; set; } = true;
+    public string ParentMaterialPath { get; set; } = "";
+    public List<MaterialExposedParameter> ExposedParameters { get; set; } = [];
+    public Dictionary<string, JsonNode?> ParameterOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public MaterialGraph Graph { get; set; } = new();
+
+    public MaterialAsset Clone() => new()
+    {
+        Version = Version,
+        Name = Name,
+        AlphaMode = AlphaMode,
+        AlphaCutoff = AlphaCutoff,
+        TwoSided = TwoSided,
+        CastShadows = CastShadows,
+        ReceiveShadows = ReceiveShadows,
+        ParentMaterialPath = ParentMaterialPath,
+        ExposedParameters = ExposedParameters.Select(parameter => parameter.Clone()).ToList(),
+        ParameterOverrides = ParameterOverrides.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value?.DeepClone(),
+            StringComparer.OrdinalIgnoreCase),
+        Graph = Graph.Clone()
+    };
 
     public static MaterialAsset CreateDefault(string name, string? baseColorTexture = null)
     {
@@ -149,8 +184,11 @@ public sealed class MaterialAsset
             AlphaCutoff = GetFloat(root, "alpha_cutoff", 0.5f),
             TwoSided = GetBool(root, "two_sided", false),
             CastShadows = GetBool(root, "cast_shadows", true),
-            ReceiveShadows = GetBool(root, "receive_shadows", true)
+            ReceiveShadows = GetBool(root, "receive_shadows", true),
+            ParentMaterialPath = GetString(root, "parent_material", "")
         };
+
+        ParseParameters(root, material);
 
         if (root["graph"] is JsonObject graphObject)
             material.Graph = ParseGraph(graphObject);
@@ -159,6 +197,48 @@ public sealed class MaterialAsset
             material.Graph.Nodes.Add(CreateDefault(material.Name).Graph.FindOutput()!);
 
         return material;
+    }
+
+    public static MaterialAsset LoadResolved(string path)
+    {
+        return LoadResolved(path, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static MaterialAsset LoadResolved(string path, HashSet<string> visiting)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (!visiting.Add(fullPath))
+            throw new InvalidDataException($"Material instance cycle detected at '{fullPath}'.");
+
+        MaterialAsset material = Load(fullPath);
+        if (!string.IsNullOrWhiteSpace(material.ParentMaterialPath))
+        {
+            string parentPath = MaterialRuntime.ResolveAssetPath(material.ParentMaterialPath);
+            if (File.Exists(parentPath))
+            {
+                MaterialAsset parent = LoadResolved(parentPath, visiting);
+                if (material.Graph.Nodes.Count <= 1)
+                    material.Graph = parent.Graph.Clone();
+                if (material.ExposedParameters.Count == 0)
+                    material.ExposedParameters = parent.ExposedParameters.Select(parameter => parameter.Clone()).ToList();
+            }
+            ApplyParameterOverrides(material);
+        }
+
+        visiting.Remove(fullPath);
+        return material;
+    }
+
+    private static void ApplyParameterOverrides(MaterialAsset material)
+    {
+        foreach (MaterialGraphNode node in material.Graph.Nodes)
+        {
+            string name = GetString(node.Properties, "parameter_name", "").Trim();
+            if (!GetBool(node.Properties, "expose", false) || string.IsNullOrWhiteSpace(name))
+                continue;
+            if (material.ParameterOverrides.TryGetValue(name, out JsonNode? value) && value != null)
+                node.Properties["value"] = value.DeepClone();
+        }
     }
 
     public void Save(string path)
@@ -184,6 +264,11 @@ public sealed class MaterialAsset
             ["two_sided"] = TwoSided,
             ["cast_shadows"] = CastShadows,
             ["receive_shadows"] = ReceiveShadows,
+            ["parent_material"] = string.IsNullOrWhiteSpace(ParentMaterialPath) ? null : ParentMaterialPath,
+            ["exposed_parameters"] = new JsonArray(ExposedParameters.Select(SerializeParameter).ToArray()),
+            ["parameter_overrides"] = new JsonObject(ParameterOverrides.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value?.DeepClone())),
             ["graph"] = graphObject
         };
     }
@@ -256,6 +341,73 @@ public sealed class MaterialAsset
         ["to_socket"] = link.ToSocket
     };
 
+    private static JsonObject SerializeParameter(MaterialExposedParameter parameter) => new()
+    {
+        ["name"] = parameter.Name,
+        ["type"] = parameter.Type.ToString(),
+        ["default"] = parameter.DefaultValue?.DeepClone()
+    };
+
+    private static void ParseParameters(JsonObject root, MaterialAsset material)
+    {
+        if (root["exposed_parameters"] is JsonArray parameters)
+        {
+            foreach (JsonNode? value in parameters)
+            {
+                if (value is not JsonObject parameter)
+                    continue;
+                material.ExposedParameters.Add(new MaterialExposedParameter
+                {
+                    Name = GetString(parameter, "name", "Parameter"),
+                    Type = ParseValueType(GetString(parameter, "type", nameof(MaterialValueType.Float))),
+                    DefaultValue = parameter["default"]?.DeepClone()
+                });
+            }
+        }
+
+        if (root["parameter_overrides"] is JsonObject overrides)
+        {
+            foreach ((string key, JsonNode? value) in overrides)
+                material.ParameterOverrides[key] = value?.DeepClone();
+        }
+    }
+
+    public void SyncExposedParameters()
+    {
+        var existing = ExposedParameters.ToDictionary(parameter => parameter.Name, StringComparer.OrdinalIgnoreCase);
+        var discovered = new List<MaterialExposedParameter>();
+        foreach (MaterialGraphNode node in Graph.Nodes)
+        {
+            if (!GetBool(node.Properties, "expose", false))
+                continue;
+            string name = GetString(node.Properties, "parameter_name", "").Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            MaterialValueType type = node.Type switch
+            {
+                "Color" or "Vector3" => MaterialValueType.Vector3,
+                _ => MaterialValueType.Float
+            };
+            JsonNode defaultValue = node.Properties["value"]?.DeepClone()
+                ?? (type == MaterialValueType.Vector3 ? Vec3ToJson(Vector3.Zero) : JsonValue.Create(0.0f)!);
+            discovered.Add(existing.TryGetValue(name, out MaterialExposedParameter? parameter)
+                ? new MaterialExposedParameter { Name = name, Type = type, DefaultValue = parameter.DefaultValue?.DeepClone() ?? defaultValue }
+                : new MaterialExposedParameter { Name = name, Type = type, DefaultValue = defaultValue });
+        }
+        ExposedParameters = discovered;
+    }
+
+    public JsonNode? GetParameterValue(MaterialGraphNode node)
+    {
+        string name = GetString(node.Properties, "parameter_name", "").Trim();
+        if (GetBool(node.Properties, "expose", false) &&
+            !string.IsNullOrWhiteSpace(name) &&
+            ParameterOverrides.TryGetValue(name, out JsonNode? overrideValue))
+            return overrideValue?.DeepClone();
+        return node.Properties["value"]?.DeepClone();
+    }
+
     public static Vector3 GetVector3(JsonObject properties, string key, Vector3 fallback)
     {
         if (properties[key] is not JsonArray array || array.Count < 3)
@@ -268,17 +420,31 @@ public sealed class MaterialAsset
             ? value.GetValue<float>()
             : fallback;
 
+    public static Vector2 GetVector2(JsonObject properties, string key, Vector2 fallback)
+    {
+        if (properties[key] is not JsonArray array || array.Count < 2)
+            return fallback;
+        return new Vector2(array[0]!.GetValue<float>(), array[1]!.GetValue<float>());
+    }
+
     public static string GetString(JsonObject properties, string key, string fallback) =>
         properties.TryGetPropertyValue(key, out JsonNode? value) && value != null
             ? value.GetValue<string>()
             : fallback;
 
-    private static bool GetBool(JsonObject properties, string key, bool fallback) =>
+    public static bool GetBool(JsonObject properties, string key, bool fallback) =>
         properties.TryGetPropertyValue(key, out JsonNode? value) && value != null
             ? value.GetValue<bool>()
             : fallback;
 
     public static JsonArray Vec3ToJson(Vector3 value) => new(value.X, value.Y, value.Z);
+
+    private static MaterialValueType ParseValueType(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "vector2" or "vec2" => MaterialValueType.Vector2,
+        "vector3" or "vec3" or "color" => MaterialValueType.Vector3,
+        _ => MaterialValueType.Float
+    };
 
     private static MaterialAlphaMode ParseAlphaMode(string value) => value.ToLowerInvariant() switch
     {

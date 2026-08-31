@@ -5,7 +5,11 @@ using System.Text;
 namespace Fuse.Renderer.Materials;
 
 public sealed record MaterialTextureSlot(string NodeId, string UniformName, string AssetPath, int Slot, TextureColorSpace ColorSpace);
-public sealed record MaterialUniformSlot(string NodeId, string UniformName, MaterialValueType Type);
+public sealed record MaterialUniformSlot(
+    string NodeId,
+    string UniformName,
+    MaterialValueType Type,
+    string ParameterName = "");
 
 public sealed class MaterialGraphCompilation
 {
@@ -156,6 +160,7 @@ public static class MaterialGraphCompiler
                 "Add" => ResolveBinary(node, "+"),
                 "Lerp" => ResolveLerp(node),
                 "NormalMap" => ResolveNormalMap(node),
+                "Reroute" => ResolveInput(node, "Input", new Expression("vec3(0.0)", MaterialValueType.Vector3)),
                 _ => throw new InvalidDataException($"Unsupported material node type '{node.Type}'.")
             };
 
@@ -233,7 +238,10 @@ public static class MaterialGraphCompiler
         {
             if (!_uniformByNode.TryGetValue(node.Id, out MaterialUniformSlot? uniform))
             {
-                uniform = new MaterialUniformSlot(node.Id, $"{prefix}{Uniforms.Count}", type);
+                string parameterName = MaterialAsset.GetString(node.Properties, "parameter_name", "").Trim();
+                if (!MaterialAsset.GetBool(node.Properties, "expose", false))
+                    parameterName = "";
+                uniform = new MaterialUniformSlot(node.Id, $"{prefix}{Uniforms.Count}", type, parameterName);
                 Uniforms.Add(uniform);
                 _uniformByNode[node.Id] = uniform;
             }

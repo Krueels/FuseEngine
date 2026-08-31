@@ -1,11 +1,14 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "SPIDER_BODY",
   "alpha_mode": "opaque",
   "alpha_cutoff": 0.5,
   "two_sided": false,
   "cast_shadows": true,
   "receive_shadows": true,
+  "parent_material": null,
+  "exposed_parameters": [],
+  "parameter_overrides": {},
   "graph": {
     "nodes": [
       {
@@ -13,8 +16,8 @@
         "type": "PBROutput",
         "name": "Material Output",
         "position": [
-          520,
-          160
+          720,
+          80
         ],
         "properties": {
           "base_color": [
@@ -38,12 +41,13 @@
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          9.787565,
-          126.64504
+          331.27313,
+          98.36457
         ],
         "properties": {
           "path": "Textures/huntsmanSpiderTextures/Spider_Albedo.png",
-          "color_space": "sRGB"
+          "color_space": "sRGB",
+          "frame_id": "121dadcd21be4ca5be8992057acf8153"
         }
       },
       {
@@ -51,12 +55,13 @@
         "type": "Texture2D",
         "name": "Texture",
         "position": [
-          -70.88492,
-          298.56998
+          71.27315,
+          100.11358
         ],
         "properties": {
           "path": "Textures/huntsmanSpiderTextures/Spider_Normal.png",
-          "color_space": "linear"
+          "color_space": "linear",
+          "frame_id": "121dadcd21be4ca5be8992057acf8153"
         }
       },
       {
@@ -64,11 +69,12 @@
         "type": "NormalMap",
         "name": "Normal Map",
         "position": [
-          192.29251,
-          293.27997
+          338.8775,
+          233.38397
         ],
         "properties": {
-          "strength": 1
+          "strength": 1,
+          "frame_id": "121dadcd21be4ca5be8992057acf8153"
         }
       }
     ],
