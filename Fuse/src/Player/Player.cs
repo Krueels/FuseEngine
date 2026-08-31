@@ -278,7 +278,6 @@ public class Player : IDisposable
     }
     private void ProcessInput(float dt)
     {
-        HandleNoclipToggle();
         HandleSprint();
         if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
         HandleCrouch();
@@ -294,6 +293,9 @@ public class Player : IDisposable
         if (_isDead || ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
             return;
 
+        // F1 is an edge-triggered action and must be processed once per
+        // rendered frame, not once per fixed physics step.
+        HandleNoclipToggle();
         HandleFlashlightToggle();
     }
 

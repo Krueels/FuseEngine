@@ -128,6 +128,9 @@ public unsafe class MasterRenderer
     private uint _decalDepthTexHdr;
     private uint _decalDepthFboDefault; // DepthComponent24  — para FBO 0 (post-process OFF)
     private uint _decalDepthTexDefault;
+    private uint _decalSurfaceFboHdr;
+    private uint _decalNormalTexHdr;
+    private uint _decalMaterialTexHdr;
 
     // Shared bone SSBO (all skinned shaders read from binding point 0)
     private uint _sharedBonesSSBO;
@@ -512,6 +515,42 @@ public unsafe class MasterRenderer
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
             TextureTarget.Texture2D, _decalDepthTexHdr, 0);
 
+        // Surface data copied from the HDR scene before decals are drawn.
+        _decalSurfaceFboHdr = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _decalSurfaceFboHdr);
+
+        _decalNormalTexHdr = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _decalNormalTexHdr);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0,
+            (int)InternalFormat.Rgba16f, (uint)_scrWidth, (uint)_scrHeight, 0,
+            PixelFormat.Rgba, PixelType.Float, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _decalNormalTexHdr, 0);
+
+        _decalMaterialTexHdr = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _decalMaterialTexHdr);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0,
+            (int)InternalFormat.Rgba16f, (uint)_scrWidth, (uint)_scrHeight, 0,
+            PixelFormat.Rgba, PixelType.Float, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment1, TextureTarget.Texture2D, _decalMaterialTexHdr, 0);
+        _gl.DrawBuffers(new[]
+        {
+            DrawBufferMode.ColorAttachment0,
+            DrawBufferMode.ColorAttachment1
+        });
+
+        if (_gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != GLEnum.FramebufferComplete)
+            throw new Exception("Decal surface framebuffer incomplete.");
+
         // --- Default (DepthComponent24) — combina com FBO 0 ---
         _decalDepthTexDefault = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, _decalDepthTexDefault);
@@ -535,6 +574,9 @@ public unsafe class MasterRenderer
     {
         if (_decalDepthFboHdr != 0) { _gl.DeleteFramebuffer(_decalDepthFboHdr); _decalDepthFboHdr = 0; }
         if (_decalDepthTexHdr != 0) { _gl.DeleteTexture(_decalDepthTexHdr); _decalDepthTexHdr = 0; }
+        if (_decalSurfaceFboHdr != 0) { _gl.DeleteFramebuffer(_decalSurfaceFboHdr); _decalSurfaceFboHdr = 0; }
+        if (_decalNormalTexHdr != 0) { _gl.DeleteTexture(_decalNormalTexHdr); _decalNormalTexHdr = 0; }
+        if (_decalMaterialTexHdr != 0) { _gl.DeleteTexture(_decalMaterialTexHdr); _decalMaterialTexHdr = 0; }
         if (_decalDepthFboDefault != 0) { _gl.DeleteFramebuffer(_decalDepthFboDefault); _decalDepthFboDefault = 0; }
         if (_decalDepthTexDefault != 0) { _gl.DeleteTexture(_decalDepthTexDefault); _decalDepthTexDefault = 0; }
     }
@@ -678,6 +720,14 @@ public unsafe class MasterRenderer
         float[] emissiveClear = [0.0f, 0.0f, 0.0f, 0.0f];
         fixed (float* clear = emissiveClear)
             _gl.ClearBuffer(BufferKind.Color, 1, clear);
+
+        float[] normalClear = [0.5f, 0.5f, 1.0f, 1.0f];
+        fixed (float* normalPtr = normalClear)
+            _gl.ClearBuffer(BufferKind.Color, 2, normalPtr);
+
+        float[] materialClear = [0.5f, 0.0f, 1.0f, 0.0f];
+        fixed (float* materialPtr = materialClear)
+            _gl.ClearBuffer(BufferKind.Color, 3, materialPtr);
 
         // Skybox
         if (_skyboxShader.ID != 0 && _skyboxTexture.ID != 0)
@@ -1454,14 +1504,33 @@ public unsafe class MasterRenderer
         uint decalDepthFbo = _decalDepthFboHdr;
         uint decalDepthTex = _decalDepthTexHdr;
 
-        // 1. Copia o Depth Buffer — formato agora é idêntico ao source
+        // 1. Copy the depth buffer.
         _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);
         _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, decalDepthFbo);
         _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight,
             ClearBufferMask.DepthBufferBit, BlitFramebufferFilter.Nearest);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
 
-        // 2. Setup GL State para Box Decal Projection
+        // 2. Copy the receiver's final normal and PBR parameters to separate
+        // textures. Sampling an attachment of targetFbo while rendering into
+        // targetFbo would create an OpenGL framebuffer feedback loop.
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);
+        _gl.ReadBuffer(ReadBufferMode.ColorAttachment2);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _decalSurfaceFboHdr);
+        _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
+        _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight,
+            ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, targetFbo);
+        _gl.ReadBuffer(ReadBufferMode.ColorAttachment3);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _decalSurfaceFboHdr);
+        _gl.DrawBuffer(DrawBufferMode.ColorAttachment1);
+        _gl.BlitFramebuffer(0, 0, _scrWidth, _scrHeight, 0, 0, _scrWidth, _scrHeight,
+            ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
+        _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+
+        // 3. Setup GL State para Box Decal Projection
         _gl.Enable(EnableCap.Blend);
         _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
         _gl.Disable(EnableCap.DepthTest);
@@ -1470,19 +1539,27 @@ public unsafe class MasterRenderer
         _gl.CullFace(GLEnum.Front); // Render back faces do cubo para que a projeção funcione mesmo com a câmera dentro do cubo
 
         _decalShader.Use();
+        SetupWorldUniforms(_decalShader, view, proj);
 
         Matrix4x4 viewProj = view * proj;
         Matrix4x4.Invert(viewProj, out Matrix4x4 invViewProj);
 
-        _decalShader.SetMat4("uView", view);
-        _decalShader.SetMat4("uProj", proj);
         _decalShader.SetMat4("uInvViewProj", invViewProj);
         _decalShader.SetVec2("uScreenSize", new Vector2(_scrWidth, _scrHeight));
 
-        // Bind depth copy texture on unit 0
+        // Bind depth copy texture on unit 0.
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, decalDepthTex);
         _decalShader.SetInt("uDepthTex", 0);
+
+        // Bind receiver surface data on units outside the lighting/IBL range.
+        _gl.ActiveTexture(TextureUnit.Texture0 + 10);
+        _gl.BindTexture(TextureTarget.Texture2D, _decalNormalTexHdr);
+        _decalShader.SetInt("uReceiverNormal", 10);
+
+        _gl.ActiveTexture(TextureUnit.Texture0 + 11);
+        _gl.BindTexture(TextureTarget.Texture2D, _decalMaterialTexHdr);
+        _decalShader.SetInt("uReceiverMaterial", 11);
 
         for (int i = 0; i < _decalQueue.Count; i++)
         {
@@ -1496,16 +1573,23 @@ public unsafe class MasterRenderer
             _decalShader.SetMat4("uModel", decal.ModelMatrix);
             _decalShader.SetMat4("uInvDecalModel", decal.InvModelMatrix);
 
-            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.ActiveTexture(TextureUnit.Texture0 + 12);
             _gl.BindTexture(TextureTarget.Texture2D, decal.AlbedoTexture);
-            _decalShader.SetInt("uDecalAlbedo", 1);
+            _decalShader.SetInt("uDecalAlbedo", 12);
 
 
             _skyBoxCubeMesh.Draw();
         }
 
-        _gl.ActiveTexture(TextureUnit.Texture1);
+        _gl.ActiveTexture(TextureUnit.Texture0 + 12);
         _gl.BindTexture(TextureTarget.Texture2D, 0);
+
+        _gl.ActiveTexture(TextureUnit.Texture0 + 11);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+
+        _gl.ActiveTexture(TextureUnit.Texture0 + 10);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, 0);
 

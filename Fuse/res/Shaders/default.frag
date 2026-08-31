@@ -34,6 +34,8 @@ in vec3 vViewPos;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 fragEmissive;
+layout(location = 2) out vec4 fragNormal;
+layout(location = 3) out vec4 fragMaterial;
 
 uniform sampler2D uTexture;
 uniform sampler2DArrayShadow uShadowMap;
@@ -404,6 +406,8 @@ void main()
     {
         fragColor = vec4(normal * 0.5 + 0.5, 1.0);
         fragEmissive = vec4(0.0);
+        fragNormal = vec4(normal * 0.5 + 0.5, 1.0);
+        fragMaterial = vec4(material.roughness, material.metallic, material.ao, material.legacyLighting);
         return;
     }
 
@@ -421,6 +425,8 @@ void main()
         else if (uMaterialPreviewOutput == 7) preview = vec3(material.ao);
         fragColor = vec4(max(preview, vec3(0.0)), 1.0);
         fragEmissive = vec4(0.0);
+        fragNormal = vec4(normal * 0.5 + 0.5, 1.0);
+        fragMaterial = vec4(material.roughness, material.metallic, material.ao, material.legacyLighting);
         return;
     }
 
@@ -502,4 +508,6 @@ void main()
         : result;
     fragColor = vec4(outputColor, outputAlpha);
     fragEmissive = vec4(emissiveRadiance, outputAlpha);
+    fragNormal = vec4(normal * 0.5 + 0.5, 1.0);
+    fragMaterial = vec4(roughness, metallic, material.ao, material.legacyLighting);
 }
