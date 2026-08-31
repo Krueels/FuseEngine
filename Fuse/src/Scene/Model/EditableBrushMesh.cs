@@ -298,6 +298,11 @@ public sealed class EditableBrushMesh
                 error = $"A face {face.Id} é degenerada.";
                 return false;
             }
+            if (!TryTriangulateFace(face, out _, out string triangulationError))
+            {
+                error = $"A face {face.Id} não pode ser triangulada: {triangulationError}";
+                return false;
+            }
         }
 
         error = string.Empty;
@@ -318,11 +323,13 @@ public sealed class EditableBrushMesh
 
         foreach (EditableBrushFace face in Faces)
         {
-            Vector3 normal = CalculateFaceNormal(face);
-            GetSafeUvAxes(face, normal, out Vector3 uAxis, out Vector3 vAxis);
+            if (!TryTriangulateFace(face, out List<FaceTriangle> triangles, out _))
+                continue;
 
-            uint startIndex = (uint)vertices.Count;
-            foreach (int vertexId in face.Vertices)
+            Vector3 faceNormal = CalculateFaceNormal(face);
+            GetSafeUvAxes(face, faceNormal, out Vector3 uAxis, out Vector3 vAxis);
+
+            uint AddRenderVertex(int vertexId, Vector3 normal)
             {
                 Vector3 position = GetPosition(vertexId);
                 float u = Vector3.Dot(position - minCorner, uAxis) / SafeScale(face.UScale) + face.UOffset;
@@ -335,8 +342,17 @@ public sealed class EditableBrushMesh
                     (u, v) = (u * cosine - v * sine, u * sine + v * cosine);
                 }
 
+                uint renderIndex = (uint)vertices.Count;
                 vertices.Add(new Vertex { Position = position, Normal = normal, TexCoord = new Vector2(u, v) });
+                return renderIndex;
             }
+
+            // Keep one set of boundary vertices for the editor wireframe. The
+            // rendered triangles below intentionally use their own vertices so
+            // a non-planar n-gon receives a correct normal per triangle.
+            var boundaryIndices = new uint[face.Vertices.Count];
+            for (int index = 0; index < face.Vertices.Count; index++)
+                boundaryIndices[index] = AddRenderVertex(face.Vertices[index], faceNormal);
 
             int materialSlot = System.Math.Max(0, face.MaterialSlot);
             if (!indicesByMaterial.TryGetValue(materialSlot, out List<uint>? materialIndices))
@@ -346,17 +362,33 @@ public sealed class EditableBrushMesh
                 materialOrder.Add(materialSlot);
             }
 
-            for (uint index = 1; index < face.Vertices.Count - 1; index++)
+            foreach (FaceTriangle triangle in triangles)
             {
-                materialIndices.Add(startIndex);
-                materialIndices.Add(startIndex + index);
-                materialIndices.Add(startIndex + index + 1);
+                Vector3 first = GetPosition(face.Vertices[triangle.First]);
+                Vector3 second = GetPosition(face.Vertices[triangle.Second]);
+                Vector3 third = GetPosition(face.Vertices[triangle.Third]);
+                Vector3 triangleNormal = Vector3.Cross(second - first, third - first);
+                if (triangleNormal.LengthSquared() < Epsilon * Epsilon)
+                    continue;
+                triangleNormal = Vector3.Normalize(triangleNormal);
+
+                int secondIndex = triangle.Second;
+                int thirdIndex = triangle.Third;
+                if (Vector3.Dot(triangleNormal, faceNormal) < 0.0f)
+                {
+                    triangleNormal = -triangleNormal;
+                    (secondIndex, thirdIndex) = (thirdIndex, secondIndex);
+                }
+
+                materialIndices.Add(AddRenderVertex(face.Vertices[triangle.First], triangleNormal));
+                materialIndices.Add(AddRenderVertex(face.Vertices[secondIndex], triangleNormal));
+                materialIndices.Add(AddRenderVertex(face.Vertices[thirdIndex], triangleNormal));
             }
 
-            for (uint index = 0; index < face.Vertices.Count; index++)
+            for (int index = 0; index < face.Vertices.Count; index++)
             {
-                lineIndices.Add(startIndex + index);
-                lineIndices.Add(startIndex + (index + 1) % (uint)face.Vertices.Count);
+                lineIndices.Add(boundaryIndices[index]);
+                lineIndices.Add(boundaryIndices[(index + 1) % face.Vertices.Count]);
             }
         }
 
@@ -381,13 +413,18 @@ public sealed class EditableBrushMesh
 
         foreach (EditableBrushFace face in Faces)
         {
-            if (face.Vertices.Count < 3)
+            if (!TryTriangulateFace(face, out List<FaceTriangle> triangles, out _))
                 continue;
 
-            Vector3 first = GetPosition(face.Vertices[0]);
-            for (int index = 1; index + 1 < face.Vertices.Count; index++)
+            foreach (FaceTriangle triangle in triangles)
             {
-                if (!RayTriangle(rayOrigin, rayDirection, first, GetPosition(face.Vertices[index]), GetPosition(face.Vertices[index + 1]), out float hitDistance))
+                if (!RayTriangle(
+                        rayOrigin,
+                        rayDirection,
+                        GetPosition(face.Vertices[triangle.First]),
+                        GetPosition(face.Vertices[triangle.Second]),
+                        GetPosition(face.Vertices[triangle.Third]),
+                        out float hitDistance))
                     continue;
                 if (hitDistance >= distance)
                     continue;
@@ -413,6 +450,8 @@ public sealed class EditableBrushMesh
             error = "A distância da extrusão precisa ser diferente de zero.";
             return false;
         }
+
+        EditableBrushMesh backup = DeepClone();
 
         Vector3 direction = Vector3.Zero;
         foreach (EditableBrushFace face in selected)
@@ -452,6 +491,12 @@ public sealed class EditableBrushMesh
         foreach ((int first, int second, EditableBrushFace source) in boundaryEdges)
         {
             AddFace(source.CloneWithVertices([first, second, duplicatedVertices[second], duplicatedVertices[first]]));
+        }
+
+        if (!TryValidate(out error))
+        {
+            RestoreFrom(backup);
+            return false;
         }
 
         error = string.Empty;
@@ -1162,6 +1207,228 @@ public sealed class EditableBrushMesh
                 return index;
         }
         return -1;
+    }
+
+    private readonly record struct FaceTriangle(int First, int Second, int Third);
+    private readonly record struct ProjectedFaceVertex(int SourceIndex, Vector2 Position);
+
+    /// <summary>
+    /// Tessellates an arbitrary simple n-gon with ear clipping. Faces are
+    /// projected onto the dominant plane of their Newell normal, so editing a
+    /// slope may produce non-planar faces without creating the crossed fan
+    /// diagonals that a fixed vertex-0 triangulation produced.
+    /// </summary>
+    private bool TryTriangulateFace(EditableBrushFace face, out List<FaceTriangle> triangles, out string error)
+    {
+        triangles = [];
+        if (face.Vertices.Count < 3)
+        {
+            error = "possui menos de três vértices";
+            return false;
+        }
+
+        Vector3 normal = CalculateFaceNormal(face);
+        if (normal.LengthSquared() < Epsilon * Epsilon)
+        {
+            error = "não possui uma normal válida";
+            return false;
+        }
+
+        var polygon = new List<ProjectedFaceVertex>(face.Vertices.Count);
+        for (int index = 0; index < face.Vertices.Count; index++)
+        {
+            Vector2 projected = ProjectToDominantPlane(GetPosition(face.Vertices[index]), normal);
+            if (polygon.Count == 0 || Vector2.DistanceSquared(polygon[^1].Position, projected) > Epsilon * Epsilon)
+                polygon.Add(new ProjectedFaceVertex(index, projected));
+        }
+        if (polygon.Count > 1 && Vector2.DistanceSquared(polygon[0].Position, polygon[^1].Position) <= Epsilon * Epsilon)
+            polygon.RemoveAt(polygon.Count - 1);
+
+        RemoveCollinearProjectedVertices(polygon);
+        if (polygon.Count < 3)
+        {
+            error = "colapsa para uma linha";
+            return false;
+        }
+        if (HasSelfIntersection(polygon))
+        {
+            error = "possui bordas que se cruzam";
+            return false;
+        }
+
+        float signedArea = CalculateSignedArea(polygon);
+        if (MathF.Abs(signedArea) < Epsilon * Epsilon)
+        {
+            error = "não possui área válida";
+            return false;
+        }
+        bool counterClockwise = signedArea > 0.0f;
+
+        int guard = polygon.Count * polygon.Count;
+        while (polygon.Count > 3 && guard-- > 0)
+        {
+            bool clippedEar = false;
+            for (int index = 0; index < polygon.Count; index++)
+            {
+                ProjectedFaceVertex previous = polygon[(index - 1 + polygon.Count) % polygon.Count];
+                ProjectedFaceVertex current = polygon[index];
+                ProjectedFaceVertex next = polygon[(index + 1) % polygon.Count];
+                float corner = Cross(previous.Position, current.Position, next.Position);
+                if (counterClockwise ? corner <= Epsilon : corner >= -Epsilon)
+                    continue;
+
+                bool containsOtherVertex = false;
+                for (int candidateIndex = 0; candidateIndex < polygon.Count; candidateIndex++)
+                {
+                    if (candidateIndex == index ||
+                        candidateIndex == (index - 1 + polygon.Count) % polygon.Count ||
+                        candidateIndex == (index + 1) % polygon.Count)
+                    {
+                        continue;
+                    }
+                    if (IsPointInsideOrOnTriangle(polygon[candidateIndex].Position, previous.Position, current.Position, next.Position))
+                    {
+                        containsOtherVertex = true;
+                        break;
+                    }
+                }
+                if (containsOtherVertex)
+                    continue;
+
+                triangles.Add(new FaceTriangle(previous.SourceIndex, current.SourceIndex, next.SourceIndex));
+                polygon.RemoveAt(index);
+                clippedEar = true;
+                break;
+            }
+
+            if (!clippedEar)
+            {
+                triangles.Clear();
+                error = "não é um polígono simples";
+                return false;
+            }
+        }
+
+        if (polygon.Count != 3)
+        {
+            triangles.Clear();
+            error = "não foi possível concluir a triangulação";
+            return false;
+        }
+
+        triangles.Add(new FaceTriangle(polygon[0].SourceIndex, polygon[1].SourceIndex, polygon[2].SourceIndex));
+        error = string.Empty;
+        return true;
+    }
+
+    private static Vector2 ProjectToDominantPlane(Vector3 point, Vector3 normal)
+    {
+        Vector3 absoluteNormal = Vector3.Abs(normal);
+        if (absoluteNormal.X >= absoluteNormal.Y && absoluteNormal.X >= absoluteNormal.Z)
+            return new Vector2(point.Y, point.Z);
+        if (absoluteNormal.Y >= absoluteNormal.Z)
+            return new Vector2(point.X, point.Z);
+        return new Vector2(point.X, point.Y);
+    }
+
+    private static void RemoveCollinearProjectedVertices(List<ProjectedFaceVertex> polygon)
+    {
+        bool removed;
+        do
+        {
+            removed = false;
+            if (polygon.Count <= 3)
+                return;
+
+            for (int index = 0; index < polygon.Count; index++)
+            {
+                Vector2 previous = polygon[(index - 1 + polygon.Count) % polygon.Count].Position;
+                Vector2 current = polygon[index].Position;
+                Vector2 next = polygon[(index + 1) % polygon.Count].Position;
+                if (MathF.Abs(Cross(previous, current, next)) > Epsilon)
+                    continue;
+
+                polygon.RemoveAt(index);
+                removed = true;
+                break;
+            }
+        }
+        while (removed);
+    }
+
+    private static bool HasSelfIntersection(IReadOnlyList<ProjectedFaceVertex> polygon)
+    {
+        for (int first = 0; first < polygon.Count; first++)
+        {
+            int firstNext = (first + 1) % polygon.Count;
+            for (int second = first + 1; second < polygon.Count; second++)
+            {
+                int secondNext = (second + 1) % polygon.Count;
+                if (first == second || first == secondNext || firstNext == second || firstNext == secondNext)
+                    continue;
+                if (SegmentsIntersect(
+                        polygon[first].Position,
+                        polygon[firstNext].Position,
+                        polygon[second].Position,
+                        polygon[secondNext].Position))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool SegmentsIntersect(Vector2 firstStart, Vector2 firstEnd, Vector2 secondStart, Vector2 secondEnd)
+    {
+        float first = Cross(firstStart, firstEnd, secondStart);
+        float second = Cross(firstStart, firstEnd, secondEnd);
+        float third = Cross(secondStart, secondEnd, firstStart);
+        float fourth = Cross(secondStart, secondEnd, firstEnd);
+
+        if (((first > Epsilon && second < -Epsilon) || (first < -Epsilon && second > Epsilon)) &&
+            ((third > Epsilon && fourth < -Epsilon) || (third < -Epsilon && fourth > Epsilon)))
+        {
+            return true;
+        }
+
+        return (MathF.Abs(first) <= Epsilon && IsPointOnSegment(secondStart, firstStart, firstEnd)) ||
+               (MathF.Abs(second) <= Epsilon && IsPointOnSegment(secondEnd, firstStart, firstEnd)) ||
+               (MathF.Abs(third) <= Epsilon && IsPointOnSegment(firstStart, secondStart, secondEnd)) ||
+               (MathF.Abs(fourth) <= Epsilon && IsPointOnSegment(firstEnd, secondStart, secondEnd));
+    }
+
+    private static bool IsPointOnSegment(Vector2 point, Vector2 start, Vector2 end) =>
+        point.X >= MathF.Min(start.X, end.X) - Epsilon && point.X <= MathF.Max(start.X, end.X) + Epsilon &&
+        point.Y >= MathF.Min(start.Y, end.Y) - Epsilon && point.Y <= MathF.Max(start.Y, end.Y) + Epsilon;
+
+    private static float CalculateSignedArea(IReadOnlyList<ProjectedFaceVertex> polygon)
+    {
+        float area = 0.0f;
+        for (int index = 0; index < polygon.Count; index++)
+        {
+            Vector2 first = polygon[index].Position;
+            Vector2 second = polygon[(index + 1) % polygon.Count].Position;
+            area += first.X * second.Y - first.Y * second.X;
+        }
+        return area * 0.5f;
+    }
+
+    private static bool IsPointInsideOrOnTriangle(Vector2 point, Vector2 first, Vector2 second, Vector2 third)
+    {
+        float firstSide = Cross(first, second, point);
+        float secondSide = Cross(second, third, point);
+        float thirdSide = Cross(third, first, point);
+        bool hasPositive = firstSide > Epsilon || secondSide > Epsilon || thirdSide > Epsilon;
+        bool hasNegative = firstSide < -Epsilon || secondSide < -Epsilon || thirdSide < -Epsilon;
+        return !hasPositive || !hasNegative;
+    }
+
+    private static float Cross(Vector2 first, Vector2 second, Vector2 third)
+    {
+        Vector2 firstEdge = second - first;
+        Vector2 secondEdge = third - first;
+        return firstEdge.X * secondEdge.Y - firstEdge.Y * secondEdge.X;
     }
 
     private static bool RayTriangle(Vector3 origin, Vector3 direction, Vector3 first, Vector3 second, Vector3 third, out float distance)

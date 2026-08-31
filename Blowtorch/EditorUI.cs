@@ -3217,6 +3217,27 @@ public unsafe class EditorUI : IDisposable
         bool selectionDelayActive = ImGui.GetTime() - _lastBrushComponentSelectionTime < 0.12;
         bool interactive = canManipulate && (!selectionDelayActive || EditorGizmo.IsUsing());
 
+        // A component drag is transactional per frame: geometry that becomes
+        // self-intersecting or impossible to triangulate is restored to the
+        // last valid shape instead of reaching the renderer/collision system.
+        bool ApplyValidVertexMutation(Action mutation)
+        {
+            var previousPositions = vertexIds.ToDictionary(
+                vertexId => vertexId,
+                brush.EditableMesh.GetPosition);
+            mutation();
+            if (brush.EditableMesh.TryValidate(out _))
+                return true;
+
+            foreach ((int vertexId, Vector3 position) in previousPositions)
+            {
+                EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                if (vertex != null)
+                    vertex.Position = position;
+            }
+            return false;
+        }
+
         if (canManipulate && _gizmoOperation == GizmoOperation.Translate &&
             EditorGizmo.ManipulateTranslation(worldPivot, view, projection, vpPos, vpSize, out Vector3 newPivot, snap, interactive))
         {
@@ -3225,13 +3246,15 @@ public unsafe class EditorUI : IDisposable
             {
                 Quaternion inverseRotation = Quaternion.Inverse(brush.Body.Rotation);
                 Vector3 localDelta = Vector3.Transform(worldDelta, inverseRotation);
-                foreach (int vertexId in vertexIds)
+                changed = ApplyValidVertexMutation(() =>
                 {
-                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
-                    if (vertex != null)
-                        vertex.Position += localDelta;
-                }
-                changed = true;
+                    foreach (int vertexId in vertexIds)
+                    {
+                        EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                        if (vertex != null)
+                            vertex.Position += localDelta;
+                    }
+                });
             }
         }
         else if (canManipulate && _gizmoOperation == GizmoOperation.Rotate &&
@@ -3241,16 +3264,18 @@ public unsafe class EditorUI : IDisposable
             if (MathF.Abs(delta.X) + MathF.Abs(delta.Y) + MathF.Abs(delta.Z) > 0.00001f)
             {
                 Quaternion inverseRotation = Quaternion.Inverse(brush.Body.Rotation);
-                foreach (int vertexId in vertexIds)
+                changed = ApplyValidVertexMutation(() =>
                 {
-                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
-                    if (vertex == null)
-                        continue;
-                    Vector3 world = brush.Body.Position + Vector3.Transform(vertex.Position, brush.Body.Rotation);
-                    Vector3 rotatedWorld = worldPivot + Vector3.Transform(world - worldPivot, delta);
-                    vertex.Position = Vector3.Transform(rotatedWorld - brush.Body.Position, inverseRotation);
-                }
-                changed = true;
+                    foreach (int vertexId in vertexIds)
+                    {
+                        EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                        if (vertex == null)
+                            continue;
+                        Vector3 world = brush.Body.Position + Vector3.Transform(vertex.Position, brush.Body.Rotation);
+                        Vector3 rotatedWorld = worldPivot + Vector3.Transform(world - worldPivot, delta);
+                        vertex.Position = Vector3.Transform(rotatedWorld - brush.Body.Position, inverseRotation);
+                    }
+                });
             }
         }
         else if (canManipulate && _gizmoOperation == GizmoOperation.Scale &&
@@ -3259,13 +3284,15 @@ public unsafe class EditorUI : IDisposable
             Vector3 scale = Vector3.Max(new Vector3(0.001f), newScale);
             if (Vector3.DistanceSquared(scale, Vector3.One) > 0.000001f)
             {
-                foreach (int vertexId in vertexIds)
+                changed = ApplyValidVertexMutation(() =>
                 {
-                    EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
-                    if (vertex != null)
-                        vertex.Position = localPivot + (vertex.Position - localPivot) * scale;
-                }
-                changed = true;
+                    foreach (int vertexId in vertexIds)
+                    {
+                        EditableBrushVertex? vertex = brush.EditableMesh.FindVertex(vertexId);
+                        if (vertex != null)
+                            vertex.Position = localPivot + (vertex.Position - localPivot) * scale;
+                    }
+                });
             }
         }
 
