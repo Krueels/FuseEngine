@@ -26,6 +26,19 @@ public sealed class DeathScreen : IDisposable
         _shader = Shader.FromFile(gl, Bible.Shader(Bible.DeathScreenVert), Bible.Shader(Bible.DeathScreenGlsl));
         _quad = new FullscreenQuad(gl);
 
+        CacheUniforms();
+    }
+
+    public bool Reload()
+    {
+        if (!_shader.Reload())
+            return false;
+        CacheUniforms();
+        return true;
+    }
+
+    private void CacheUniforms()
+    {
         _uScene = _shader.GetUniformLoc("uScene");
         _uResolution = _shader.GetUniformLoc("uResolution");
         _uTime = _shader.GetUniformLoc("uTime");

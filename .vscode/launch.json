@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Fuse",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Fuse/bin/Debug/net10.0-windows/Fuse.dll",
+      "cwd": "${workspaceFolder}/Fuse",
+      "preLaunchTask": "build Fuse"
+    },
+    {
+      "name": "Blowtorch",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Blowtorch/bin/Debug/net10.0-windows/Blowtorch.dll",
+      "cwd": "${workspaceFolder}/Blowtorch",
+      "preLaunchTask": "build Blowtorch"
+    }
+  ]
+}

@@ -5711,14 +5711,13 @@
       "id": "new_box_2",
       "visible": true,
       "mesh": "cube",
-      "material": "Materials/Default.fmat",
-      "geometry_graph": "Geometry/GeometryGraph.fgeo",
+      "material": "Materials/SPIDER_BODY.fmat",
       "body": {
         "shape": "box",
         "position": [
           0,
-          1,
-          22
+          6,
+          0
         ],
         "rotation": [
           1,

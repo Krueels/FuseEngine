@@ -24,6 +24,7 @@ public static class DevShortcuts
         AudioSystem audio,
         AssetManager assets,
         MasterRenderer renderer,
+        DeathScreen? deathScreen,
         Debug.DebugDrawer debugDrawer,
         ref bool screenshotRequested,
         Action requestMapReload)
@@ -41,7 +42,7 @@ public static class DevShortcuts
         }
 
         if (Input.Input.KeyPressed(KeyCodes.F4))
-            renderer.ReloadPostProcessShader();
+            renderer.ReloadAllShaders(assets, deathScreen);
 
         if (Input.Input.KeyPressed(KeyCodes.F6))
         {

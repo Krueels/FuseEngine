@@ -431,6 +431,15 @@ public static class MapSerializer
                 }
             }
 
+            // Brushes are generated on the CPU above. Create their GPU mesh
+            // when no Geometry Nodes result replaced it. This also preserves
+            // the original brush as a fallback if graph evaluation fails.
+            if (mesh == null && generatedGeometry != null)
+            {
+                mesh = new Renderer.Mesh(assets.Gl, generatedGeometry.Vertices, generatedGeometry.Indices,
+                    generatedGeometry.LineIndices, generatedGeometry.Parts);
+            }
+
             if (generatedGeometry != null)
             {
                 brushCollVerts = new System.Numerics.Vector3[generatedGeometry.Vertices.Length];

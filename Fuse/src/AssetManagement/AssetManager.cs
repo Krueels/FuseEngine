@@ -189,6 +189,7 @@ public class AssetManager
     {
         public required Renderer.Shader StaticShader { get; init; }
         public required Renderer.Shader SkinnedShader { get; init; }
+        public required string GeneratedSource { get; init; }
         public int References { get; set; }
     }
 
@@ -398,6 +399,45 @@ public class AssetManager
         return shader;
     }
 
+    /// <summary>
+    /// Reloads every file-backed shader currently known by the asset manager and
+    /// every generated material shader. Programs are replaced in place, so
+    /// entities and cached materials do not keep references to disposed programs.
+    /// </summary>
+    public int ReloadAllShaders()
+    {
+        int reloaded = 0;
+
+        foreach (Renderer.Shader shader in _shaders.Values.Distinct())
+        {
+            if (shader.Reload())
+                reloaded++;
+        }
+
+        string staticVertexPath = Bible.Shader(Bible.ShaderDefaultVert);
+        string skinnedVertexPath = Bible.Shader(Bible.ShaderSkinnedVert);
+        string staticVertex = Renderer.Shader.PreprocessIncludes(
+            File.ReadAllText(staticVertexPath), Path.GetDirectoryName(staticVertexPath)!);
+        string skinnedVertex = Renderer.Shader.PreprocessIncludes(
+            File.ReadAllText(skinnedVertexPath), Path.GetDirectoryName(skinnedVertexPath)!);
+
+        string fragmentPath = Bible.Shader(Bible.ShaderDefaultFrag);
+        string fragmentTemplate = Renderer.Shader.PreprocessIncludes(
+            File.ReadAllText(fragmentPath), Path.GetDirectoryName(fragmentPath)!);
+
+        foreach (CachedMaterialShaders cached in _materialShaders.Values)
+        {
+            string fragmentSource = MaterialGraphCompiler.BuildFragmentSource(
+                fragmentTemplate, cached.GeneratedSource, fragmentPath);
+            if (cached.StaticShader.ReloadSources(staticVertex, fragmentSource))
+                reloaded++;
+            if (cached.SkinnedShader.ReloadSources(skinnedVertex, fragmentSource))
+                reloaded++;
+        }
+
+        return reloaded;
+    }
+
     public MaterialRuntime GetMaterial(string path)
     {
         string fullPath = MaterialRuntime.ResolveAssetPath(path);
@@ -487,6 +527,7 @@ public class AssetManager
         {
             StaticShader = staticShader,
             SkinnedShader = skinnedShader,
+            GeneratedSource = compilation.GeneratedSource,
             References = 1
         };
         _materialShaders[compilation.GraphHash] = cached;
@@ -738,7 +779,8 @@ public class AssetManager
         if (_shaders.TryGetValue(key, out Renderer.Shader? existing))
             return existing;
 
-        Renderer.Shader shader = new(_gl, vertexSource, fragmentSource);
+        Renderer.Shader shader = Renderer.Shader.FromSources(
+            _gl, vertexPath, fragmentPath, vertexSource, fragmentSource);
         _shaders[key] = shader;
         return shader;
     }

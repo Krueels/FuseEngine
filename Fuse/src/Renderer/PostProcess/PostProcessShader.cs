@@ -57,21 +57,15 @@ public sealed class PostProcessShader : IDisposable
 
     public bool Reload()
     {
-        string vertPath = Bible.Shader(Bible.PostProcessVert);
-        string fragPath = Bible.Shader(Bible.PostProcessFrag);
-
-        string vertSrc = Shader.PreprocessIncludes(File.ReadAllText(vertPath), Path.GetDirectoryName(vertPath)!);
-        string fragSrc = Shader.PreprocessIncludes(File.ReadAllText(fragPath), Path.GetDirectoryName(fragPath)!);
-
-        var newShader = new Shader(_gl, vertSrc, fragSrc);
-
-        _shader.Dispose();
-        _shader = newShader;
+        if (!_shader.Reload())
+            return false;
         CacheUniforms();
 
         Logger.InfoGold("[ShaderHotReload] Post-process shader recarregado com sucesso");
         return true;
     }
+
+    public void RefreshUniforms() => CacheUniforms();
 
     private void CacheUniforms()
     {

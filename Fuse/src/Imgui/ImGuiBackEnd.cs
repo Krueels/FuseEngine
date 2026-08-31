@@ -76,7 +76,7 @@ public unsafe class ImGuiBackEnd : IDisposable
             ImGuiNET.ImGui.Checkbox("Motion Blur Enabled", ref pp.MotionBlurEnabled);
             ImGuiNET.ImGui.Checkbox("SSAO Enabled", ref pp.SsaoEnabled);
             ImGuiNET.ImGui.SeparatorText("Debug View");
-            ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract", "SSAO Mask", "Depth"], 6);
+            ImGuiNET.ImGui.Combo("View", ref pp.DebugView, ["Final", "Scene", "Bloom", "Extract", "SSAO Mask", "Depth", "Normal"], 7);
 
             if (pp.Enabled)
             {

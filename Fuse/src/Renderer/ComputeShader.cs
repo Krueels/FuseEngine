@@ -13,45 +13,87 @@ namespace Fuse.Renderer;
 public unsafe sealed class ComputeShader : IDisposable
 {
     private readonly GL _gl;
-    private readonly uint _id;
+    private uint _id;
+    private readonly string? _sourcePath;
+    private bool _disposed;
 
-    public bool IsValid { get; }
+    public bool IsValid { get; private set; }
     public uint ID => _id;
 
-    private ComputeShader(GL gl, string source)
+    private ComputeShader(GL gl, string source, string? sourcePath)
     {
         _gl = gl;
-        uint shader = gl.CreateShader(ShaderType.ComputeShader);
+        _sourcePath = sourcePath;
+        _id = BuildProgram(source, out bool valid);
+        IsValid = valid;
+    }
+
+    public bool Reload()
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(_sourcePath))
+            return false;
+
+        try
+        {
+            string source = Shader.PreprocessIncludes(
+                File.ReadAllText(_sourcePath), Path.GetDirectoryName(_sourcePath)!);
+            uint replacement = BuildProgram(source, out bool valid);
+            if (!valid)
+            {
+                _gl.DeleteProgram(replacement);
+                return false;
+            }
+
+            uint previous = _id;
+            _id = replacement;
+            IsValid = true;
+            _uniformCache.Clear();
+            if (previous != 0)
+                _gl.DeleteProgram(previous);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[ShaderHotReload] Falha ao ler compute shader '{_sourcePath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    private uint BuildProgram(string source, out bool valid)
+    {
+        uint shader = _gl.CreateShader(ShaderType.ComputeShader);
         byte[] sourceBytes = Encoding.UTF8.GetBytes(source);
         fixed (byte* sourcePointer = sourceBytes)
         {
             byte* pointer = sourcePointer;
             int length = sourceBytes.Length;
-            gl.ShaderSource(shader, 1, &pointer, &length);
+            _gl.ShaderSource(shader, 1, &pointer, &length);
         }
 
-        gl.CompileShader(shader);
-        gl.GetShader(shader, GLEnum.CompileStatus, out int compileStatus);
+        _gl.CompileShader(shader);
+        _gl.GetShader(shader, GLEnum.CompileStatus, out int compileStatus);
         bool compileValid = compileStatus != 0;
         if (!compileValid)
-            Logger.Error($"COMPUTE shader compile error:\n{gl.GetShaderInfoLog(shader)}");
+            Logger.Error($"COMPUTE shader compile error:\n{_gl.GetShaderInfoLog(shader)}");
 
-        _id = gl.CreateProgram();
-        gl.AttachShader(_id, shader);
-        gl.LinkProgram(_id);
-        gl.GetProgram(_id, GLEnum.LinkStatus, out int linkStatus);
+        uint program = _gl.CreateProgram();
+        _gl.AttachShader(program, shader);
+        _gl.LinkProgram(program);
+        _gl.GetProgram(program, GLEnum.LinkStatus, out int linkStatus);
         bool linkValid = linkStatus != 0;
         if (!linkValid)
-            Logger.Error($"COMPUTE shader link error: {gl.GetProgramInfoLog(_id)}");
+            Logger.Error($"COMPUTE shader link error: {_gl.GetProgramInfoLog(program)}");
 
-        IsValid = compileValid && linkValid;
-        gl.DeleteShader(shader);
+        valid = compileValid && linkValid;
+        _gl.DeleteShader(shader);
+        return program;
     }
 
     public static ComputeShader FromFile(GL gl, string path)
     {
-        string source = Shader.PreprocessIncludes(File.ReadAllText(path), Path.GetDirectoryName(path)!);
-        return new ComputeShader(gl, source);
+        string fullPath = Path.GetFullPath(path);
+        string source = Shader.PreprocessIncludes(File.ReadAllText(fullPath), Path.GetDirectoryName(fullPath)!);
+        return new ComputeShader(gl, source, fullPath);
     }
 
     public void Use() => _gl.UseProgram(_id);
@@ -83,5 +125,15 @@ public unsafe sealed class ComputeShader : IDisposable
         return location;
     }
 
-    public void Dispose() => _gl.DeleteProgram(_id);
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        if (_id != 0)
+        {
+            _gl.DeleteProgram(_id);
+            _id = 0;
+        }
+    }
 }

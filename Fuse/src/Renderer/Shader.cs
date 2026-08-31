@@ -8,39 +8,100 @@ namespace Fuse.Renderer;
 public unsafe class Shader : IDisposable
 {
     private readonly GL _gl;
-    private readonly uint _id;
-    public bool IsValid { get; }
+    private uint _id;
+    private string? _vertexPath;
+    private string? _fragmentPath;
+    private bool _disposed;
+    private readonly Dictionary<string, uint> _uniformBlockBindings = new();
+    public bool IsValid { get; private set; }
 
     public Shader(GL gl, string vertexSrc, string fragmentSrc)
     {
         _gl = gl;
-        uint vs = Compile(ShaderType.VertexShader, vertexSrc, out bool vertexValid);
-        uint fs = Compile(ShaderType.FragmentShader, fragmentSrc, out bool fragmentValid);
-
-        _id = gl.CreateProgram();
-        gl.AttachShader(_id, vs);
-        gl.AttachShader(_id, fs);
-        gl.LinkProgram(_id);
-
-        gl.GetProgram(_id, GLEnum.LinkStatus, out int success);
-        bool linkValid = success != 0;
-        if (!linkValid)
-        {
-            string info = gl.GetProgramInfoLog(_id);
-            Logger.Error($"Shader link error: {info}");
-        }
-
-        IsValid = vertexValid && fragmentValid && linkValid;
-
-        gl.DeleteShader(vs);
-        gl.DeleteShader(fs);
+        _id = BuildProgram(vertexSrc, fragmentSrc, out bool valid);
+        IsValid = valid;
     }
 
     public static Shader FromFile(GL gl, string vertexPath, string fragmentPath)
     {
-        string vertSrc = PreprocessIncludes(File.ReadAllText(vertexPath), Path.GetDirectoryName(vertexPath)!);
-        string fragSrc = PreprocessIncludes(File.ReadAllText(fragmentPath), Path.GetDirectoryName(fragmentPath)!);
-        return new Shader(gl, vertSrc, fragSrc);
+        string fullVertexPath = Path.GetFullPath(vertexPath);
+        string fullFragmentPath = Path.GetFullPath(fragmentPath);
+        string vertSrc = PreprocessIncludes(File.ReadAllText(fullVertexPath), Path.GetDirectoryName(fullVertexPath)!);
+        string fragSrc = PreprocessIncludes(File.ReadAllText(fullFragmentPath), Path.GetDirectoryName(fullFragmentPath)!);
+        return FromSources(gl, fullVertexPath, fullFragmentPath, vertSrc, fragSrc);
+    }
+
+    internal static Shader FromSources(
+        GL gl,
+        string vertexPath,
+        string fragmentPath,
+        string vertexSource,
+        string fragmentSource)
+    {
+        var shader = new Shader(gl, vertexSource, fragmentSource)
+        {
+            _vertexPath = Path.GetFullPath(vertexPath),
+            _fragmentPath = Path.GetFullPath(fragmentPath)
+        };
+        return shader;
+    }
+
+    /// <summary>
+    /// Recompiles a file-backed shader and swaps the OpenGL program only after
+    /// the replacement compiled and linked successfully. Existing references to
+    /// this Shader therefore keep working after a hot reload.
+    /// </summary>
+    public bool Reload()
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(_vertexPath) || string.IsNullOrWhiteSpace(_fragmentPath))
+            return false;
+
+        try
+        {
+            string vertexSource = PreprocessIncludes(
+                File.ReadAllText(_vertexPath), Path.GetDirectoryName(_vertexPath)!);
+            string fragmentSource = PreprocessIncludes(
+                File.ReadAllText(_fragmentPath), Path.GetDirectoryName(_fragmentPath)!);
+            return ReloadSources(vertexSource, fragmentSource);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[ShaderHotReload] Falha ao ler shader '{_vertexPath}'/'{_fragmentPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds a generated shader (for example, a material graph shader) while
+    /// preserving its object identity for all entities that already reference it.
+    /// </summary>
+    internal bool ReloadSources(string vertexSource, string fragmentSource)
+    {
+        if (_disposed)
+            return false;
+
+        uint replacement = BuildProgram(vertexSource, fragmentSource, out bool valid);
+        if (!valid)
+        {
+            _gl.DeleteProgram(replacement);
+            return false;
+        }
+
+        uint previous = _id;
+        _id = replacement;
+        IsValid = true;
+        _uniformCache.Clear();
+
+        foreach ((string blockName, uint bindingPoint) in _uniformBlockBindings)
+        {
+            uint blockIndex = _gl.GetUniformBlockIndex(_id, blockName);
+            if (blockIndex != uint.MaxValue)
+                _gl.UniformBlockBinding(_id, blockIndex, bindingPoint);
+        }
+
+        if (previous != 0)
+            _gl.DeleteProgram(previous);
+        return true;
     }
 
     internal static string PreprocessIncludes(string source, string dir)
@@ -147,12 +208,19 @@ public unsafe class Shader : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
         if (_bonesSSBO != 0)
         {
             _gl.DeleteBuffer(_bonesSSBO);
             _bonesSSBO = 0;
         }
-        _gl.DeleteProgram(_id);
+        if (_id != 0)
+        {
+            _gl.DeleteProgram(_id);
+            _id = 0;
+        }
     }
 
     public void SetVec3(string name, Vector3 vec)
@@ -182,6 +250,7 @@ public unsafe class Shader : IDisposable
 
     public void BindUniformBlock(string name, uint bindingPoint)
     {
+        _uniformBlockBindings[name] = bindingPoint;
         uint blockIndex = _gl.GetUniformBlockIndex(_id, name);
         if (blockIndex != uint.MaxValue)
             _gl.UniformBlockBinding(_id, blockIndex, bindingPoint);
@@ -220,5 +289,26 @@ public unsafe class Shader : IDisposable
             Logger.Error($"{typeName} shader compile error:\n{info}");
         }
         return shader;
+    }
+
+    private uint BuildProgram(string vertexSource, string fragmentSource, out bool valid)
+    {
+        uint vertexShader = Compile(ShaderType.VertexShader, vertexSource, out bool vertexValid);
+        uint fragmentShader = Compile(ShaderType.FragmentShader, fragmentSource, out bool fragmentValid);
+
+        uint program = _gl.CreateProgram();
+        _gl.AttachShader(program, vertexShader);
+        _gl.AttachShader(program, fragmentShader);
+        _gl.LinkProgram(program);
+
+        _gl.GetProgram(program, GLEnum.LinkStatus, out int linkStatus);
+        bool linkValid = linkStatus != 0;
+        if (!linkValid)
+            Logger.Error($"Shader link error: {_gl.GetProgramInfoLog(program)}");
+
+        _gl.DeleteShader(vertexShader);
+        _gl.DeleteShader(fragmentShader);
+        valid = vertexValid && fragmentValid && linkValid;
+        return program;
     }
 }

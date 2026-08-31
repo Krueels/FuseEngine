@@ -13,6 +13,11 @@ vec4 TonemapOnly(vec2 uv) {
         return vec4(vec3(t), 1.0);
     }
 
+    if (uDebugView == 6)
+    {
+        return texture(uScene, uv);
+    }
+
     vec3 col = texture(uScene, uv).rgb;
     if (uSsaoIntensity > 0.0) {
         float ao = texture(uSsao, uv).r;

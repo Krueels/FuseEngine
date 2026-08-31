@@ -193,6 +193,19 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
             Entity = sceneManager.ActiveScene.Add(null, Id, Body);
             Entity.SkinnedModel = _model;
+
+            var spiderBodyMaterial = _assets.GetMaterial(Bible.MAT_SPIDER_BODY);
+
+            foreach (var submesh in _model.Submeshes)
+            {
+                if (submesh.Name.Equals("Object_0", StringComparison.OrdinalIgnoreCase))
+                {
+                    submesh.Material = spiderBodyMaterial;
+                    submesh.Texture = null;
+                    break;
+                }
+            }
+
             Entity.Animator = _animator; // Permite que a GPU leia as matrizes atualizadas
             Entity.Visible = true;
             Entity.ModelOffset = new Vector3(0f, 0f, 0f);

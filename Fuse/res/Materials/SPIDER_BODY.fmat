@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "name": "SPIDER_BODY",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "4d3c31165cf74cfd96432d334afc4dae",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          9.787565,
+          126.64504
+        ],
+        "properties": {
+          "path": "Textures/huntsmanSpiderTextures/Spider_Albedo.png",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "63f02ee847e34ff7b16420445080419d",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          -70.88492,
+          298.56998
+        ],
+        "properties": {
+          "path": "Textures/huntsmanSpiderTextures/Spider_Normal.png",
+          "color_space": "linear"
+        }
+      },
+      {
+        "id": "de1e77dd19864537801902ce3665d89a",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          192.29251,
+          293.27997
+        ],
+        "properties": {
+          "strength": 1
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "4d3c31165cf74cfd96432d334afc4dae",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "63f02ee847e34ff7b16420445080419d",
+        "from_socket": "Color",
+        "to_node": "de1e77dd19864537801902ce3665d89a",
+        "to_socket": "Color"
+      },
+      {
+        "from_node": "de1e77dd19864537801902ce3665d89a",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      }
+    ]
+  }
+}

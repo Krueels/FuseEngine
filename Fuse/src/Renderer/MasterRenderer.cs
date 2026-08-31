@@ -118,7 +118,7 @@ public unsafe class MasterRenderer
     ];
 
     // billboard
-    private uint _bbShader;
+    private Shader _bbShader = null!;
     private int _bbUView, _bbUProj, _bbUWorldPos, _bbUSize, _bbUColor, _bbUTexture;
     private uint _bbVao, _bbVbo;
 
@@ -180,6 +180,26 @@ public unsafe class MasterRenderer
     {
         _postPipeline.ReloadShader();
         GameNotify.Info("PP Shaders Reload");
+    }
+
+    public void ReloadAllShaders(AssetManagement.AssetManager assets, DeathScreen? deathScreen = null)
+    {
+        int reloaded = assets.ReloadAllShaders();
+
+        // AssetManager reloads the shared post-process Shader in place. Its
+        // wrapper stores raw uniform locations, so refresh them after the swap.
+        _postPipeline.RefreshShaderBindings();
+
+        if (_forwardPlusLighting?.ReloadShader() == true)
+            reloaded++;
+
+        CacheBillboardUniforms();
+
+        if (deathScreen?.Reload() == true)
+            reloaded++;
+
+        GameNotify.Info($"Shaders Reloaded ({reloaded})");
+        Logger.InfoGold($"[ShaderHotReload] {reloaded} shader programs recarregados");
     }
 
     /// <summary>
@@ -414,13 +434,8 @@ public unsafe class MasterRenderer
         }
 
         // Billboard shader (muzzle flash) - carregar de arquivos
-        _bbShader = assets.GetShader(Bible.Shader(Bible.ShaderBillboardVert), Bible.Shader(Bible.ShaderBillboardFrag))!.ID;
-        _bbUView = _gl.GetUniformLocation(_bbShader, "uView");
-        _bbUProj = _gl.GetUniformLocation(_bbShader, "uProj");
-        _bbUWorldPos = _gl.GetUniformLocation(_bbShader, "uWorldPos");
-        _bbUSize = _gl.GetUniformLocation(_bbShader, "uSize");
-        _bbUColor = _gl.GetUniformLocation(_bbShader, "uColor");
-        _bbUTexture = _gl.GetUniformLocation(_bbShader, "uTexture");
+        _bbShader = assets.GetShader(Bible.Shader(Bible.ShaderBillboardVert), Bible.Shader(Bible.ShaderBillboardFrag))!;
+        CacheBillboardUniforms();
 
         // Decal Shader (Box Projected Decals)
         _decalShader = assets.GetShader(Bible.Shader(Bible.ShaderDecalVert), Bible.Shader(Bible.ShaderDecalFrag))!;
@@ -459,9 +474,22 @@ public unsafe class MasterRenderer
         }
         _gl.EnableVertexAttribArray(0);
         _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)0);
-        _gl.EnableVertexAttribArray(1);
-        _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-        _gl.BindVertexArray(0);
+         _gl.EnableVertexAttribArray(1);
+         _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+         _gl.BindVertexArray(0);
+     }
+
+    private void CacheBillboardUniforms()
+    {
+        if (_bbShader == null || _bbShader.ID == 0)
+            return;
+
+        _bbUView = _gl.GetUniformLocation(_bbShader.ID, "uView");
+        _bbUProj = _gl.GetUniformLocation(_bbShader.ID, "uProj");
+        _bbUWorldPos = _gl.GetUniformLocation(_bbShader.ID, "uWorldPos");
+        _bbUSize = _gl.GetUniformLocation(_bbShader.ID, "uSize");
+        _bbUColor = _gl.GetUniformLocation(_bbShader.ID, "uColor");
+        _bbUTexture = _gl.GetUniformLocation(_bbShader.ID, "uTexture");
     }
 
     private void CreateDecalDepthResources()
@@ -717,7 +745,7 @@ public unsafe class MasterRenderer
             _gl.Disable(EnableCap.CullFace);
             _gl.DepthMask(false);
 
-            _gl.UseProgram(_bbShader);
+            _gl.UseProgram(_bbShader.ID);
 
             foreach (var bb in _billboardQueue)
             {
@@ -1174,6 +1202,7 @@ public unsafe class MasterRenderer
         shader.SetFloat("uMaterialAlphaCutoff", 0.5f);
         shader.SetBool("uMaterialReceiveShadows", true);
         shader.SetFloat("uIsViewmodel", 0.0f);
+        shader.SetInt("uDebugView", _postPipeline.Settings.DebugView);
         shader.SetBool("uOutputSrgb", !_postPipeline.Settings.Enabled);
         if (_forwardPlusLighting != null)
             _forwardPlusLighting.ConfigureShader(shader);
@@ -1380,7 +1409,7 @@ public unsafe class MasterRenderer
         _gl.Enable(GLEnum.Blend);
         _gl.BlendFunc(GLEnum.SrcAlpha, GLEnum.OneMinusSrcAlpha);
 
-        _gl.UseProgram(_bbShader);
+        _gl.UseProgram(_bbShader.ID);
 
         float[] viewArr = [
             view.M11, view.M12, view.M13, view.M14,

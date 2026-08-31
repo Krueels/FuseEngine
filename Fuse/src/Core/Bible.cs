@@ -19,6 +19,9 @@ public static class Bible
     // Material - AK
     public const string MAT_AK = "Materials/MAT_AK.fmat";
 
+    // Material - Spider
+    public const string MAT_SPIDER_BODY = "Materials/SPIDER_BODY.fmat";
+
     // Textures - UI
     public const string Crosshair = "UI/crosshair.png";
     public const string CrosshairInteract = "UI/crosshair_interact.png";
@@ -129,6 +132,7 @@ public static class Bible
         assets.QueueMaterialPreload(MAT_Arms, AssetPriority.Critical);
         assets.QueueMaterialPreload(MAT_Glock, AssetPriority.High);
         assets.QueueMaterialPreload(MAT_AK, AssetPriority.High);
+        assets.QueueMaterialPreload(MAT_SPIDER_BODY, AssetPriority.Normal);
 
         assets.QueueSkinnedModelPreload(Model(UniSexGuy), AssetPriority.Normal);
         assets.QueueSkinnedModelPreload(Model(SpiderModel), AssetPriority.Normal);
@@ -161,8 +165,6 @@ public static class Bible
         assets.GetTexture(Tex(Crosshair), Fuse.Renderer.TextureColorSpace.Linear);
         assets.GetTexture(Tex(CrosshairInteract), Fuse.Renderer.TextureColorSpace.Linear);
         assets.GetTexture(Tex(EnemyIcon), Fuse.Renderer.TextureColorSpace.Linear);
-        //assets.GetTexture(Tex(GlockAlbedo), Fuse.Renderer.TextureColorSpace.Srgb);
-        //assets.GetTexture(Tex(ArmsMale), Fuse.Renderer.TextureColorSpace.Srgb);
         assets.GetTexture(Tex(Skybox), Fuse.Renderer.TextureColorSpace.Srgb);
         assets.GetTexture(Tex(Crate), Fuse.Renderer.TextureColorSpace.Srgb);
         for (int i = 0; i < 3; i++)

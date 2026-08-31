@@ -551,6 +551,7 @@ public unsafe class Application : IDisposable
             _audio,
             _assets,
             _renderer,
+            _deathScreen,
             _debugDrawer,
             ref _screenshotRequested,
             RequestMapReload);

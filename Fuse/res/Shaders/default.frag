@@ -44,6 +44,7 @@ uniform samplerCube uPointShadowMap2;
 uniform samplerCube uPointShadowMap3;
 uniform bool uUseTexture;
 uniform vec3 uColor;
+uniform int uDebugView;
 uniform samplerCube uDiffuseIrradianceMap;
 uniform samplerCube uPrefilteredEnvMap;
 uniform sampler2D uBrdfLut;
@@ -396,6 +397,13 @@ void main()
             bitangent = -bitangent;
         mat3 tangentFrame = mat3(tangent, bitangent, normal);
         normal = normalize(tangentFrame * material.tangentNormal);
+    }
+
+    if (uDebugView == 6)
+    {
+        fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+        fragEmissive = vec4(0.0);
+        return;
     }
 
     vec3 viewDir = normalize(uCameraPosition.xyz - vWorldPos);

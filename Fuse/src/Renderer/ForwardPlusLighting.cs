@@ -204,6 +204,8 @@ public sealed unsafe class ForwardPlusLighting : IDisposable
         shader.SetInt("uForwardPlusSpotCount", SpotLightCount);
     }
 
+    public bool ReloadShader() => _cullingShader.Reload();
+
     private void WriteVec4(int offset, float x, float y, float z, float w)
     {
         _lightData[offset] = x;

@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	  <ApplicationIcon>blowtorch.ico</ApplicationIcon>
+    <UserSecretsId>4d598b32-80af-492e-bb4d-59bade391cb1</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

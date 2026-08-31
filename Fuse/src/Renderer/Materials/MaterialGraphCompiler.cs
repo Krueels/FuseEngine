@@ -10,6 +10,7 @@ public sealed record MaterialUniformSlot(string NodeId, string UniformName, Mate
 public sealed class MaterialGraphCompilation
 {
     public required string FragmentSource { get; init; }
+    public required string GeneratedSource { get; init; }
     public required IReadOnlyList<MaterialTextureSlot> Textures { get; init; }
     public required IReadOnlyList<MaterialUniformSlot> Uniforms { get; init; }
     public required string GraphHash { get; init; }
@@ -30,15 +31,7 @@ public static class MaterialGraphCompiler
 
         var state = new CompilerState(asset.Graph);
         string generated = state.Generate(output);
-        const string marker = "/*__FUSE_MATERIAL_GRAPH__*/";
-        if (!fragmentSource.Contains(marker, StringComparison.Ordinal))
-            throw new InvalidDataException($"Shader template '{fragmentTemplatePath}' does not contain {marker}.");
-
-        fragmentSource = fragmentSource.Replace(marker, generated, StringComparison.Ordinal);
-        int versionEnd = fragmentSource.IndexOf('\n');
-        fragmentSource = versionEnd >= 0
-            ? fragmentSource.Insert(versionEnd + 1, "#define FUSE_CUSTOM_MATERIAL 1\n")
-            : "#define FUSE_CUSTOM_MATERIAL 1\n" + fragmentSource;
+        fragmentSource = BuildFragmentSource(fragmentSource, generated, fragmentTemplatePath);
 
         string graphHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             Encoding.UTF8.GetBytes(generated)));
@@ -46,10 +39,24 @@ public static class MaterialGraphCompiler
         return new MaterialGraphCompilation
         {
             FragmentSource = fragmentSource,
+            GeneratedSource = generated,
             Textures = state.Textures,
             Uniforms = state.Uniforms,
             GraphHash = graphHash
         };
+    }
+
+    public static string BuildFragmentSource(string fragmentTemplate, string generated, string templateName = "material shader")
+    {
+        const string marker = "/*__FUSE_MATERIAL_GRAPH__*/";
+        if (!fragmentTemplate.Contains(marker, StringComparison.Ordinal))
+            throw new InvalidDataException($"Shader template '{templateName}' does not contain {marker}.");
+
+        string fragmentSource = fragmentTemplate.Replace(marker, generated, StringComparison.Ordinal);
+        int versionEnd = fragmentSource.IndexOf('\n');
+        return versionEnd >= 0
+            ? fragmentSource.Insert(versionEnd + 1, "#define FUSE_CUSTOM_MATERIAL 1\n")
+            : "#define FUSE_CUSTOM_MATERIAL 1\n" + fragmentSource;
     }
 
     private sealed class CompilerState
