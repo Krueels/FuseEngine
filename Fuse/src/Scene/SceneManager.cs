@@ -6,6 +6,7 @@ using Fuse.Core;
 using Fuse.Interaction;
 using Fuse.Physics;
 using Fuse.Renderer;
+using Fuse.Scene.Model;
 using JoltPhysicsSharp;
 
 namespace Fuse.Scene;
@@ -60,7 +61,15 @@ public class SceneManager
 
         onProgress?.Invoke(0.05f, "Loading map data...");
         var loaded = MapSerializer.LoadFromFile(
-            loadPath, _scene, _physics, _assets, out var spawn, out var skyboxPath, Fuse.ResPath.Path, onProgress);
+            loadPath,
+            _scene,
+            _physics,
+            _assets,
+            out var spawn,
+            out var skyboxPath,
+            out var skyboxSettings,
+            Fuse.ResPath.Path,
+            onProgress);
 
         if (loaded != null)
         {
@@ -68,7 +77,7 @@ public class SceneManager
         }
 
         onProgress?.Invoke(0.82f, "Loading skybox...");
-        ApplyMapSkybox(skyboxPath);
+        ApplyMapSkybox(skyboxPath, skyboxSettings);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");
         RegisterInteractablesAndBehaviours();
@@ -91,7 +100,15 @@ public class SceneManager
 
         onProgress?.Invoke(0.05f, "Loading map data...");
         var loaded = MapSerializer.LoadFromFile(
-            CurrentMapPath, _scene, _physics, _assets, out var spawn, out var skyboxPath, Fuse.ResPath.Path, onProgress);
+            CurrentMapPath,
+            _scene,
+            _physics,
+            _assets,
+            out var spawn,
+            out var skyboxPath,
+            out var skyboxSettings,
+            Fuse.ResPath.Path,
+            onProgress);
             
         if (loaded != null)
         {
@@ -99,7 +116,7 @@ public class SceneManager
         }
 
         onProgress?.Invoke(0.82f, "Loading skybox...");
-        ApplyMapSkybox(skyboxPath);
+        ApplyMapSkybox(skyboxPath, skyboxSettings);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");
         RegisterInteractablesAndBehaviours();
@@ -110,8 +127,14 @@ public class SceneManager
         return spawn;
     }
 
-    private void ApplyMapSkybox(string? configuredPath)
+    private void ApplyMapSkybox(string? configuredPath, SkyboxSettings settings)
     {
+        if (settings.Mode == SkyboxMode.Procedural)
+        {
+            _renderer?.SetProceduralSkybox(settings);
+            return;
+        }
+
         string skyboxPath = ResolveMapSkyboxPath(configuredPath);
         if (!File.Exists(skyboxPath))
         {

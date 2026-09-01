@@ -4,6 +4,7 @@ using Silk.NET.OpenGL;
 using Fuse.Core;
 using Fuse.Renderer.PostProcess;
 using Fuse.Math;
+using Fuse.Scene.Model;
 
 namespace Fuse.Renderer;
 
@@ -328,10 +329,22 @@ public unsafe class MasterRenderer
     private Texture _crateTexture = null!;
     private Texture _skyboxTexture = null!;
     private Vector3 _skyboxDominantColor = Vector3.One;
+    private SkyboxSettings _skyboxSettings = new();
+    private ulong _skyboxSettingsSignature;
+    private ulong _proceduralIblSignature;
+    private long _proceduralIblLastAttemptMilliseconds;
+    private const long ProceduralIblRefreshIntervalMilliseconds = 500;
     public Texture SkyboxTexture => _skyboxTexture;
+    public SkyboxSettings SkyboxSettings => _skyboxSettings;
+    public bool IsProceduralSkybox => _skyboxSettings.Mode == SkyboxMode.Procedural;
+
     public void SetSkyboxTexture(Texture tex)
     {
         _skyboxTexture = tex;
+        _skyboxSettings = new SkyboxSettings();
+        _skyboxSettingsSignature = ProceduralSky.ComputeSettingsSignature(_skyboxSettings);
+        _proceduralIblSignature = 0;
+        _proceduralIblLastAttemptMilliseconds = 0;
         _imageBasedLighting?.Dispose();
         _imageBasedLighting = null;
         if (_skyboxTexture.ID != 0)
@@ -349,6 +362,71 @@ public unsafe class MasterRenderer
                 Logger.Warn($"IBL disabled after skybox change: {ex.Message}");
             }
         }
+    }
+
+    public void SetProceduralSkybox(SkyboxSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        SkyboxSettings next = settings.Clone();
+        next.Mode = SkyboxMode.Procedural;
+        ulong signature = ProceduralSky.ComputeSettingsSignature(next);
+        bool alreadyProcedural = _skyboxSettings.Mode == SkyboxMode.Procedural;
+        if (alreadyProcedural && signature == _skyboxSettingsSignature)
+            return;
+
+        if (!alreadyProcedural)
+        {
+            _imageBasedLighting?.Dispose();
+            _imageBasedLighting = null;
+            _proceduralIblSignature = 0;
+            _proceduralIblLastAttemptMilliseconds = 0;
+        }
+
+        _skyboxSettings = next;
+        _skyboxSettingsSignature = signature;
+        _skyboxDominantColor = ProceduralSky.EstimateAmbientColor(_skyboxSettings);
+    }
+
+    private void EnsureProceduralSkyboxIbl(
+        Vector3 sunDirection,
+        Vector3 directionalLightColor)
+    {
+        if (!IsProceduralSkybox)
+            return;
+
+        ulong signature = ProceduralSky.ComputeIblSignature(
+            _skyboxSettings,
+            sunDirection,
+            directionalLightColor);
+        long now = Environment.TickCount64;
+        long elapsed = now - _proceduralIblLastAttemptMilliseconds;
+
+        if (_imageBasedLighting != null && _proceduralIblSignature == signature)
+            return;
+        if (elapsed < ProceduralIblRefreshIntervalMilliseconds)
+            return;
+
+        ImageBasedLighting? replacement = null;
+        try
+        {
+            replacement = ImageBasedLighting.CreateProcedural(
+                _gl,
+                _skyboxSettings,
+                sunDirection,
+                directionalLightColor);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Procedural sky IBL disabled: {ex.Message}");
+        }
+
+        _proceduralIblLastAttemptMilliseconds = now;
+        _proceduralIblSignature = signature;
+        if (replacement == null)
+            return;
+
+        _imageBasedLighting?.Dispose();
+        _imageBasedLighting = replacement;
     }
 
     // Meshes
@@ -631,7 +709,20 @@ public unsafe class MasterRenderer
         }
         Vector3 lightDir = dirLight != null && dirLight.Direction.LengthSquared() > 1e-8f
             ? -Vector3.Normalize(dirLight.Direction)
-            : Vector3.Normalize(new Vector3(1, 2, 1));
+            : ProceduralSky.FallbackSunDirection;
+        Vector3 directionalLightColor = dirLight != null
+            ? dirLight.Color * MathF.Max(dirLight.Intensity, 0.0f)
+            : Vector3.Zero;
+        Vector3 skyDirectionalLightColor = dirLight != null
+            ? directionalLightColor
+            : Vector3.One;
+        if (IsProceduralSkybox)
+        {
+            _skyboxDominantColor = ProceduralSky.EstimateAmbientColor(
+                _skyboxSettings,
+                lightDir);
+        }
+        EnsureProceduralSkyboxIbl(lightDir, skyDirectionalLightColor);
         bool renderDirShadows = dirLight != null && dirLight.CastShadows && ShadowsEnabled;
 
         CalculateCascadeSplits(camera.NearPlane, ShadowFarPlane, _cascadeLevels);
@@ -675,7 +766,7 @@ public unsafe class MasterRenderer
                              _skyboxDominantColor.Y * 0.7152f +
                              _skyboxDominantColor.Z * 0.0722f;
         float ambient = 0.02f + 0.28f * skyLuminance;
-        Vector3 directionalColor = dirLight != null ? dirLight.Color * dirLight.Intensity : Vector3.Zero;
+        Vector3 directionalColor = directionalLightColor;
         float fadeStart = ShadowFarPlane * (1.0f - float.Clamp(ShadowFadeFraction, 0.0f, 0.5f));
         _lightingBuffer.Upload(
             camera.Position,
@@ -734,7 +825,10 @@ public unsafe class MasterRenderer
             _gl.ClearBuffer(BufferKind.Color, 3, materialPtr);
 
         // Skybox
-        if (_skyboxShader.ID != 0 && _skyboxTexture.ID != 0)
+        bool renderProceduralSky = IsProceduralSkybox;
+        if (_skyboxShader.ID != 0 &&
+            _skyBoxCubeMesh != null &&
+            (renderProceduralSky || _skyboxTexture.ID != 0))
         {
             _gl.DepthMask(false);
             _gl.DepthFunc(DepthFunction.Lequal);
@@ -745,8 +839,14 @@ public unsafe class MasterRenderer
             _skyboxShader.SetMat4("uView", skyView);
             _skyboxShader.SetMat4("uProj", proj);
             _skyboxShader.SetBool("uOutputSrgb", !_postPipeline.Settings.Enabled);
+            ProceduralSky.ApplyShaderParameters(
+                _skyboxShader,
+                _skyboxSettings,
+                lightDir,
+                skyDirectionalLightColor);
             _skyboxShader.SetInt("uSkyTexture", 0);
-            _skyboxTexture.Bind(0);
+            if (!renderProceduralSky)
+                _skyboxTexture.Bind(0);
             _skyBoxCubeMesh.Draw();
 
             _gl.CullFace(GLEnum.Back);

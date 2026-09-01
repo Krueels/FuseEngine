@@ -175,6 +175,7 @@ public unsafe class EditorViewport : IDisposable
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
         var frustum = new ViewFrustum(view * proj);
+        assetService.UpdateProceduralSkybox(scene.Lights);
         scene.UpdateTerrainLod(
             _camera.Position,
             _height,
@@ -196,7 +197,8 @@ public unsafe class EditorViewport : IDisposable
             ShadowsEnabled && !_camera.IsOrthographic,
             _camera.IsOrthographic,
             assetService.ShadowShader,
-            assetService.PointShadowShader);
+            assetService.PointShadowShader,
+            assetService.SkyboxSettings);
 
         // Shadow passes render into their own FBOs. Restore this viewport before
         // drawing its color image.
@@ -228,7 +230,7 @@ public unsafe class EditorViewport : IDisposable
 
         PrepareMaterialShader(shader);
 
-        DrawSkybox(assetService, view, proj);
+        DrawSkybox(assetService, scene, view, proj);
 
         // Draw Entities
         bool isWireframe = _camera.IsOrthographic;
@@ -431,9 +433,15 @@ public unsafe class EditorViewport : IDisposable
         _gl.Enable(EnableCap.CullFace);
     }
 
-    private void DrawSkybox(EditorAssetService assetService, Matrix4x4 view, Matrix4x4 proj)
+    private void DrawSkybox(
+        EditorAssetService assetService,
+        Fuse.Renderer.Scene scene,
+        Matrix4x4 view,
+        Matrix4x4 proj)
     {
-        if (_camera.IsOrthographic || assetService.SkyboxTexture is not { ID: not 0 })
+        bool renderProceduralSky = assetService.IsProceduralSkybox;
+        if (_camera.IsOrthographic ||
+            (!renderProceduralSky && assetService.SkyboxTexture is not { ID: not 0 }))
             return;
 
         Shader skyboxShader = assetService.SkyboxShader;
@@ -450,8 +458,18 @@ public unsafe class EditorViewport : IDisposable
         skyboxShader.SetMat4("uView", skyView);
         skyboxShader.SetMat4("uProj", proj);
         skyboxShader.SetBool("uOutputSrgb", true);
+        ProceduralSky.ResolveSun(
+            scene.Lights,
+            out Vector3 sunDirection,
+            out Vector3 directionalLightColor);
+        ProceduralSky.ApplyShaderParameters(
+            skyboxShader,
+            assetService.SkyboxSettings,
+            sunDirection,
+            directionalLightColor);
         skyboxShader.SetInt("uSkyTexture", 0);
-        assetService.SkyboxTexture.Bind(0);
+        if (!renderProceduralSky)
+            assetService.SkyboxTexture!.Bind(0);
         skyboxMesh.Draw();
 
         _gl.CullFace(GLEnum.Back);

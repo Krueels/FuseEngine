@@ -244,11 +244,13 @@ public static class MapSerializer
         AssetManagement.AssetManager assets,
         out PlayerSpawn? playerSpawn,
         out string? skyboxPath,
+        out SkyboxSettings skyboxSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
         skyboxPath = null;
+        skyboxSettings = new SkyboxSettings();
         scene.Clear();
         var createdBodies = new List<RigidBody>();
 
@@ -280,7 +282,17 @@ public static class MapSerializer
         }
 
         if (root.TryGetPropertyValue("skybox", out var skyboxNode) && skyboxNode != null)
-            skyboxPath = (string?)skyboxNode;
+        {
+            if (skyboxNode is JsonObject skyboxObject)
+                skyboxSettings = SkyboxSettings.FromJson(skyboxObject);
+            else
+                skyboxPath = (string?)skyboxNode;
+        }
+        if (root.TryGetPropertyValue("skybox_settings", out var skyboxSettingsNode) &&
+            skyboxSettingsNode is JsonObject skyboxSettingsObject)
+        {
+            skyboxSettings = SkyboxSettings.FromJson(skyboxSettingsObject);
+        }
 
         if (root.TryGetPropertyValue("player_spawn", out var spawnNode))
         {
@@ -911,11 +923,13 @@ public static class MapSerializer
         AssetManagement.AssetManager assets,
         out PlayerSpawn? playerSpawn,
         out string? skyboxPath,
+        out SkyboxSettings skyboxSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
         skyboxPath = null;
+        skyboxSettings = new SkyboxSettings();
         if (!File.Exists(filepath))
         {
             Logger.Error($"Failed to load map: {filepath}");
@@ -923,6 +937,15 @@ public static class MapSerializer
         }
 
         string json = File.ReadAllText(filepath);
-        return DeserializeScene(json, scene, physics, assets, out playerSpawn, out skyboxPath, resPath, onProgress);
+        return DeserializeScene(
+            json,
+            scene,
+            physics,
+            assets,
+            out playerSpawn,
+            out skyboxPath,
+            out skyboxSettings,
+            resPath,
+            onProgress);
     }
 }

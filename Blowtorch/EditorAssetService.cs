@@ -34,6 +34,11 @@ public class EditorAssetService : IDisposable
     private Texture? _skyboxTexture;
     private string _skyboxPath = "";
     private ImageBasedLighting? _imageBasedLighting;
+    private SkyboxSettings _skyboxSettings = new();
+    private ulong _skyboxSettingsSignature;
+    private ulong _proceduralIblSignature;
+    private long _proceduralIblLastAttemptMilliseconds;
+    private const long ProceduralIblRefreshIntervalMilliseconds = 500;
     private readonly Dictionary<string, uint> _texCache = [];
     private readonly Dictionary<string, TerrainHeightmapBrush?> _terrainHeightmapBrushCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, uint> _terrainHeightmapBrushPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
@@ -74,6 +79,8 @@ public class EditorAssetService : IDisposable
     public ImageBasedLighting? ImageBasedLighting => _imageBasedLighting;
     public Texture? SkyboxTexture => _skyboxTexture;
     public string SkyboxPath => _skyboxPath;
+    public SkyboxSettings SkyboxSettings => _skyboxSettings;
+    public bool IsProceduralSkybox => _skyboxSettings.Mode == SkyboxMode.Procedural;
     public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
 
     public MaterialRuntime? GetOrCreateMaterial(string? materialRelPath) =>
@@ -541,7 +548,8 @@ public class EditorAssetService : IDisposable
     public bool SetSkyboxTexture(string? texturePath)
     {
         string normalizedPath = NormalizeSkyboxPath(texturePath);
-        if (normalizedPath.Equals(_skyboxPath, StringComparison.OrdinalIgnoreCase) &&
+        if (!IsProceduralSkybox &&
+            normalizedPath.Equals(_skyboxPath, StringComparison.OrdinalIgnoreCase) &&
             _skyboxTexture?.ID != 0)
             return true;
 
@@ -584,8 +592,86 @@ public class EditorAssetService : IDisposable
         _imageBasedLighting = replacement;
         _skyboxTexture = texture;
         _skyboxPath = normalizedPath;
+        _skyboxSettings = new SkyboxSettings();
+        _skyboxSettingsSignature = ProceduralSky.ComputeSettingsSignature(_skyboxSettings);
+        _proceduralIblSignature = 0;
+        _proceduralIblLastAttemptMilliseconds = 0;
         System.Threading.Interlocked.Increment(ref _assetRevision);
         return true;
+    }
+
+    public bool SetProceduralSkybox(SkyboxSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        SkyboxSettings next = settings.Clone();
+        next.Mode = SkyboxMode.Procedural;
+        ulong signature = ProceduralSky.ComputeSettingsSignature(next);
+        bool alreadyProcedural = IsProceduralSkybox;
+        if (alreadyProcedural && signature == _skyboxSettingsSignature)
+            return true;
+
+        if (!alreadyProcedural)
+        {
+            _imageBasedLighting?.Dispose();
+            _imageBasedLighting = null;
+            _proceduralIblSignature = 0;
+            _proceduralIblLastAttemptMilliseconds = 0;
+        }
+
+        _skyboxSettings = next;
+        _skyboxSettingsSignature = signature;
+        _skyboxPath = "";
+        System.Threading.Interlocked.Increment(ref _assetRevision);
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps the visible procedural sky immediate while refreshing its
+    /// precomputed IBL at a bounded rate. This is called once per visible
+    /// viewport render, so the timestamp/signature guard is important in Quad
+    /// View and while a setting is being dragged.
+    /// </summary>
+    public void UpdateProceduralSkybox(IReadOnlyList<Light> lights)
+    {
+        if (!IsProceduralSkybox)
+            return;
+
+        ProceduralSky.ResolveSun(
+            lights,
+            out Vector3 sunDirection,
+            out Vector3 directionalLightColor);
+        ulong signature = ProceduralSky.ComputeIblSignature(
+            _skyboxSettings,
+            sunDirection,
+            directionalLightColor);
+        long now = Environment.TickCount64;
+        if (_imageBasedLighting != null && _proceduralIblSignature == signature)
+            return;
+        if (now - _proceduralIblLastAttemptMilliseconds < ProceduralIblRefreshIntervalMilliseconds)
+            return;
+
+        ImageBasedLighting? replacement = null;
+        try
+        {
+            replacement = ImageBasedLighting.CreateProcedural(
+                _gl,
+                _skyboxSettings,
+                sunDirection,
+                directionalLightColor);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Blowtorch procedural sky IBL disabled: {ex.Message}");
+        }
+
+        _proceduralIblLastAttemptMilliseconds = now;
+        _proceduralIblSignature = signature;
+        if (replacement == null)
+            return;
+
+        _imageBasedLighting?.Dispose();
+        _imageBasedLighting = replacement;
+        System.Threading.Interlocked.Increment(ref _assetRevision);
     }
 
     public void UpdateFileChanges(EditorSceneService? sceneService = null)

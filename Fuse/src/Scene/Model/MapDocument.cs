@@ -9,6 +9,7 @@ public class MapDocument
 {
     public int Version { get; set; } = 1;
     public string SkyboxPath { get; set; } = "";
+    public SkyboxSettings Skybox { get; set; } = new();
     public List<MapObject> Objects { get; set; } = [];
     public MapPlayerSpawn? PlayerSpawn { get; set; }
     public List<string> ValidationWarnings { get; } = [];
@@ -65,10 +66,23 @@ public class MapDocument
             var doc = new MapDocument
             {
                 Version = root.TryGetPropertyValue("version", out var verNode) ? (int)verNode! : 1,
-                SkyboxPath = root.TryGetPropertyValue("skybox", out var skyboxNode)
+                SkyboxPath = root.TryGetPropertyValue("skybox", out var skyboxNode) &&
+                             skyboxNode is JsonValue
                     ? (string?)skyboxNode ?? ""
                     : ""
             };
+
+            if (root.TryGetPropertyValue("skybox_settings", out var skyboxSettingsNode) &&
+                skyboxSettingsNode is JsonObject skyboxSettingsObject)
+            {
+                doc.Skybox = SkyboxSettings.FromJson(skyboxSettingsObject);
+            }
+            else if (skyboxNode is JsonObject skyboxObject)
+            {
+                // Accept the object form as well, so hand-authored maps can
+                // use { "skybox": { "mode": "procedural", ... } }.
+                doc.Skybox = SkyboxSettings.FromJson(skyboxObject);
+            }
 
             if (root.TryGetPropertyValue("player_spawn", out var spawnNode) && spawnNode != null)
             {
@@ -114,6 +128,8 @@ public class MapDocument
 
         if (!string.IsNullOrWhiteSpace(SkyboxPath))
             root["skybox"] = SkyboxPath.Replace('\\', '/');
+        if (Skybox.Mode == SkyboxMode.Procedural)
+            root["skybox_settings"] = Skybox.ToJson();
 
         if (PlayerSpawn != null)
         {

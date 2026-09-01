@@ -1,5 +1,6 @@
 using System.Numerics;
 using Silk.NET.OpenGL;
+using Fuse.Scene.Model;
 
 namespace Fuse.Renderer;
 
@@ -11,9 +12,9 @@ public unsafe sealed class ImageBasedLighting : IDisposable
     public const int BrdfLutUnit = 17;
 
     private readonly GL _gl;
-    private readonly Texture _source;
     private uint _environment, _irradiance, _prefiltered, _brdfLut;
     private uint _fbo, _cubeVao, _cubeVbo, _quadVao, _quadVbo;
+    private readonly bool _ownsEnvironment;
     private bool _disposed;
 
     public uint EnvironmentCubemap => _environment;
@@ -22,51 +23,59 @@ public unsafe sealed class ImageBasedLighting : IDisposable
     public uint BrdfLut => _brdfLut;
 
     public ImageBasedLighting(GL gl, Texture source)
+        : this(gl)
     {
         if (source.ID == 0)
+        {
+            Dispose();
             throw new InvalidOperationException("Cannot create IBL from an invalid environment texture.");
-        _gl = gl;
-        _source = source;
-        CreateGeometry();
-        _fbo = _gl.GenFramebuffer();
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        }
 
-        // The capture/convolution shaders render a cube from its interior.
-        // The editor and game initialize OpenGL with back-face culling enabled,
-        // which would discard the faces visible from inside the cube and leave
-        // the environment maps black. Isolate the temporary capture state and
-        // restore the caller's state before returning to the normal renderer.
-        bool cullFaceWasEnabled = _gl.IsEnabled(EnableCap.CullFace);
-        bool depthTestWasEnabled = _gl.IsEnabled(EnableCap.DepthTest);
-        bool blendWasEnabled = _gl.IsEnabled(EnableCap.Blend);
-        _gl.Disable(EnableCap.CullFace);
-        _gl.Disable(EnableCap.DepthTest);
-        _gl.Disable(EnableCap.Blend);
-        _gl.DepthMask(false);
         try
         {
-            BuildEnvironment();
-            BuildIrradiance();
-            BuildPrefiltered();
-            BuildBrdfLut();
+            BuildAll(() => BuildEnvironment(source));
         }
         catch
         {
             Dispose();
             throw;
         }
-        finally
+    }
+
+    /// <summary>
+    /// Builds the same irradiance, prefiltered environment and BRDF resources
+    /// used by texture skyboxes, but captures the analytic sky into the source
+    /// cubemap first. This is intentionally an explicit factory because the
+    /// operation is expensive and must not happen every frame.
+    /// </summary>
+    public static ImageBasedLighting CreateProcedural(
+        GL gl,
+        SkyboxSettings settings,
+        Vector3 sunDirection,
+        Vector3 directionalLightColor)
+    {
+        var lighting = new ImageBasedLighting(gl);
+        try
         {
-            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-            _gl.BindVertexArray(0);
-            _gl.DepthMask(true);
-            if (cullFaceWasEnabled) _gl.Enable(EnableCap.CullFace);
-            else _gl.Disable(EnableCap.CullFace);
-            if (depthTestWasEnabled) _gl.Enable(EnableCap.DepthTest);
-            else _gl.Disable(EnableCap.DepthTest);
-            if (blendWasEnabled) _gl.Enable(EnableCap.Blend);
-            else _gl.Disable(EnableCap.Blend);
+            lighting.BuildAll(() => lighting.BuildProceduralEnvironment(
+                settings,
+                sunDirection,
+                directionalLightColor));
+            return lighting;
         }
+        catch
+        {
+            lighting.Dispose();
+            throw;
+        }
+    }
+
+    private ImageBasedLighting(GL gl)
+    {
+        _gl = gl;
+        _ownsEnvironment = true;
+        CreateGeometry();
+        _fbo = _gl.GenFramebuffer();
     }
 
     public void Bind(Shader shader, float intensity = 1.0f)
@@ -87,7 +96,44 @@ public unsafe sealed class ImageBasedLighting : IDisposable
         shader.SetInt("uBrdfLut", BrdfLutUnit);
     }
 
-    private void BuildEnvironment()
+    private void BuildAll(Action buildEnvironment)
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+
+        // The capture/convolution shaders render a cube from its interior.
+        // The editor and game initialize OpenGL with back-face culling enabled,
+        // which would discard the faces visible from inside the cube and leave
+        // the environment maps black. Isolate the temporary capture state and
+        // restore the caller's state before returning to the normal renderer.
+        bool cullFaceWasEnabled = _gl.IsEnabled(EnableCap.CullFace);
+        bool depthTestWasEnabled = _gl.IsEnabled(EnableCap.DepthTest);
+        bool blendWasEnabled = _gl.IsEnabled(EnableCap.Blend);
+        _gl.Disable(EnableCap.CullFace);
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.Disable(EnableCap.Blend);
+        _gl.DepthMask(false);
+        try
+        {
+            buildEnvironment();
+            BuildIrradiance();
+            BuildPrefiltered();
+            BuildBrdfLut();
+        }
+        finally
+        {
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            _gl.BindVertexArray(0);
+            _gl.DepthMask(true);
+            if (cullFaceWasEnabled) _gl.Enable(EnableCap.CullFace);
+            else _gl.Disable(EnableCap.CullFace);
+            if (depthTestWasEnabled) _gl.Enable(EnableCap.DepthTest);
+            else _gl.Disable(EnableCap.DepthTest);
+            if (blendWasEnabled) _gl.Enable(EnableCap.Blend);
+            else _gl.Disable(EnableCap.Blend);
+        }
+    }
+
+    private void BuildEnvironment(Texture source)
     {
         const int size = 256;
         _environment = CreateCubemap(size, 1, InternalFormat.Rgba16f, TextureMinFilter.Linear);
@@ -102,7 +148,40 @@ public unsafe sealed class ImageBasedLighting : IDisposable
             _gl.Viewport(0, 0, size, size);
             _gl.Clear(ClearBufferMask.ColorBufferBit);
             shader.SetMat4("uView", CaptureViews[face]);
-            _source.Bind(0);
+            source.Bind(0);
+            DrawCube();
+        }
+    }
+
+    private void BuildProceduralEnvironment(
+        SkyboxSettings settings,
+        Vector3 sunDirection,
+        Vector3 directionalLightColor)
+    {
+        const int size = 256;
+        _environment = CreateCubemap(size, 1, InternalFormat.Rgba16f, TextureMinFilter.Linear);
+
+        string shaderDirectory = Path.Combine(Fuse.ResPath.Path, "Shaders");
+        string vertexPath = Path.Combine(shaderDirectory, "skybox_capture.vert");
+        string fragmentPath = Path.Combine(shaderDirectory, "skybox.frag");
+        using Shader shader = Shader.FromFile(_gl, vertexPath, fragmentPath);
+        EnsureShader(shader, "procedural sky environment");
+        shader.Use();
+        shader.SetMat4("uProj", Projection);
+        ProceduralSky.ApplyShaderParameters(
+            shader,
+            settings,
+            sunDirection,
+            directionalLightColor);
+        shader.SetBool("uOutputSrgb", false);
+        shader.SetInt("uSkyTexture", 0);
+
+        for (int face = 0; face < 6; face++)
+        {
+            AttachCubemapFace(_environment, face, 0);
+            _gl.Viewport(0, 0, size, size);
+            _gl.Clear(ClearBufferMask.ColorBufferBit);
+            shader.SetMat4("uView", CaptureViews[face]);
             DrawCube();
         }
     }
@@ -270,7 +349,7 @@ public unsafe sealed class ImageBasedLighting : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        if (_environment != 0) _gl.DeleteTexture(_environment);
+        if (_ownsEnvironment && _environment != 0) _gl.DeleteTexture(_environment);
         if (_irradiance != 0) _gl.DeleteTexture(_irradiance);
         if (_prefiltered != 0) _gl.DeleteTexture(_prefiltered);
         if (_brdfLut != 0) _gl.DeleteTexture(_brdfLut);

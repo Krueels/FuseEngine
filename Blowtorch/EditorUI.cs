@@ -43,6 +43,7 @@ public unsafe class EditorUI : IDisposable
     private bool _executePendingDocumentAction;
     private bool _initialMapStatusChecked;
     private string? _previewSkyboxDocumentPath;
+    private ulong _previewSkyboxSettingsSignature;
 
     private enum PendingDocumentAction { None, New, Open, Exit }
     private PendingDocumentAction _pendingDocumentAction;
@@ -585,6 +586,7 @@ public unsafe class EditorUI : IDisposable
             return;
 
         string pre = sceneService.Document.Serialize();
+        sceneService.Document.Skybox.Mode = SkyboxMode.Texture;
         sceneService.Document.SkyboxPath = skyboxPath.Replace('\\', '/');
         assetService.SetSkyboxTexture(sceneService.Document.SkyboxPath);
         viewport.RequestRender();
@@ -601,11 +603,36 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewportFront,
         EditorViewport viewportSide)
     {
+        if (sceneService.Document.Skybox.Mode == SkyboxMode.Procedural)
+        {
+            ulong settingsSignature = ProceduralSky.ComputeSettingsSignature(
+                sceneService.Document.Skybox);
+            if (string.Equals(
+                    _previewSkyboxDocumentPath,
+                    "__procedural__",
+                    StringComparison.Ordinal) &&
+                _previewSkyboxSettingsSignature == settingsSignature)
+            {
+                return;
+            }
+
+            _previewSkyboxDocumentPath = "__procedural__";
+            _previewSkyboxSettingsSignature = settingsSignature;
+            assetService.SetProceduralSkybox(sceneService.Document.Skybox);
+            viewport3D.RequestRender();
+            viewportTop.RequestRender();
+            viewportFront.RequestRender();
+            viewportSide.RequestRender();
+            return;
+        }
+
         string configuredPath = sceneService.Document.SkyboxPath ?? "";
-        if (string.Equals(_previewSkyboxDocumentPath, configuredPath, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(_previewSkyboxDocumentPath, configuredPath, StringComparison.OrdinalIgnoreCase) &&
+            _previewSkyboxSettingsSignature == 0)
             return;
 
         _previewSkyboxDocumentPath = configuredPath;
+        _previewSkyboxSettingsSignature = 0;
         if (!assetService.SetSkyboxTexture(configuredPath))
         {
             Logger.Warn($"Skybox '{configuredPath}' could not be loaded in the editor. Using the default skybox.");
@@ -627,6 +654,7 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewportSide)
     {
         _previewSkyboxDocumentPath = configuredPath;
+        _previewSkyboxSettingsSignature = 0;
         if (!assetService.SetSkyboxTexture(configuredPath))
         {
             Logger.Warn($"Skybox '{configuredPath}' could not be loaded in the editor. Using the default skybox.");
@@ -3978,10 +4006,15 @@ public unsafe class EditorUI : IDisposable
 
         if (ImGui.CollapsingHeader("Environment", ImGuiTreeNodeFlags.DefaultOpen))
         {
+            SkyboxMode currentSkyboxMode = doc.Skybox.Mode;
+            bool currentProceduralSky = currentSkyboxMode == SkyboxMode.Procedural;
             string currentSkyboxPath = doc.SkyboxPath ?? "";
-            string currentSkyboxLabel = string.IsNullOrWhiteSpace(currentSkyboxPath)
+            string currentSkyboxLabel = currentProceduralSky
+                ? "Procedural Sky"
+                : string.IsNullOrWhiteSpace(currentSkyboxPath)
                 ? $"Default ({Path.GetFileName(EditorAssetService.DefaultSkyboxPath)})"
                 : currentSkyboxPath;
+            SkyboxMode selectedSkyboxMode = currentSkyboxMode;
             string selectedSkyboxPath = currentSkyboxPath;
             bool skyboxChanged = false;
 
@@ -3989,18 +4022,30 @@ public unsafe class EditorUI : IDisposable
             if (ImGui.BeginCombo("Skybox##mapSkybox", currentSkyboxLabel))
             {
                 if (ImGui.Selectable(
-                        $"Default ({Path.GetFileName(EditorAssetService.DefaultSkyboxPath)})##defaultSkybox",
-                        string.IsNullOrWhiteSpace(currentSkyboxPath)))
+                        "Procedural Sky##proceduralSkybox",
+                        currentProceduralSky))
                 {
+                    selectedSkyboxMode = SkyboxMode.Procedural;
+                    selectedSkyboxPath = "";
+                    skyboxChanged = true;
+                }
+
+                if (ImGui.Selectable(
+                        $"Default ({Path.GetFileName(EditorAssetService.DefaultSkyboxPath)})##defaultSkybox",
+                        !currentProceduralSky && string.IsNullOrWhiteSpace(currentSkyboxPath)))
+                {
+                    selectedSkyboxMode = SkyboxMode.Texture;
                     selectedSkyboxPath = "";
                     skyboxChanged = true;
                 }
 
                 foreach (string skyboxPath in assetService.EnumerateSkyboxes())
                 {
-                    bool selected = skyboxPath.Equals(currentSkyboxPath, StringComparison.OrdinalIgnoreCase);
+                    bool selected = !currentProceduralSky &&
+                        skyboxPath.Equals(currentSkyboxPath, StringComparison.OrdinalIgnoreCase);
                     if (ImGui.Selectable(skyboxPath, selected))
                     {
+                        selectedSkyboxMode = SkyboxMode.Texture;
                         selectedSkyboxPath = skyboxPath;
                         skyboxChanged = true;
                     }
@@ -4011,19 +4056,244 @@ public unsafe class EditorUI : IDisposable
                 ImGui.EndCombo();
             }
 
-            ImGui.TextDisabled("Use an equirectangular image from res/Textures/Skybox.");
-            if (skyboxChanged && !selectedSkyboxPath.Equals(currentSkyboxPath, StringComparison.OrdinalIgnoreCase))
+            ImGui.TextDisabled(currentProceduralSky
+                ? "Sun direction follows the first enabled Directional Light."
+                : "Use an equirectangular image from res/Textures/Skybox.");
+            bool environmentModeChanged = selectedSkyboxMode != currentSkyboxMode;
+            bool environmentPathChanged = !selectedSkyboxPath.Equals(
+                currentSkyboxPath,
+                StringComparison.OrdinalIgnoreCase);
+            if (skyboxChanged && (environmentModeChanged || environmentPathChanged))
             {
                 Undo.RecordState(_frameBeginState);
+                doc.Skybox.Mode = selectedSkyboxMode;
                 doc.SkyboxPath = selectedSkyboxPath;
-                ApplySkyboxPreview(
-                    selectedSkyboxPath,
-                    assetService,
-                    viewport3D,
-                    viewportTop,
-                    viewportFront,
-                    viewportSide);
+                if (selectedSkyboxMode == SkyboxMode.Procedural)
+                {
+                    assetService.SetProceduralSkybox(doc.Skybox);
+                    _previewSkyboxDocumentPath = "__procedural__";
+                    _previewSkyboxSettingsSignature = ProceduralSky.ComputeSettingsSignature(doc.Skybox);
+                    viewport3D.RequestRender();
+                    viewportTop.RequestRender();
+                    viewportFront.RequestRender();
+                    viewportSide.RequestRender();
+                }
+                else
+                {
+                    ApplySkyboxPreview(
+                        selectedSkyboxPath,
+                        assetService,
+                        viewport3D,
+                        viewportTop,
+                        viewportFront,
+                        viewportSide);
+                }
                 Undo.ForceEnd(history, sceneService, assetService);
+            }
+
+            if (doc.Skybox.Mode == SkyboxMode.Procedural)
+            {
+                ImGui.Separator();
+                ImGui.TextUnformatted("Procedural sky");
+
+                bool proceduralSettingsChanged = false;
+                Vector3 zenithColor = doc.Skybox.ZenithColor;
+                if (ImGui.ColorEdit3(
+                        "Zenith color##skyZenithColor",
+                        ref zenithColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.ZenithColor = zenithColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 horizonColor = doc.Skybox.HorizonColor;
+                if (ImGui.ColorEdit3(
+                        "Horizon color##skyHorizonColor",
+                        ref horizonColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.HorizonColor = horizonColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 groundColor = doc.Skybox.GroundColor;
+                if (ImGui.ColorEdit3(
+                        "Ground color##skyGroundColor",
+                        ref groundColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.GroundColor = groundColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 nightZenithColor = doc.Skybox.NightZenithColor;
+                if (ImGui.ColorEdit3(
+                        "Night zenith color##skyNightZenithColor",
+                        ref nightZenithColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.NightZenithColor = nightZenithColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 nightHorizonColor = doc.Skybox.NightHorizonColor;
+                if (ImGui.ColorEdit3(
+                        "Night horizon color##skyNightHorizonColor",
+                        ref nightHorizonColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.NightHorizonColor = nightHorizonColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 sunColor = doc.Skybox.SunColor;
+                if (ImGui.ColorEdit3(
+                        "Sun color##skySunColor",
+                        ref sunColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.SunColor = sunColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 starColor = doc.Skybox.StarColor;
+                if (ImGui.ColorEdit3(
+                        "Star color##skyStarColor",
+                        ref starColor,
+                        ImGuiColorEditFlags.Float))
+                {
+                    doc.Skybox.StarColor = starColor;
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float sunIntensity = doc.Skybox.SunIntensity;
+                if (ImGui.DragFloat(
+                        "Sun intensity##skySunIntensity",
+                        ref sunIntensity,
+                        0.1f,
+                        0.0f,
+                        100.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.SunIntensity = MathF.Max(0.0f, sunIntensity);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float sunRadius = doc.Skybox.SunAngularRadiusDegrees;
+                if (ImGui.DragFloat(
+                        "Sun angular radius##skySunRadius",
+                        ref sunRadius,
+                        0.01f,
+                        0.01f,
+                        10.0f,
+                        "%.2f deg"))
+                {
+                    doc.Skybox.SunAngularRadiusDegrees = Math.Clamp(sunRadius, 0.01f, 10.0f);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float starIntensity = doc.Skybox.StarIntensity;
+                if (ImGui.DragFloat(
+                        "Star intensity##skyStarIntensity",
+                        ref starIntensity,
+                        0.05f,
+                        0.0f,
+                        20.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.StarIntensity = MathF.Max(0.0f, starIntensity);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float starDensity = doc.Skybox.StarDensity;
+                if (ImGui.DragFloat(
+                        "Star density##skyStarDensity",
+                        ref starDensity,
+                        0.05f,
+                        0.0f,
+                        2.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.StarDensity = Math.Clamp(starDensity, 0.0f, 2.0f);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float atmosphere = doc.Skybox.AtmosphereStrength;
+                if (ImGui.DragFloat(
+                        "Atmosphere strength##skyAtmosphere",
+                        ref atmosphere,
+                        0.05f,
+                        0.0f,
+                        4.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.AtmosphereStrength = MathF.Max(0.0f, atmosphere);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float rayleigh = doc.Skybox.RayleighStrength;
+                if (ImGui.DragFloat(
+                        "Rayleigh strength##skyRayleigh",
+                        ref rayleigh,
+                        0.05f,
+                        0.0f,
+                        4.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.RayleighStrength = MathF.Max(0.0f, rayleigh);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float mie = doc.Skybox.MieStrength;
+                if (ImGui.DragFloat(
+                        "Mie strength##skyMie",
+                        ref mie,
+                        0.05f,
+                        0.0f,
+                        4.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.MieStrength = MathF.Max(0.0f, mie);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float exposure = doc.Skybox.Exposure;
+                if (ImGui.DragFloat(
+                        "Sky exposure##skyExposure",
+                        ref exposure,
+                        0.05f,
+                        0.001f,
+                        8.0f,
+                        "%.2f"))
+                {
+                    doc.Skybox.Exposure = MathF.Max(0.001f, exposure);
+                    proceduralSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                if (proceduralSettingsChanged)
+                {
+                    assetService.SetProceduralSkybox(doc.Skybox);
+                    viewport3D.RequestRender();
+                    viewportTop.RequestRender();
+                    viewportFront.RequestRender();
+                    viewportSide.RequestRender();
+                }
             }
         }
 

@@ -2590,10 +2590,10 @@
           0
         ],
         "rotation": [
-          0.8660254,
-          0.5,
-          0,
-          0
+          -0.7770265,
+          0.56233567,
+          -0.26906985,
+          -0.087235175
         ],
         "mass": 0,
         "friction": 0.5,
@@ -5708,7 +5708,52 @@
       }
     }
   ],
-  "skybox": "Textures/Skybox/skybox_3.png",
+  "skybox_settings": {
+    "mode": "procedural",
+    "zenith_color": [
+      0.08,
+      0.2,
+      0.55
+    ],
+    "horizon_color": [
+      0.65,
+      0.24,
+      0.1
+    ],
+    "ground_color": [
+      0.025,
+      0.03,
+      0.045
+    ],
+    "night_zenith_color": [
+      0.002,
+      0.005,
+      0.02
+    ],
+    "night_horizon_color": [
+      0.01,
+      0.014,
+      0.035
+    ],
+    "sun_color": [
+      1,
+      1,
+      1
+    ],
+    "star_color": [
+      0.7,
+      0.82,
+      1
+    ],
+    "sun_intensity": 4,
+    "sun_angular_radius_degrees": 0.27,
+    "atmosphere_strength": 1,
+    "rayleigh_strength": 1,
+    "mie_strength": 1,
+    "star_intensity": 2.5,
+    "star_density": 1,
+    "exposure": 1
+  },
   "player_spawn": {
     "position": [
       9.3,

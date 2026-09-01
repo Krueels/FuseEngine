@@ -1,5 +1,6 @@
 using System.Numerics;
 using Fuse.Renderer;
+using Fuse.Scene.Model;
 using Silk.NET.OpenGL;
 using Shader = Fuse.Renderer.Shader;
 
@@ -106,7 +107,8 @@ public sealed class EditorLightingSystem : IDisposable
         bool shadowsEnabled,
         bool unlit,
         Shader shadowShader,
-        Shader pointShadowShader)
+        Shader pointShadowShader,
+        SkyboxSettings? skyboxSettings = null)
     {
         Array.Clear(_lightSpaceMatrices);
         Array.Clear(_spotSpaceMatrices);
@@ -131,7 +133,7 @@ public sealed class EditorLightingSystem : IDisposable
 
         Vector3 lightDirection = directionalLight != null && directionalLight.Direction.LengthSquared() > 1e-8f
             ? -Vector3.Normalize(directionalLight.Direction)
-            : Vector3.Normalize(new Vector3(1, 2, 1));
+            : ProceduralSky.FallbackSunDirection;
 
         int pointCount = SelectLights(scene.Lights, LightType.Point, _pointLights,
             LightingBuffer.MaxPointLights, camera.Position);
@@ -171,9 +173,19 @@ public sealed class EditorLightingSystem : IDisposable
         }
 
         Vector3 directionalColor = directionalLight != null
-            ? directionalLight.Color * directionalLight.Intensity
+            ? directionalLight.Color * MathF.Max(directionalLight.Intensity, 0.0f)
             : Vector3.One;
         float ambient = 0.20f;
+        if (skyboxSettings?.Mode == SkyboxMode.Procedural)
+        {
+            Vector3 skyColor = ProceduralSky.EstimateAmbientColor(
+                skyboxSettings,
+                lightDirection);
+            float skyLuminance = skyColor.X * 0.2126f +
+                                 skyColor.Y * 0.7152f +
+                                 skyColor.Z * 0.0722f;
+            ambient = 0.02f + 0.28f * skyLuminance;
+        }
         float fadeStart = ShadowFarPlane * (1.0f - ShadowFadeFraction);
 
         _lightingBuffer.Upload(
