@@ -4314,6 +4314,23 @@ public unsafe class EditorUI : IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled("Rendered only in the 3D viewport.");
 
+            if (clouds.Enabled)
+            {
+                string[] cloudPresetLabels =
+                ["Weather mix", "Stratus", "Stratocumulus", "Cumulus"];
+                int cloudPresetIndex = Math.Clamp((int)clouds.Preset, 0, cloudPresetLabels.Length - 1);
+                if (ImGui.Combo(
+                        "Cloud preset##volumetricCloudPreset",
+                        ref cloudPresetIndex,
+                        cloudPresetLabels,
+                        cloudPresetLabels.Length))
+                {
+                    clouds.ApplyPreset((VolumetricCloudPreset)cloudPresetIndex);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+            }
+
             if (clouds.Enabled && ImGui.TreeNodeEx(
                     "Cloud layer settings##volumetricCloudSettings",
                     ImGuiTreeNodeFlags.DefaultOpen))

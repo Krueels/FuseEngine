@@ -2590,10 +2590,10 @@
           0
         ],
         "rotation": [
-          -0.7770265,
-          0.56233567,
-          -0.26906985,
-          -0.087235175
+          -0.74123657,
+          0.6087362,
+          -0.2738948,
+          -0.070641294
         ],
         "mass": 0,
         "friction": 0.5,
@@ -5756,13 +5756,14 @@
   },
   "volumetric_clouds": {
     "enabled": true,
-    "base_height": 332,
-    "thickness": 5800,
-    "coverage": 0.29,
-    "density": 3.04,
-    "scale": 0.1234,
-    "detail_scale": 4.45,
-    "detail_strength": 0.48,
+    "preset": "weathermix",
+    "base_height": 253,
+    "thickness": 5000,
+    "coverage": 0.28,
+    "density": 1.82,
+    "scale": 0.07,
+    "detail_scale": 7,
+    "detail_strength": 0.55,
     "wind_direction": [
       0.6315095,
       0.77536815
@@ -5773,9 +5774,9 @@
     "light_steps": 6,
     "resolution_scale": 0.5,
     "temporal_blend": 0.84,
-    "anisotropy": 0.55,
-    "absorption": 0.59,
-    "ambient_strength": 0.77,
+    "anisotropy": 0.6,
+    "absorption": 1.33,
+    "ambient_strength": 0.67,
     "shadows_enabled": true,
     "shadow_strength": 1,
     "shadow_extent": 2200,

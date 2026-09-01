@@ -3,6 +3,14 @@ using System.Text.Json.Nodes;
 
 namespace Fuse.Scene.Model;
 
+public enum VolumetricCloudPreset
+{
+    WeatherMix = 0,
+    Stratus = 1,
+    Stratocumulus = 2,
+    Cumulus = 3
+}
+
 /// <summary>
 /// Map-persistent controls for the volumetric cloud layer. The defaults keep
 /// clouds disabled so older maps retain their original appearance and cost.
@@ -10,6 +18,7 @@ namespace Fuse.Scene.Model;
 public sealed class VolumetricCloudSettings
 {
     public bool Enabled { get; set; }
+    public VolumetricCloudPreset Preset { get; set; } = VolumetricCloudPreset.WeatherMix;
     public float BaseHeight { get; set; } = 180.0f;
     public float Thickness { get; set; } = 140.0f;
     public float Coverage { get; set; } = 0.52f;
@@ -33,9 +42,63 @@ public sealed class VolumetricCloudSettings
     public int ShadowResolution { get; set; } = 256;
     public float ShadowUpdateInterval { get; set; } = 0.12f;
 
+    /// <summary>
+    /// Applies a useful starting point for the selected cloud family while
+    /// keeping scene-specific placement, wind, quality and shadow settings.
+    /// All values remain editable after applying the preset.
+    /// </summary>
+    public void ApplyPreset(VolumetricCloudPreset preset)
+    {
+        Preset = preset;
+
+        switch (preset)
+        {
+            case VolumetricCloudPreset.Stratus:
+                Thickness = 120.0f;
+                Coverage = 0.78f;
+                Density = 0.85f;
+                Scale = 0.035f;
+                DetailScale = 2.5f;
+                DetailStrength = 0.18f;
+                Anisotropy = 0.35f;
+                Absorption = 0.75f;
+                AmbientStrength = 0.28f;
+                break;
+
+            case VolumetricCloudPreset.Stratocumulus:
+                Thickness = 260.0f;
+                Coverage = 0.62f;
+                Density = 1.15f;
+                Scale = 0.05f;
+                DetailScale = 4.5f;
+                DetailStrength = 0.35f;
+                Anisotropy = 0.48f;
+                Absorption = 1.0f;
+                AmbientStrength = 0.24f;
+                break;
+
+            case VolumetricCloudPreset.Cumulus:
+                Thickness = 650.0f;
+                Coverage = 0.38f;
+                Density = 1.55f;
+                Scale = 0.07f;
+                DetailScale = 7.0f;
+                DetailStrength = 0.55f;
+                Anisotropy = 0.60f;
+                Absorption = 1.25f;
+                AmbientStrength = 0.22f;
+                break;
+
+            case VolumetricCloudPreset.WeatherMix:
+            default:
+                break;
+        }
+    }
+
     public VolumetricCloudSettings Clone() => new()
     {
         Enabled = Enabled,
+        Preset = Preset,
         BaseHeight = BaseHeight,
         Thickness = Thickness,
         Coverage = Coverage,
@@ -63,6 +126,7 @@ public sealed class VolumetricCloudSettings
     public JsonObject ToJson() => new()
     {
         ["enabled"] = Enabled,
+        ["preset"] = Preset.ToString().ToLowerInvariant(),
         ["base_height"] = BaseHeight,
         ["thickness"] = Thickness,
         ["coverage"] = Coverage,
@@ -94,6 +158,7 @@ public sealed class VolumetricCloudSettings
             return settings;
 
         settings.Enabled = ReadBool(source, "enabled", settings.Enabled);
+        settings.Preset = ReadPreset(source, "preset", settings.Preset);
         settings.BaseHeight = ReadFloat(source, "base_height", settings.BaseHeight);
         settings.Thickness = MathF.Max(1.0f, ReadFloat(source, "thickness", settings.Thickness));
         settings.Coverage = System.Math.Clamp(ReadFloat(source, "coverage", settings.Coverage), 0.0f, 1.0f);
@@ -121,6 +186,41 @@ public sealed class VolumetricCloudSettings
         settings.ShadowResolution = System.Math.Clamp(ReadInt(source, "shadow_resolution", settings.ShadowResolution), 64, 1024);
         settings.ShadowUpdateInterval = System.Math.Clamp(ReadFloat(source, "shadow_update_interval", settings.ShadowUpdateInterval), 0.0f, 2.0f);
         return settings;
+    }
+
+    private static VolumetricCloudPreset ReadPreset(
+        JsonObject source,
+        string key,
+        VolumetricCloudPreset fallback)
+    {
+        if (!source.TryGetPropertyValue(key, out JsonNode? node) || node == null)
+            return fallback;
+
+        try
+        {
+            string name = node.GetValue<string>();
+            if (Enum.TryParse(name, ignoreCase: true, out VolumetricCloudPreset preset) &&
+                Enum.IsDefined(preset))
+            {
+                return preset;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The value may be stored as a numeric enum in an older/future map.
+        }
+
+        try
+        {
+            int value = node.GetValue<int>();
+            return Enum.IsDefined(typeof(VolumetricCloudPreset), value)
+                ? (VolumetricCloudPreset)value
+                : fallback;
+        }
+        catch (InvalidOperationException)
+        {
+            return fallback;
+        }
     }
 
     private static Vector2 ReadVec2(JsonObject source, string key, Vector2 fallback)

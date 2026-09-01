@@ -4620,6 +4620,7 @@
   },
   "volumetric_clouds": {
     "enabled": true,
+    "preset": "weathermix",
     "base_height": 219,
     "thickness": 5800,
     "coverage": 0.21,

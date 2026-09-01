@@ -309,6 +309,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         shader.SetFloat("uCloudScale", MathF.Max(0.00001f, settings.Scale));
         shader.SetFloat("uCloudDetailScale", MathF.Max(1.0f, settings.DetailScale));
         shader.SetFloat("uCloudDetailStrength", System.Math.Clamp(settings.DetailStrength, 0.0f, 1.0f));
+        shader.SetInt("uCloudPreset", (int)settings.Preset);
         shader.SetVec2("uCloudWindDirection", windDirection);
         shader.SetFloat("uCloudWindSpeed", settings.WindSpeed);
         shader.SetFloat("uCloudTime", time);
@@ -793,6 +794,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
             Mix(ref target, unchecked((uint)BitConverter.SingleToInt32Bits(value)));
 
         Mix(ref hash, settings.Enabled ? 1u : 0u);
+        Mix(ref hash, (uint)settings.Preset);
         MixFloat(ref hash, settings.BaseHeight);
         MixFloat(ref hash, settings.Thickness);
         MixFloat(ref hash, settings.Coverage);

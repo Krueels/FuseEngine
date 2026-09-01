@@ -21,6 +21,8 @@ uniform float uCloudWorldTileSize;
 uniform vec3 uCloudSphereCenter;
 uniform float uCloudInnerRadius;
 uniform float uCloudOuterRadius;
+// 0 = weather mix, 1 = stratus, 2 = stratocumulus, 3 = cumulus.
+uniform int uCloudPreset;
 
 float CloudSaturate(float value)
 {
@@ -123,6 +125,12 @@ float SampleCloudDensity(vec3 worldPosition)
         basePlane.y);
 
     float cloudType = CloudSaturate(weather.g * 0.86 + 0.07);
+    if (uCloudPreset == 1)
+        cloudType = 0.0;
+    else if (uCloudPreset == 2)
+        cloudType = 0.5;
+    else if (uCloudPreset == 3)
+        cloudType = 1.0;
     float heightProfile = CloudHeightProfile(heightFraction, cloudType);
 
     // R contains the broad Perlin-Worley shape. GBA contain progressively
