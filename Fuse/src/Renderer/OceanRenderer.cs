@@ -9,26 +9,35 @@ namespace Fuse.Renderer;
 /// <summary>
 /// Render-only ocean pass shared by the game and Blowtorch. The ocean does not
 /// create a physics body: it copies the already rendered scene, draws a
-/// camera-following animated surface, and can apply a screen-space underwater
-/// treatment with a waterline that follows the animated surface.
+/// camera-following spectral surface and can apply the screen-space underwater
+/// treatment.
 /// </summary>
 public sealed unsafe class OceanRenderer : IDisposable
 {
+    private const int CascadeCount = 3;
+    private const int WaveSimulationResolution = 128;
+    private const int WaveSurfaceTextureUnit0 = 10;
+    private const int WaveSlopeTextureUnit0 = 13;
+    private const float TwoPi = 6.28318530718f;
+    private const float Gravity = 9.81f;
+
+    private static readonly float[] CascadeWeights = [1.0f, 0.45f, 0.20f];
+    private static readonly Vector2[] CascadeOffsetFactors =
+    [
+        new(0.173f, 0.371f),
+        new(0.617f, 0.233f),
+        new(0.291f, 0.719f)
+    ];
+
     private readonly GL _gl;
     private readonly Shader _surfaceShader;
     private readonly Shader _underwaterShader;
-    private readonly ComputeShader _waveSimulationCompute;
+    private readonly ComputeShader _spectrumCompute;
+    private readonly ComputeShader _fftCompute;
+    private readonly ComputeShader _resolveCompute;
     private readonly FullscreenQuad _quad;
+    private readonly WaveCascade?[] _cascades = new WaveCascade?[CascadeCount];
     private Mesh? _mesh;
-
-    private const int WaveSimulationResolution = 128;
-    private const int WaveBand0TextureUnit = 10;
-    private const int WaveBand1TextureUnit = 11;
-    private const int WaveBand2TextureUnit = 12;
-    private const float TwoPi = 6.28318530718f;
-    private uint _waveBand0Texture;
-    private uint _waveBand1Texture;
-    private uint _waveBand2Texture;
 
     private uint _sceneCopyFbo;
     private uint _sceneCopyColor;
@@ -42,14 +51,51 @@ public sealed unsafe class OceanRenderer : IDisposable
     private int _width;
     private int _height;
     private readonly long _timeOriginMilliseconds = Environment.TickCount64;
+    private bool _waveResourcesInitialized;
+    private bool _simulationStateValid;
     private bool _disposed;
+
+    private float _spectrumWaveLength = float.NaN;
+    private float _spectrumWindSpeed = float.NaN;
+    private float _spectrumSmallWaveLength = float.NaN;
+    private Vector2 _spectrumDirection;
+    private int _spectrumSeed;
+    private float _lastSimulationTime = float.NaN;
+    private float _lastSimulationAmplitude = float.NaN;
+    private float _lastSimulationSpeed = float.NaN;
+    private float _lastSimulationChoppiness = float.NaN;
 
     public bool IsValid => !_disposed &&
         _surfaceShader.IsValid && _underwaterShader.IsValid;
 
-    private bool WaveSimulationValid =>
-        !_disposed && _waveSimulationCompute.IsValid &&
-        _waveBand0Texture != 0 && _waveBand1Texture != 0 && _waveBand2Texture != 0;
+    private bool WaveSimulationValid
+    {
+        get
+        {
+            if (_disposed || !_waveResourcesInitialized ||
+                !_spectrumCompute.IsValid || !_fftCompute.IsValid ||
+                !_resolveCompute.IsValid)
+                return false;
+
+            for (int band = 0; band < CascadeCount; band++)
+            {
+                WaveCascade? cascade = _cascades[band];
+                if (cascade == null ||
+                    cascade.H0 == 0 ||
+                    cascade.SpectrumA == 0 ||
+                    cascade.SpectrumB == 0 ||
+                    cascade.SpectrumC == 0 ||
+                    cascade.PingA == 0 ||
+                    cascade.PingB == 0 ||
+                    cascade.PingC == 0 ||
+                    cascade.Surface == 0 ||
+                    cascade.Slope == 0)
+                    return false;
+            }
+
+            return true;
+        }
+    }
 
     public bool LastFrameUnderwater { get; private set; }
 
@@ -65,12 +111,17 @@ public sealed unsafe class OceanRenderer : IDisposable
             gl,
             Bible.Shader(Bible.PostProcessVert),
             Bible.Shader(Bible.UnderwaterFrag));
-        _waveSimulationCompute = ComputeShader.FromFile(
+        _spectrumCompute = ComputeShader.FromFile(
             gl,
-            Bible.Shader(Bible.OceanSimulationCompute));
+            Bible.Shader(Bible.OceanSpectrumCompute));
+        _fftCompute = ComputeShader.FromFile(
+            gl,
+            Bible.Shader(Bible.OceanFftCompute));
+        _resolveCompute = ComputeShader.FromFile(
+            gl,
+            Bible.Shader(Bible.OceanResolveCompute));
 
         EnsureMesh(128);
-        EnsureWaveSimulationTextures();
     }
 
     /// <summary>
@@ -104,17 +155,19 @@ public sealed unsafe class OceanRenderer : IDisposable
             return false;
 
         EnsureMesh(settings.GridResolution);
-        EnsureWaveSimulationTextures();
+        EnsureWaveSimulationResources(settings);
         EnsureTargets(width, height);
+
         // The game supplies Engine.Time, which stops while the game is
         // paused. Blowtorch omits it and keeps its editor preview animated.
         float animationTime = simulationTimeSeconds ?? CurrentTimeSeconds();
         UpdateWaveSimulation(animationTime, settings);
         CopyScene(targetFbo, width, height);
 
-        // Query the displaced surface at the camera instead of comparing the
-        // camera with the mean water level. This keeps the underwater state in
-        // sync with the same three wave bands that deform the visible mesh.
+        // The CPU query uses the same initial spectrum and dispersion relation
+        // as the GPU. It is only used to decide whether the fullscreen
+        // underwater pass is needed; the actual per-pixel boundary comes from
+        // the surface sidecar written by the visible ocean.
         float cameraWaterHeight = EvaluateCameraWaterHeight(
             cameraPosition,
             animationTime,
@@ -125,20 +178,13 @@ public sealed unsafe class OceanRenderer : IDisposable
         float spacing = oceanSize / MathF.Max(settings.GridResolution, 1);
         Vector3 oceanOrigin = ComputeOceanOrigin(cameraPosition, spacing);
 
-        // The fullscreen pass is useful while the camera is close to the
-        // displaced surface as well as when it is fully submerged. The shader
-        // computes the actual per-pixel waterline; this band only avoids an
-        // unnecessary fullscreen pass for cameras that are clearly far above
-        // the ocean.
-        float maximumWaveHeight = MathF.Abs(settings.WaveAmplitude) * 1.96f;
+        float maximumWaveHeight = MathF.Abs(settings.WaveAmplitude) * 2.8f;
         float waterlineBand = maximumWaveHeight + 0.25f;
         bool renderUnderwater = settings.UnderwaterEnabled &&
                                 cameraSubmersion >= -waterlineBand;
         bool cameraBelowWater = settings.UnderwaterEnabled &&
                                  cameraSubmersion > 0.0f;
 
-        // The visible surface writes its own depth/coverage/normal metadata
-        // into the auxiliary texture during the same rasterization.
         ClearSurfaceData(width, height);
 
         RenderSurface(
@@ -160,15 +206,12 @@ public sealed unsafe class OceanRenderer : IDisposable
             outputSrgb,
             oceanOrigin,
             oceanSize,
-            // A camera close to the wave can see both sides of the displaced
-            // surface in the same frame. Keep both faces available there.
             doubleSided: renderUnderwater);
 
         if (renderUnderwater)
         {
-            // The underwater pass must include the water surface seen from
-            // below and its updated depth. The fragment shader then decides
-            // which pixels are actually in the water volume.
+            // The underwater pass includes the already rendered surface and
+            // reads the exact rasterized surface metadata for its waterline.
             CopyScene(targetFbo, width, height);
             RenderUnderwater(
                 targetFbo,
@@ -186,8 +229,6 @@ public sealed unsafe class OceanRenderer : IDisposable
                 targetHasMrt);
         }
 
-        // Keep this state in sync with the displaced surface, not the mean
-        // water level. Systems such as the cloud pass use it as a render hint.
         LastFrameUnderwater = cameraBelowWater;
         RestoreTargetState(targetFbo, width, height, targetHasMrt);
         return true;
@@ -232,7 +273,6 @@ public sealed unsafe class OceanRenderer : IDisposable
 
         _surfaceShader.Use();
         _surfaceShader.SetMat4("uInvViewProj", inverseViewProjection);
-
         SetSurfaceDataUniforms(
             _surfaceShader,
             view,
@@ -283,10 +323,8 @@ public sealed unsafe class OceanRenderer : IDisposable
 
         BindWaveSimulationTextures();
 
-        // The ocean fragment shader writes depth, coverage and normal to this
-        // sidecar image. Because the shader uses early fragment tests, only
-        // fragments that pass the same target depth test as the visible water
-        // can publish metadata.
+        // The fragment shader writes depth, coverage and the same normal that
+        // it uses for shading into this sidecar image.
         _gl.BindImageTexture(
             0,
             _surfaceDataColor,
@@ -340,13 +378,19 @@ public sealed unsafe class OceanRenderer : IDisposable
         shader.SetFloat("uWaveSpeed", settings.WaveSpeed);
         shader.SetFloat("uWaveChoppiness", settings.WaveChoppiness);
         shader.SetVec2("uWaveDirection", settings.WaveDirection);
+        shader.SetInt("uDebugView", System.Math.Clamp(settings.DebugView, 0, 3));
         shader.SetBool("uUseWaveTextures", WaveSimulationValid);
-        shader.SetInt("uWaveBand0", WaveBand0TextureUnit);
-        shader.SetInt("uWaveBand1", WaveBand1TextureUnit);
-        shader.SetInt("uWaveBand2", WaveBand2TextureUnit);
-        shader.SetFloat("uWaveBandWorldSize0", ComputeWaveBandWorldSize(settings, 0));
-        shader.SetFloat("uWaveBandWorldSize1", ComputeWaveBandWorldSize(settings, 1));
-        shader.SetFloat("uWaveBandWorldSize2", ComputeWaveBandWorldSize(settings, 2));
+
+        for (int band = 0; band < CascadeCount; band++)
+        {
+            WaveCascade? cascade = _cascades[band];
+            float patchSize = cascade?.PatchSize ?? ComputeWavePatchWorldSize(settings, band);
+            Vector2 offset = GetCascadeOffset(band, patchSize);
+            shader.SetInt($"uWaveSurface{band}", WaveSurfaceTextureUnit0 + band);
+            shader.SetInt($"uWaveSlope{band}", WaveSlopeTextureUnit0 + band);
+            shader.SetFloat($"uWavePatchSize{band}", patchSize);
+            shader.SetVec2($"uWaveOffset{band}", offset);
+        }
     }
 
     private void RenderUnderwater(
@@ -377,9 +421,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         _underwaterShader.SetInt("uWaterSurfaceData", 2);
         _underwaterShader.SetMat4("uInvViewProj", inverseViewProjection);
         _underwaterShader.SetVec3("uCameraPosition", cameraPosition);
-        _underwaterShader.SetFloat(
-            "uCameraSubmersion",
-            cameraSubmersion);
+        _underwaterShader.SetFloat("uCameraSubmersion", cameraSubmersion);
         _underwaterShader.SetVec3("uUnderwaterColor", settings.UnderwaterColor);
         _underwaterShader.SetVec3(
             "uSunDirection",
@@ -456,9 +498,8 @@ public sealed unsafe class OceanRenderer : IDisposable
                 float adaptiveV = AdaptiveCoordinate(v);
                 vertices[z * side + x] = new Vertex
                 {
-                    // Concentrate vertices around the camera while keeping a
-                    // continuous grid, so no ring stitching or cracks are
-                    // needed at the LOD boundaries.
+                    // Concentrate vertices near the camera while retaining a
+                    // continuous grid, so no ring stitching is required.
                     Position = new Vector3(adaptiveU * 0.5f, 0.0f, adaptiveV * 0.5f),
                     TexCoord = new Vector2(u, v),
                     Normal = Vector3.UnitY
@@ -492,325 +533,513 @@ public sealed unsafe class OceanRenderer : IDisposable
         _meshResolution = resolution;
     }
 
-    private void EnsureWaveSimulationTextures()
+    private void EnsureWaveSimulationResources(OceanSettings settings)
     {
-        if (_waveBand0Texture != 0 && _waveBand1Texture != 0 && _waveBand2Texture != 0)
+        if (SpectrumSettingsMatch(settings))
             return;
 
-        _waveBand0Texture = CreateWaveTexture(WaveSimulationResolution);
-        _waveBand1Texture = CreateWaveTexture(WaveSimulationResolution);
-        _waveBand2Texture = CreateWaveTexture(WaveSimulationResolution);
+        DeleteWaveSimulationResources();
+        for (int band = 0; band < CascadeCount; band++)
+        {
+            float patchSize = ComputeWavePatchWorldSize(settings, band);
+            Vector2[] h0Cpu = BuildInitialSpectrum(settings, band, patchSize);
+            WaveCascade cascade = new()
+            {
+                PatchSize = patchSize,
+                CpuH0 = h0Cpu,
+                H0 = CreateH0Texture(h0Cpu),
+                SpectrumA = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                SpectrumB = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                SpectrumC = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                PingA = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                PingB = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                PingC = CreateWaveTexture(InternalFormat.Rgba32f, TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge),
+                Surface = CreateWaveTexture(InternalFormat.Rgba16f, TextureMinFilter.Linear, TextureWrapMode.Repeat),
+                Slope = CreateWaveTexture(InternalFormat.Rgba16f, TextureMinFilter.Linear, TextureWrapMode.Repeat)
+            };
+            _cascades[band] = cascade;
+        }
+
+        _spectrumWaveLength = settings.WaveLength;
+        _spectrumWindSpeed = settings.WindSpeed;
+        _spectrumSmallWaveLength = settings.SmallWaveLength;
+        _spectrumDirection = NormalizeWaveDirection(settings.WaveDirection);
+        _spectrumSeed = settings.SpectrumSeed;
+        _waveResourcesInitialized = true;
+        _simulationStateValid = false;
+        _lastSimulationTime = float.NaN;
     }
 
-    private uint CreateWaveTexture(int size)
+    private bool SpectrumSettingsMatch(OceanSettings settings)
+    {
+        if (!_waveResourcesInitialized)
+            return false;
+
+        Vector2 direction = NormalizeWaveDirection(settings.WaveDirection);
+        return NearlyEqual(_spectrumWaveLength, settings.WaveLength) &&
+               NearlyEqual(_spectrumWindSpeed, settings.WindSpeed) &&
+               NearlyEqual(_spectrumSmallWaveLength, settings.SmallWaveLength) &&
+               Vector2.DistanceSquared(_spectrumDirection, direction) < 1e-8f &&
+               _spectrumSeed == settings.SpectrumSeed;
+    }
+
+    private bool SimulationParametersMatch(float time, OceanSettings settings)
+    {
+        return _simulationStateValid &&
+               NearlyEqual(_lastSimulationTime, time) &&
+               NearlyEqual(_lastSimulationAmplitude, settings.WaveAmplitude) &&
+               NearlyEqual(_lastSimulationSpeed, settings.WaveSpeed) &&
+               NearlyEqual(_lastSimulationChoppiness, settings.WaveChoppiness);
+    }
+
+    private void UpdateWaveSimulation(float animationTime, OceanSettings settings)
+    {
+        if (!WaveSimulationValid || SimulationParametersMatch(animationTime, settings))
+            return;
+
+        uint groups2D = (uint)((WaveSimulationResolution + 7) / 8);
+        for (int band = 0; band < CascadeCount; band++)
+        {
+            WaveCascade cascade = _cascades[band]!;
+            float phaseTime = animationTime * settings.WaveSpeed;
+
+            _spectrumCompute.Use();
+            _spectrumCompute.SetInt("uSize", WaveSimulationResolution);
+            _spectrumCompute.SetFloat("uPatchSize", cascade.PatchSize);
+            _spectrumCompute.SetFloat("uTime", phaseTime);
+            _spectrumCompute.SetFloat("uAmplitude", settings.WaveAmplitude);
+            _spectrumCompute.SetFloat("uChoppiness", settings.WaveChoppiness);
+            _spectrumCompute.SetFloat("uCascadeWeight", CascadeWeights[band]);
+            BindImage(0, cascade.H0, GLEnum.ReadOnly, (GLEnum)0x8230);
+            BindImage(1, cascade.SpectrumA, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(2, cascade.SpectrumB, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(3, cascade.SpectrumC, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            _gl.DispatchCompute(groups2D, groups2D, 1);
+            WaveMemoryBarrier();
+
+            _fftCompute.Use();
+            _fftCompute.SetInt("uSize", WaveSimulationResolution);
+            _fftCompute.SetInt("uAxis", 0);
+            BindImage(0, cascade.SpectrumA, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(1, cascade.SpectrumB, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(2, cascade.SpectrumC, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(3, cascade.PingA, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(4, cascade.PingB, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(5, cascade.PingC, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            _gl.DispatchCompute((uint)WaveSimulationResolution, 1, 1);
+            WaveMemoryBarrier();
+
+            _fftCompute.SetInt("uAxis", 1);
+            BindImage(0, cascade.PingA, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(1, cascade.PingB, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(2, cascade.PingC, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(3, cascade.SpectrumA, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(4, cascade.SpectrumB, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            BindImage(5, cascade.SpectrumC, GLEnum.WriteOnly, GLEnum.Rgba32f);
+            _gl.DispatchCompute((uint)WaveSimulationResolution, 1, 1);
+            WaveMemoryBarrier();
+
+            _resolveCompute.Use();
+            _resolveCompute.SetInt("uSize", WaveSimulationResolution);
+            _resolveCompute.SetFloat(
+                "uFoamScale",
+                1.0f + MathF.Max(settings.WaveChoppiness, 0.0f) * 0.35f);
+            BindImage(0, cascade.SpectrumA, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(1, cascade.SpectrumB, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(2, cascade.SpectrumC, GLEnum.ReadOnly, GLEnum.Rgba32f);
+            BindImage(3, cascade.Surface, GLEnum.WriteOnly, GLEnum.Rgba16f);
+            BindImage(4, cascade.Slope, GLEnum.WriteOnly, GLEnum.Rgba16f);
+            _gl.DispatchCompute(groups2D, groups2D, 1);
+            WaveMemoryBarrier();
+        }
+
+        UnbindWaveImages();
+        _gl.UseProgram(0);
+        _simulationStateValid = true;
+        _lastSimulationTime = animationTime;
+        _lastSimulationAmplitude = settings.WaveAmplitude;
+        _lastSimulationSpeed = settings.WaveSpeed;
+        _lastSimulationChoppiness = settings.WaveChoppiness;
+    }
+
+    private void BindImage(int unit, uint texture, GLEnum access, GLEnum format)
+    {
+        _gl.BindImageTexture(
+            (uint)unit,
+            texture,
+            0,
+            false,
+            0,
+            access,
+            format);
+    }
+
+    private void UnbindWaveImages()
+    {
+        for (int unit = 0; unit < 6; unit++)
+            _gl.BindImageTexture((uint)unit, 0, 0, false, 0, GLEnum.WriteOnly, GLEnum.Rgba32f);
+    }
+
+    private void WaveMemoryBarrier()
+    {
+        _gl.MemoryBarrier(
+            MemoryBarrierMask.ShaderImageAccessBarrierBit |
+            MemoryBarrierMask.TextureFetchBarrierBit);
+    }
+
+    private void BindWaveSimulationTextures()
+    {
+        for (int band = 0; band < CascadeCount; band++)
+        {
+            uint surface = 0;
+            uint slope = 0;
+            if (WaveSimulationValid && _cascades[band] is WaveCascade cascade)
+            {
+                surface = cascade.Surface;
+                slope = cascade.Slope;
+            }
+
+            _gl.ActiveTexture(TextureUnit.Texture0 + WaveSurfaceTextureUnit0 + band);
+            _gl.BindTexture(TextureTarget.Texture2D, surface);
+            _gl.ActiveTexture(TextureUnit.Texture0 + WaveSlopeTextureUnit0 + band);
+            _gl.BindTexture(TextureTarget.Texture2D, slope);
+        }
+        _gl.ActiveTexture(TextureUnit.Texture0);
+    }
+
+    private uint CreateH0Texture(Vector2[] values)
+    {
+        float[] packed = new float[values.Length * 2];
+        for (int i = 0; i < values.Length; i++)
+        {
+            packed[i * 2] = values[i].X;
+            packed[i * 2 + 1] = values[i].Y;
+        }
+
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        fixed (float* pointer = packed)
+        {
+            _gl.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                (int)(InternalFormat)0x8230,
+                (uint)WaveSimulationResolution,
+                (uint)WaveSimulationResolution,
+                0,
+                (PixelFormat)0x8227,
+                PixelType.Float,
+                pointer);
+        }
+        ConfigureWaveTexture(TextureMinFilter.Nearest, TextureWrapMode.ClampToEdge);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        return texture;
+    }
+
+    private uint CreateWaveTexture(
+        InternalFormat format,
+        TextureMinFilter minFilter,
+        TextureWrapMode wrapMode)
     {
         uint texture = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, texture);
         _gl.TexImage2D(
             TextureTarget.Texture2D,
             0,
-            (int)InternalFormat.Rgba16f,
-            (uint)size,
-            (uint)size,
+            (int)format,
+            WaveSimulationResolution,
+            WaveSimulationResolution,
             0,
             PixelFormat.Rgba,
             PixelType.Float,
             null);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        // Every cascade is tileable. Repeat is important here because the
-        // shader samples the texture using absolute world coordinates.
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+        ConfigureWaveTexture(minFilter, wrapMode);
         _gl.BindTexture(TextureTarget.Texture2D, 0);
         return texture;
     }
 
-    private void UpdateWaveSimulation(float animationTime, OceanSettings settings)
+    private void ConfigureWaveTexture(
+        TextureMinFilter minFilter,
+        TextureWrapMode wrapMode)
     {
-        if (!WaveSimulationValid)
-            return;
+        _gl.TexParameter(
+            TextureTarget.Texture2D,
+            TextureParameterName.TextureMinFilter,
+            (int)minFilter);
+        _gl.TexParameter(
+            TextureTarget.Texture2D,
+            TextureParameterName.TextureMagFilter,
+            (int)(minFilter == TextureMinFilter.Nearest
+                ? TextureMagFilter.Nearest
+                : TextureMagFilter.Linear));
+        _gl.TexParameter(
+            TextureTarget.Texture2D,
+            TextureParameterName.TextureWrapS,
+            (int)wrapMode);
+        _gl.TexParameter(
+            TextureTarget.Texture2D,
+            TextureParameterName.TextureWrapT,
+            (int)wrapMode);
+    }
 
-        _waveSimulationCompute.Use();
-        _waveSimulationCompute.SetInt("uSize", WaveSimulationResolution);
-        _waveSimulationCompute.SetFloat("uTime", animationTime);
-        _waveSimulationCompute.SetFloat("uAmplitude", settings.WaveAmplitude);
-        _waveSimulationCompute.SetFloat("uWaveSpeed", settings.WaveSpeed);
-        _waveSimulationCompute.SetFloat("uWaveChoppiness", settings.WaveChoppiness);
-        _waveSimulationCompute.SetVec2("uWaveDirection", settings.WaveDirection);
+    private Vector2[] BuildInitialSpectrum(
+        OceanSettings settings,
+        int band,
+        float patchSize)
+    {
+        int size = WaveSimulationResolution;
+        Vector2[] values = new Vector2[size * size];
+        Random random = new(unchecked(settings.SpectrumSeed + (band + 1) * 104729));
+        Vector2 windDirection = NormalizeWaveDirection(settings.WaveDirection);
+        float windSpeed = MathF.Max(settings.WindSpeed, 0.1f);
+        float largestWave = MathF.Max(windSpeed * windSpeed / Gravity, 1.0f);
+        float largestWaveSquared = largestWave * largestWave;
+        float smallWaveLength = MathF.Max(settings.SmallWaveLength, 0.05f);
+        float smallWaveLengthSquared = smallWaveLength * smallWaveLength;
+        double totalPower = 0.0;
 
-        uint groups = (uint)((WaveSimulationResolution + 7) / 8);
-        uint[] textures = [_waveBand0Texture, _waveBand1Texture, _waveBand2Texture];
-        for (int band = 0; band < textures.Length; band++)
+        for (int y = 0; y < size; y++)
         {
-            _waveSimulationCompute.SetInt("uBand", band);
-            _gl.BindImageTexture(
-                0,
-                textures[band],
-                0,
-                false,
-                0,
-                GLEnum.WriteOnly,
-                GLEnum.Rgba16f);
-            _gl.DispatchCompute(groups, groups, 1);
-            _gl.MemoryBarrier(MemoryBarrierMask.ShaderImageAccessBarrierBit | MemoryBarrierMask.TextureFetchBarrierBit);
+            int signedY = y <= size / 2 ? y : y - size;
+            for (int x = 0; x < size; x++)
+            {
+                int signedX = x <= size / 2 ? x : x - size;
+                int index = y * size + x;
+                Vector2 waveNumber = TwoPi *
+                    new Vector2(signedX, signedY) / MathF.Max(patchSize, 0.001f);
+                float length = waveNumber.Length();
+                if (length < 0.00001f)
+                    continue;
+
+                Vector2 direction = waveNumber / length;
+                float alignment = Vector2.Dot(direction, windDirection);
+                float directionalEnergy = alignment * alignment;
+                if (alignment < 0.0f)
+                    directionalEnergy *= 0.25f;
+
+                float lengthSquared = length * length;
+                float longWaveEnvelope = MathF.Exp(
+                    -1.0f / MathF.Max(lengthSquared * largestWaveSquared, 0.000001f));
+                float smallWaveEnvelope = MathF.Exp(
+                    -lengthSquared * smallWaveLengthSquared);
+                float phillips = longWaveEnvelope *
+                                 directionalEnergy *
+                                 smallWaveEnvelope /
+                                 MathF.Max(lengthSquared * lengthSquared, 0.000001f);
+                if (phillips <= 0.0f || !float.IsFinite(phillips))
+                    continue;
+
+                Vector2 gaussian = new(
+                    NextGaussian(random),
+                    NextGaussian(random));
+                values[index] = gaussian * MathF.Sqrt(phillips * 0.5f);
+                totalPower += phillips;
+            }
         }
 
-        _gl.BindImageTexture(0, 0, 0, false, 0, GLEnum.WriteOnly, GLEnum.Rgba16f);
-        _gl.UseProgram(0);
+        // The spectrum is normalized so WaveAmplitude remains a useful,
+        // scene-scale control instead of depending on the arbitrary FFT grid.
+        // The two-dimensional inverse FFT is normalized by N on each axis,
+        // so its output is divided by N². Scale the frequency coefficients by
+        // N² here; using only N would make every wave approximately N times
+        // too small and leave the rendered ocean visually flat.
+        float normalization = totalPower > 1e-12
+            ? (size * size) / MathF.Sqrt((float)totalPower)
+            : 1.0f;
+        for (int i = 0; i < values.Length; i++)
+            values[i] *= normalization;
+
+        return values;
     }
 
-    private void BindWaveSimulationTextures()
+    private static float NextGaussian(Random random)
     {
-        _gl.ActiveTexture(TextureUnit.Texture0 + WaveBand0TextureUnit);
-        _gl.BindTexture(TextureTarget.Texture2D, WaveSimulationValid ? _waveBand0Texture : 0);
-        _gl.ActiveTexture(TextureUnit.Texture0 + WaveBand1TextureUnit);
-        _gl.BindTexture(TextureTarget.Texture2D, WaveSimulationValid ? _waveBand1Texture : 0);
-        _gl.ActiveTexture(TextureUnit.Texture0 + WaveBand2TextureUnit);
-        _gl.BindTexture(TextureTarget.Texture2D, WaveSimulationValid ? _waveBand2Texture : 0);
-        _gl.ActiveTexture(TextureUnit.Texture0);
+        float first = MathF.Max((float)random.NextDouble(), 1e-6f);
+        float second = (float)random.NextDouble();
+        return MathF.Sqrt(-2.0f * MathF.Log(first)) *
+               MathF.Cos(TwoPi * second);
     }
 
-    private static float ComputeWaveBandWorldSize(OceanSettings settings, int band)
+    private static float ComputeWavePatchWorldSize(
+        OceanSettings settings,
+        int band)
     {
-        float baseLength = MathF.Max(settings.WaveLength, 1.0f);
+        float baseLength = MathF.Max(settings.WaveLength, 4.0f);
         return band switch
         {
-            0 => MathF.Max(baseLength * 24.0f, 256.0f),
-            1 => MathF.Max(baseLength * 8.0f, 96.0f),
-            _ => MathF.Max(baseLength * 2.5f, 32.0f)
+            0 => MathF.Max(baseLength * 64.0f, 1024.0f),
+            1 => MathF.Max(baseLength * 16.0f, 256.0f),
+            _ => MathF.Max(baseLength * 4.0f, 64.0f)
         };
     }
 
-    // This is the CPU-side counterpart of ocean_simulation.comp/ocean.vert.
-    // It is intentionally kept here, beside the renderer, so the underwater
-    // state cannot drift to a second, unrelated wave equation.
+    private static Vector2 GetCascadeOffset(int band, float patchSize) =>
+        CascadeOffsetFactors[System.Math.Clamp(band, 0, CascadeCount - 1)] * patchSize;
+
+    private static Vector2 NormalizeWaveDirection(Vector2 direction) =>
+        direction.LengthSquared() > 1e-8f
+            ? Vector2.Normalize(direction)
+            : Vector2.UnitX;
+
+    private static bool NearlyEqual(float left, float right) =>
+        float.IsFinite(left) && float.IsFinite(right) &&
+        MathF.Abs(left - right) <= 0.00001f;
+
     private float EvaluateCameraWaterHeight(
         Vector3 cameraPosition,
         float animationTime,
         OceanSettings settings)
     {
         Vector2 targetWorldPosition = new(cameraPosition.X, cameraPosition.Z);
-        Vector3 displacement = Vector3.Zero;
+        Vector3 displacement = WaveSimulationValid
+            ? EvaluateSpectralWaveDisplacement(targetWorldPosition, animationTime, settings)
+            : EvaluateFallbackWaveDisplacement(targetWorldPosition, animationTime, settings);
 
-        // The vertex shader displaces the horizontal position as well as the
-        // height. Solve that same mapping backwards a few times to find the
-        // wave sample directly below the camera.
-        for (int i = 0; i < 4; i++)
+        // One fixed-point correction accounts for horizontal choppiness
+        // without making the CPU-side gate scale with the FFT resolution.
+        if (WaveSimulationValid)
         {
-            displacement = WaveSimulationValid
-                ? EvaluateSpectralWaveDisplacement(targetWorldPosition, animationTime, settings)
-                : EvaluateFallbackWaveDisplacement(targetWorldPosition, animationTime, settings);
             targetWorldPosition = new Vector2(
                 cameraPosition.X - displacement.X,
                 cameraPosition.Z - displacement.Z);
+            displacement = EvaluateSpectralWaveDisplacement(
+                targetWorldPosition,
+                animationTime,
+                settings);
         }
 
         return settings.WaterLevel + displacement.Y;
     }
 
-    private static Vector3 EvaluateSpectralWaveDisplacement(
+    private Vector3 EvaluateSpectralWaveDisplacement(
         Vector2 worldPosition,
         float animationTime,
         OceanSettings settings)
     {
-        Vector2 forward = settings.WaveDirection.LengthSquared() > 0.001f
-            ? Vector2.Normalize(settings.WaveDirection)
-            : Vector2.UnitX;
-        Vector2 side = new(-forward.Y, forward.X);
         Vector3 displacement = Vector3.Zero;
+        float inverseSizeSquared =
+            1.0f / (WaveSimulationResolution * WaveSimulationResolution);
+        float phaseTime = animationTime * settings.WaveSpeed;
 
-        for (int band = 0; band < 3; band++)
+        for (int band = 0; band < CascadeCount; band++)
         {
-            float bandWorldSize = ComputeWaveBandWorldSize(settings, band);
-            Vector2 coordinate = new(
-                PositiveModulo(worldPosition.X, bandWorldSize) / bandWorldSize,
-                PositiveModulo(worldPosition.Y, bandWorldSize) / bandWorldSize);
-            float bandAmplitude = MathF.Max(settings.WaveAmplitude, 0.0f) *
-                                  GetBandAmplitude(band);
+            WaveCascade cascade = _cascades[band]!;
+            Vector2 samplePosition =
+                worldPosition + GetCascadeOffset(band, cascade.PatchSize);
+            Vector2[] h0 = cascade.CpuH0;
+            int size = WaveSimulationResolution;
 
-            for (int i = 0; i < 4; i++)
+            for (int y = 0; y < size; y++)
             {
-                Vector2 directionBase = GetBandDirection(i);
-                Vector2 direction = Vector2.Normalize(
-                    forward * directionBase.X + side * directionBase.Y);
-                Vector2 frequency = GetBandFrequency(band, i);
-                float phase = TwoPi * Vector2.Dot(coordinate, frequency) -
-                    animationTime * settings.WaveSpeed * GetBandSpeed(band) +
-                    GetPhaseOffset(band, i);
-                float sine = MathF.Sin(phase);
-                float cosine = MathF.Cos(phase);
-                float componentAmplitude = bandAmplitude * GetComponentWeight(i);
+                int signedY = y <= size / 2 ? y : y - size;
+                int negativeY = (size - y) % size;
+                for (int x = 0; x < size; x++)
+                {
+                    int signedX = x <= size / 2 ? x : x - size;
+                    int negativeX = (size - x) % size;
+                    int index = y * size + x;
+                    int negativeIndex = negativeY * size + negativeX;
+                    Vector2 waveNumber = TwoPi *
+                        new Vector2(signedX, signedY) /
+                        MathF.Max(cascade.PatchSize, 0.001f);
+                    float length = waveNumber.Length();
+                    if (length < 0.00001f)
+                        continue;
 
-                displacement.Y += componentAmplitude *
-                    (sine + 0.075f * MathF.Sin(phase * 2.0f + 0.31f));
-                float horizontalAmount = componentAmplitude *
-                    settings.WaveChoppiness * (0.82f + 0.12f * i) * cosine;
-                displacement.X += direction.X * horizontalAmount;
-                displacement.Z += direction.Y * horizontalAmount;
+                    float angularFrequency = MathF.Sqrt(Gravity * length);
+                    Vector2 forward = ComplexMultiply(
+                        h0[index],
+                        ComplexExp(angularFrequency * phaseTime));
+                    Vector2 backward = ComplexMultiply(
+                        ComplexConjugate(h0[negativeIndex]),
+                        ComplexExp(-angularFrequency * phaseTime));
+                    Vector2 height = (forward + backward) *
+                        (settings.WaveAmplitude * CascadeWeights[band]);
+                    Vector2 spatial = ComplexExp(Vector2.Dot(
+                        waveNumber,
+                        samplePosition));
+
+                    displacement.Y += ComplexMultiply(height, spatial).X *
+                                       inverseSizeSquared;
+
+                    float inverseLength = 1.0f / length;
+                    Vector2 displacementX = ComplexMultiply(
+                        new Vector2(
+                            0.0f,
+                            -waveNumber.X * inverseLength *
+                            settings.WaveChoppiness),
+                        height);
+                    Vector2 displacementZ = ComplexMultiply(
+                        new Vector2(
+                            0.0f,
+                            -waveNumber.Y * inverseLength *
+                            settings.WaveChoppiness),
+                        height);
+                    displacement.X += ComplexMultiply(
+                        displacementX,
+                        spatial).X * inverseSizeSquared;
+                    displacement.Z += ComplexMultiply(
+                        displacementZ,
+                        spatial).X * inverseSizeSquared;
+                }
             }
         }
 
         return displacement;
     }
 
+    private static Vector2 ComplexMultiply(Vector2 a, Vector2 b) =>
+        new(
+            a.X * b.X - a.Y * b.Y,
+            a.X * b.Y + a.Y * b.X);
+
+    private static Vector2 ComplexConjugate(Vector2 value) =>
+        new(value.X, -value.Y);
+
+    private static Vector2 ComplexExp(float angle) =>
+        new(MathF.Cos(angle), MathF.Sin(angle));
+
     private static Vector3 EvaluateFallbackWaveDisplacement(
         Vector2 worldPosition,
         float animationTime,
         OceanSettings settings)
     {
-        Vector2 forward = settings.WaveDirection.LengthSquared() > 0.001f
-            ? Vector2.Normalize(settings.WaveDirection)
-            : Vector2.UnitX;
-        Vector2 side = new(-forward.Y, forward.X);
-        Vector3 displacement = Vector3.Zero;
+        Vector2 direction = NormalizeWaveDirection(settings.WaveDirection);
+        Vector2 side = new(-direction.Y, direction.X);
+        Vector3 result = Vector3.Zero;
+        Vector2[] localDirections =
+        [
+            new(1.0f, 0.05f),
+            new(-0.62f, 0.78f),
+            new(0.37f, -0.93f),
+            new(0.91f, -0.42f)
+        ];
+        float[] lengths = [1.0f, 0.52f, 0.23f, 0.10f];
+        float[] amplitudes = [0.62f, 0.24f, 0.10f, 0.04f];
 
-        Vector2[] directions =
-        [
-            new(1.00f, 0.06f), new(-0.74f, 0.67f), new(0.38f, -0.93f), new(0.86f, -0.51f),
-            new(0.97f, -0.23f), new(-0.48f, 0.88f), new(0.15f, -1.00f), new(0.72f, 0.69f),
-            new(1.00f, 0.31f), new(-0.83f, 0.55f), new(0.52f, -0.86f), new(-0.18f, -0.99f)
-        ];
-        float[] amplitudes =
-        [
-            0.42f, 0.18f, 0.09f, 0.035f,
-            0.14f, 0.08f, 0.045f, 0.025f,
-            0.055f, 0.032f, 0.018f, 0.010f
-        ];
-        float[] lengths =
-        [
-            24.0f, 14.0f, 8.0f, 4.5f,
-            12.0f, 7.0f, 4.0f, 2.6f,
-            3.8f, 2.4f, 1.5f, 0.9f
-        ];
-        float[] speeds =
-        [
-            0.42f, 0.48f, 0.56f, 0.64f,
-            0.78f, 0.86f, 0.95f, 1.04f,
-            1.26f, 1.34f, 1.47f, 1.61f
-        ];
-        float[] phases =
-        [
-            0.17f, 2.41f, 4.88f, 1.33f,
-            1.79f, 4.20f, 0.62f, 3.51f,
-            3.14f, 0.91f, 5.37f, 2.28f
-        ];
-
-        for (int i = 0; i < directions.Length; i++)
+        for (int i = 0; i < localDirections.Length; i++)
         {
-            Vector2 direction = Vector2.Normalize(
-                forward * directions[i].X + side * directions[i].Y);
-            float waveNumber = TwoPi / MathF.Max(
-                settings.WaveLength * lengths[i] / 24.0f,
-                0.45f);
-            float phase = waveNumber * Vector2.Dot(direction, worldPosition) -
-                animationTime * settings.WaveSpeed * speeds[i] + phases[i];
-            float componentAmplitude = settings.WaveAmplitude * amplitudes[i];
-            float cosine = MathF.Cos(phase);
-
-            displacement.X += direction.X * componentAmplitude *
-                settings.WaveChoppiness * cosine;
-            displacement.Y += componentAmplitude *
-                (MathF.Sin(phase) + 0.075f * MathF.Sin(phase * 2.0f + 0.31f));
-            displacement.Z += direction.Y * componentAmplitude *
-                settings.WaveChoppiness * cosine;
+            Vector2 waveDirection = Vector2.Normalize(
+                direction * localDirections[i].X +
+                side * localDirections[i].Y);
+            float wavelength = MathF.Max(settings.WaveLength * lengths[i], 0.5f);
+            float waveNumber = TwoPi / wavelength;
+            float phase = Vector2.Dot(worldPosition, waveDirection) * waveNumber -
+                          animationTime * settings.WaveSpeed * (0.7f + i * 0.2f);
+            float amplitude = settings.WaveAmplitude * amplitudes[i];
+            result.Y += amplitude * MathF.Sin(phase);
+            float horizontal = amplitude * settings.WaveChoppiness * MathF.Cos(phase);
+            result.X += waveDirection.X * horizontal;
+            result.Z += waveDirection.Y * horizontal;
         }
 
-        return displacement;
+        return result;
     }
-
-    private static float PositiveModulo(float value, float modulus)
-    {
-        float remainder = value % modulus;
-        return remainder < 0.0f ? remainder + modulus : remainder;
-    }
-
-    private static Vector2 GetBandDirection(int index) => index switch
-    {
-        0 => new(1.00f, 0.06f),
-        1 => new(-0.74f, 0.67f),
-        2 => new(0.38f, -0.93f),
-        _ => new(0.86f, -0.51f)
-    };
-
-    private static Vector2 GetBandFrequency(int band, int index) => band switch
-    {
-        0 => index switch
-        {
-            0 => new(1.0f, 0.0f),
-            1 => new(1.0f, 1.0f),
-            2 => new(2.0f, -1.0f),
-            _ => new(1.0f, 2.0f)
-        },
-        1 => index switch
-        {
-            0 => new(1.0f, 0.0f),
-            1 => new(2.0f, 1.0f),
-            2 => new(3.0f, -2.0f),
-            _ => new(4.0f, 1.0f)
-        },
-        _ => index switch
-        {
-            0 => new(1.0f, 1.0f),
-            1 => new(2.0f, -1.0f),
-            2 => new(3.0f, 2.0f),
-            _ => new(5.0f, -3.0f)
-        }
-    };
-
-    private static float GetComponentWeight(int index) => index switch
-    {
-        0 => 0.58f,
-        1 => 0.25f,
-        2 => 0.12f,
-        _ => 0.05f
-    };
-
-    private static float GetBandAmplitude(int band) => band switch
-    {
-        0 => 0.72f,
-        1 => 0.24f,
-        _ => 0.10f
-    };
-
-    private static float GetBandSpeed(int band) => band switch
-    {
-        0 => 0.42f,
-        1 => 0.78f,
-        _ => 1.26f
-    };
-
-    private static float GetPhaseOffset(int band, int index) => band switch
-    {
-        0 => index switch
-        {
-            0 => 0.17f,
-            1 => 2.41f,
-            2 => 4.88f,
-            _ => 1.33f
-        },
-        1 => index switch
-        {
-            0 => 1.79f,
-            1 => 4.20f,
-            2 => 0.62f,
-            _ => 3.51f
-        },
-        _ => index switch
-        {
-            0 => 3.14f,
-            1 => 0.91f,
-            2 => 5.37f,
-            _ => 2.28f
-        }
-    };
 
     private static float AdaptiveCoordinate(float normalized)
     {
         float centered = normalized * 2.0f - 1.0f;
         float sign = centered < 0.0f ? -1.0f : 1.0f;
-        // A power curve puts most samples near the camera and progressively
-        // widens the cells toward the horizon.
         return sign * MathF.Pow(MathF.Abs(centered), 1.65f);
     }
 
@@ -915,9 +1144,7 @@ public sealed unsafe class OceanRenderer : IDisposable
             (uint)height,
             0,
             pixelFormat,
-            format == InternalFormat.DepthComponent32f
-                ? PixelType.Float
-                : PixelType.Float,
+            PixelType.Float,
             null);
         _gl.TexParameter(target, TextureParameterName.TextureMinFilter, (int)minFilter);
         _gl.TexParameter(target, TextureParameterName.TextureMagFilter, (int)magFilter);
@@ -975,21 +1202,28 @@ public sealed unsafe class OceanRenderer : IDisposable
         _surfaceDataFbo = 0;
     }
 
-    private void DeleteWaveSimulationTextures()
+    private void DeleteWaveSimulationResources()
     {
-        if (_waveBand0Texture != 0) _gl.DeleteTexture(_waveBand0Texture);
-        if (_waveBand1Texture != 0) _gl.DeleteTexture(_waveBand1Texture);
-        if (_waveBand2Texture != 0) _gl.DeleteTexture(_waveBand2Texture);
-        _waveBand0Texture = 0;
-        _waveBand1Texture = 0;
-        _waveBand2Texture = 0;
+        for (int band = 0; band < CascadeCount; band++)
+        {
+            if (_cascades[band] is WaveCascade cascade)
+            {
+                cascade.Dispose(_gl);
+                _cascades[band] = null;
+            }
+        }
+
+        _waveResourcesInitialized = false;
+        _simulationStateValid = false;
+        _lastSimulationTime = float.NaN;
     }
 
     private void CheckFramebuffer(string name)
     {
         GLEnum status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
         if (status != GLEnum.FramebufferComplete)
-            throw new InvalidOperationException($"Ocean framebuffer incomplete during {name}: {status}");
+            throw new InvalidOperationException(
+                $"Ocean framebuffer incomplete during {name}: {status}");
     }
 
     private float CurrentTimeSeconds() =>
@@ -1010,12 +1244,50 @@ public sealed unsafe class OceanRenderer : IDisposable
             return;
         _disposed = true;
         DeleteTargets();
-        DeleteWaveSimulationTextures();
+        DeleteWaveSimulationResources();
         _mesh?.Dispose();
         _surfaceShader.Dispose();
         _underwaterShader.Dispose();
-        _waveSimulationCompute.Dispose();
+        _spectrumCompute.Dispose();
+        _fftCompute.Dispose();
+        _resolveCompute.Dispose();
         _quad.Dispose();
         _mesh = null;
+    }
+
+    private sealed class WaveCascade
+    {
+        public float PatchSize;
+        public Vector2[] CpuH0 = Array.Empty<Vector2>();
+        public uint H0;
+        public uint SpectrumA;
+        public uint SpectrumB;
+        public uint SpectrumC;
+        public uint PingA;
+        public uint PingB;
+        public uint PingC;
+        public uint Surface;
+        public uint Slope;
+
+        public void Dispose(GL gl)
+        {
+            Delete(gl, ref H0);
+            Delete(gl, ref SpectrumA);
+            Delete(gl, ref SpectrumB);
+            Delete(gl, ref SpectrumC);
+            Delete(gl, ref PingA);
+            Delete(gl, ref PingB);
+            Delete(gl, ref PingC);
+            Delete(gl, ref Surface);
+            Delete(gl, ref Slope);
+            CpuH0 = Array.Empty<Vector2>();
+        }
+
+        private static void Delete(GL gl, ref uint texture)
+        {
+            if (texture != 0)
+                gl.DeleteTexture(texture);
+            texture = 0;
+        }
     }
 }

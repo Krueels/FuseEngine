@@ -4,6 +4,9 @@ layout(location = 0) in vec3 aPos;
 
 out vec3 vWorldPosition;
 out vec3 vWorldNormal;
+out vec2 vWaveSlope;
+out vec3 vWaveDisplacement;
+out float vWaveFoam;
 
 uniform mat4 uView;
 uniform mat4 uProj;
@@ -18,14 +21,19 @@ uniform float uWaveChoppiness;
 uniform vec2 uWaveDirection;
 
 uniform bool uUseWaveTextures;
-uniform sampler2D uWaveBand0;
-uniform sampler2D uWaveBand1;
-uniform sampler2D uWaveBand2;
-uniform float uWaveBandWorldSize0;
-uniform float uWaveBandWorldSize1;
-uniform float uWaveBandWorldSize2;
+uniform sampler2D uWaveSurface0;
+uniform sampler2D uWaveSurface1;
+uniform sampler2D uWaveSurface2;
+uniform sampler2D uWaveSlope0;
+uniform sampler2D uWaveSlope1;
+uniform sampler2D uWaveSlope2;
+uniform float uWavePatchSize0;
+uniform float uWavePatchSize1;
+uniform float uWavePatchSize2;
+uniform vec2 uWaveOffset0;
+uniform vec2 uWaveOffset1;
+uniform vec2 uWaveOffset2;
 
-const float PI = 3.14159265359;
 const float TWO_PI = 6.28318530718;
 
 vec2 ForwardDirection()
@@ -35,11 +43,44 @@ vec2 ForwardDirection()
         : vec2(1.0, 0.0);
 }
 
-vec3 SampleBand(sampler2D bandTexture, float worldSize, vec2 worldPosition)
+vec4 SampleSurface(int band, vec2 worldPosition)
 {
-    vec2 uv = fract(worldPosition / max(worldSize, 1.0));
-    // The compute texture stores horizontal X, height, horizontal Z.
-    return textureLod(bandTexture, uv, 0.0).xyz;
+    if (band == 0)
+    {
+        vec2 uv = fract((worldPosition + uWaveOffset0) /
+            max(uWavePatchSize0, 1.0));
+        return textureLod(uWaveSurface0, uv, 0.0);
+    }
+    if (band == 1)
+    {
+        vec2 uv = fract((worldPosition + uWaveOffset1) /
+            max(uWavePatchSize1, 1.0));
+        return textureLod(uWaveSurface1, uv, 0.0);
+    }
+
+    vec2 uv = fract((worldPosition + uWaveOffset2) /
+        max(uWavePatchSize2, 1.0));
+    return textureLod(uWaveSurface2, uv, 0.0);
+}
+
+vec2 SampleSlope(int band, vec2 worldPosition)
+{
+    if (band == 0)
+    {
+        vec2 uv = fract((worldPosition + uWaveOffset0) /
+            max(uWavePatchSize0, 1.0));
+        return textureLod(uWaveSlope0, uv, 0.0).rg;
+    }
+    if (band == 1)
+    {
+        vec2 uv = fract((worldPosition + uWaveOffset1) /
+            max(uWavePatchSize1, 1.0));
+        return textureLod(uWaveSlope1, uv, 0.0).rg;
+    }
+
+    vec2 uv = fract((worldPosition + uWaveOffset2) /
+        max(uWavePatchSize2, 1.0));
+    return textureLod(uWaveSlope2, uv, 0.0).rg;
 }
 
 vec3 SampleWaveDisplacement(vec2 worldPosition)
@@ -49,61 +90,84 @@ vec3 SampleWaveDisplacement(vec2 worldPosition)
         vec2 forward = ForwardDirection();
         vec2 side = vec2(-forward.y, forward.x);
         vec3 displacement = vec3(0.0);
+        const vec2 directions[4] = vec2[](
+            vec2(1.00, 0.05),
+            vec2(-0.62, 0.78),
+            vec2(0.37, -0.93),
+            vec2(0.91, -0.42));
+        const float lengths[4] = float[](1.0, 0.52, 0.23, 0.10);
+        const float amplitudes[4] = float[](0.62, 0.24, 0.10, 0.04);
 
-        const vec2 directions[12] = vec2[](
-            vec2(1.00,  0.06), vec2(-0.74,  0.67), vec2(0.38, -0.93), vec2(0.86, -0.51),
-            vec2(0.97, -0.23), vec2(-0.48,  0.88), vec2(0.15, -1.00), vec2(0.72,  0.69),
-            vec2(1.00,  0.31), vec2(-0.83,  0.55), vec2(0.52, -0.86), vec2(-0.18, -0.99));
-        const float amplitudes[12] = float[](
-            0.42, 0.18, 0.09, 0.035,
-            0.14, 0.08, 0.045, 0.025,
-            0.055, 0.032, 0.018, 0.010);
-        const float lengths[12] = float[](
-            24.0, 14.0, 8.0, 4.5,
-            12.0, 7.0, 4.0, 2.6,
-            3.8, 2.4, 1.5, 0.9);
-        const float speeds[12] = float[](
-            0.42, 0.48, 0.56, 0.64,
-            0.78, 0.86, 0.95, 1.04,
-            1.26, 1.34, 1.47, 1.61);
-        const float phases[12] = float[](
-            0.17, 2.41, 4.88, 1.33,
-            1.79, 4.20, 0.62, 3.51,
-            3.14, 0.91, 5.37, 2.28);
-
-        for (int i = 0; i < 12; ++i)
+        for (int i = 0; i < 4; ++i)
         {
             vec2 direction = normalize(
                 forward * directions[i].x + side * directions[i].y);
-            float waveNumber = TWO_PI / max(uWaveLength * lengths[i] / 24.0, 0.45);
-            float phase = waveNumber * dot(direction, worldPosition) -
-                uWaveTime * uWaveSpeed * speeds[i] + phases[i];
-            float componentAmplitude = uWaveAmplitude * amplitudes[i];
+            float wavelength = max(uWaveLength * lengths[i], 0.5);
+            float waveNumber = TWO_PI / wavelength;
+            float phase = dot(worldPosition, direction) * waveNumber -
+                uWaveTime * uWaveSpeed * (0.7 + float(i) * 0.2);
+            float amplitude = uWaveAmplitude * amplitudes[i];
             displacement += vec3(
-                direction.x * componentAmplitude * uWaveChoppiness * cos(phase),
-                componentAmplitude * (sin(phase) + 0.075 * sin(phase * 2.0 + 0.31)),
-                direction.y * componentAmplitude * uWaveChoppiness * cos(phase));
+                direction.x * amplitude * uWaveChoppiness * cos(phase),
+                amplitude * sin(phase),
+                direction.y * amplitude * uWaveChoppiness * cos(phase));
         }
         return displacement;
     }
 
-    return SampleBand(uWaveBand0, uWaveBandWorldSize0, worldPosition) +
-        SampleBand(uWaveBand1, uWaveBandWorldSize1, worldPosition) +
-        SampleBand(uWaveBand2, uWaveBandWorldSize2, worldPosition);
+    vec3 displacement = vec3(0.0);
+    for (int band = 0; band < 3; ++band)
+    {
+        vec4 surface = SampleSurface(band, worldPosition);
+        displacement += vec3(surface.r, surface.g, surface.b);
+    }
+    return displacement;
+}
+
+vec2 SampleWaveSlope(vec2 worldPosition)
+{
+    if (!uUseWaveTextures)
+        return vec2(0.0);
+
+    return SampleSlope(0, worldPosition) +
+        SampleSlope(1, worldPosition) +
+        SampleSlope(2, worldPosition);
+}
+
+float SampleWaveFoam(vec2 worldPosition)
+{
+    if (!uUseWaveTextures)
+        return 0.0;
+
+    return max(
+        SampleSurface(0, worldPosition).a,
+        max(
+            SampleSurface(1, worldPosition).a,
+            SampleSurface(2, worldPosition).a));
 }
 
 void main()
 {
-    // aPos is generated as an adaptive continuous grid. The cells are small
-    // near the camera and widen toward the far edge of the ocean patch.
+    // aPos is an adaptive continuous grid. The simulation resolution remains
+    // fixed at 128² while the geometry concentrates vertices near the camera.
     vec2 samplePosition = aPos.xz * uOceanSize + uOceanOrigin.xz;
     vec3 displacement = SampleWaveDisplacement(samplePosition);
 
     float normalStep = uUseWaveTextures
-        ? clamp(uWaveBandWorldSize2 / 128.0, 0.25, 2.0)
+        ? clamp(uWavePatchSize2 / 128.0, 0.20, 2.0)
         : max(uWaveLength * 0.0125, 0.25);
-    vec3 displacementX = SampleWaveDisplacement(samplePosition + vec2(normalStep, 0.0));
-    vec3 displacementZ = SampleWaveDisplacement(samplePosition + vec2(0.0, normalStep));
+    vec3 displacementX = SampleWaveDisplacement(
+        samplePosition + vec2(normalStep, 0.0));
+    vec3 displacementZ = SampleWaveDisplacement(
+        samplePosition + vec2(0.0, normalStep));
+
+    vec2 slope = SampleWaveSlope(samplePosition);
+    if (!uUseWaveTextures)
+    {
+        slope = vec2(
+            (displacementX.y - displacement.y) / normalStep,
+            (displacementZ.y - displacement.y) / normalStep);
+    }
 
     vec3 worldPosition = vec3(
         samplePosition.x + displacement.x,
@@ -111,15 +175,18 @@ void main()
         samplePosition.y + displacement.z);
     vec3 tangentX = vec3(
         1.0 + (displacementX.x - displacement.x) / normalStep,
-        (displacementX.y - displacement.y) / normalStep,
+        slope.x,
         (displacementX.z - displacement.z) / normalStep);
     vec3 tangentZ = vec3(
         (displacementZ.x - displacement.x) / normalStep,
-        (displacementZ.y - displacement.y) / normalStep,
+        slope.y,
         1.0 + (displacementZ.z - displacement.z) / normalStep);
     vec3 worldNormal = normalize(cross(tangentZ, tangentX));
 
     vWorldPosition = worldPosition;
     vWorldNormal = worldNormal;
+    vWaveSlope = slope;
+    vWaveDisplacement = displacement;
+    vWaveFoam = SampleWaveFoam(samplePosition);
     gl_Position = uProj * uView * vec4(worldPosition, 1.0);
 }

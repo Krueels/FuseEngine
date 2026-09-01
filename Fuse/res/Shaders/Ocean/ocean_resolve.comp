@@ -1,0 +1,41 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(rgba32f, binding = 0) readonly uniform image2D uSpectrumA;
+layout(rgba32f, binding = 1) readonly uniform image2D uSpectrumB;
+layout(rgba32f, binding = 2) readonly uniform image2D uSpectrumC;
+layout(rgba16f, binding = 3) writeonly uniform image2D uSurface;
+layout(rgba16f, binding = 4) writeonly uniform image2D uSlope;
+
+uniform int uSize;
+uniform float uFoamScale;
+
+void main()
+{
+    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+    if (cell.x >= uSize || cell.y >= uSize)
+        return;
+
+    vec4 spectrumA = imageLoad(uSpectrumA, cell);
+    vec4 spectrumB = imageLoad(uSpectrumB, cell);
+    vec4 spectrumC = imageLoad(uSpectrumC, cell);
+
+    float height = spectrumA.r;
+    float slopeX = spectrumA.b;
+    float slopeZ = spectrumB.r;
+    float displacementX = spectrumB.b;
+    float displacementZ = spectrumC.r;
+
+    float slopeMagnitude = length(vec2(slopeX, slopeZ));
+    float foam = smoothstep(0.20, 1.20, slopeMagnitude * max(uFoamScale, 0.01));
+
+    imageStore(
+        uSurface,
+        cell,
+        vec4(displacementX, height, displacementZ, foam));
+    imageStore(
+        uSlope,
+        cell,
+        vec4(slopeX, slopeZ, 0.0, 1.0));
+}

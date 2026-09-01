@@ -5755,7 +5755,7 @@
     "exposure": 1
   },
   "volumetric_clouds": {
-    "enabled": true,
+    "enabled": false,
     "preset": "weathermix",
     "base_height": -619,
     "thickness": 5000,

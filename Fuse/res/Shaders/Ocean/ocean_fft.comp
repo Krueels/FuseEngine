@@ -1,0 +1,119 @@
+#version 430 core
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(rgba32f, binding = 0) readonly uniform image2D uInputA;
+layout(rgba32f, binding = 1) readonly uniform image2D uInputB;
+layout(rgba32f, binding = 2) readonly uniform image2D uInputC;
+layout(rgba32f, binding = 3) writeonly uniform image2D uOutputA;
+layout(rgba32f, binding = 4) writeonly uniform image2D uOutputB;
+layout(rgba32f, binding = 5) writeonly uniform image2D uOutputC;
+
+uniform int uSize;
+uniform int uAxis;
+
+const int MAX_SIZE = 128;
+const float TWO_PI = 6.28318530718;
+
+shared vec4 valuesA[MAX_SIZE];
+shared vec4 valuesB[MAX_SIZE];
+shared vec4 valuesC[MAX_SIZE];
+shared vec4 scratchA[MAX_SIZE];
+shared vec4 scratchB[MAX_SIZE];
+shared vec4 scratchC[MAX_SIZE];
+
+vec2 ComplexMultiply(vec2 a, vec2 b)
+{
+    return vec2(
+        a.x * b.x - a.y * b.y,
+        a.x * b.y + a.y * b.x);
+}
+
+vec4 MultiplyComplexPairs(vec4 value, vec2 twiddle)
+{
+    return vec4(
+        ComplexMultiply(value.xy, twiddle),
+        ComplexMultiply(value.zw, twiddle));
+}
+
+uint BitReverse(uint value, int bitCount)
+{
+    uint reversed = 0u;
+    for (int bit = 0; bit < bitCount; ++bit)
+    {
+        reversed = (reversed << 1u) | (value & 1u);
+        value >>= 1u;
+    }
+    return reversed;
+}
+
+void main()
+{
+    uint index = gl_LocalInvocationID.x;
+    uint line = gl_WorkGroupID.x;
+    int bitCount = 0;
+    for (int size = uSize; size > 1; size >>= 1)
+        ++bitCount;
+
+    ivec2 inputCell = uAxis == 0
+        ? ivec2(int(index), int(line))
+        : ivec2(int(line), int(index));
+
+    valuesA[index] = imageLoad(uInputA, inputCell);
+    valuesB[index] = imageLoad(uInputB, inputCell);
+    valuesC[index] = imageLoad(uInputC, inputCell);
+    barrier();
+
+    uint reversed = BitReverse(index, bitCount);
+    scratchA[index] = valuesA[reversed];
+    scratchB[index] = valuesB[reversed];
+    scratchC[index] = valuesC[reversed];
+    barrier();
+
+    valuesA[index] = scratchA[index];
+    valuesB[index] = scratchB[index];
+    valuesC[index] = scratchC[index];
+    barrier();
+
+    for (int stage = 1; stage <= bitCount; ++stage)
+    {
+        uint span = 1u << uint(stage);
+        uint halfSpan = span >> 1u;
+        if ((index % span) < halfSpan)
+        {
+            uint groupStart = (index / span) * span;
+            uint offset = index % halfSpan;
+            float angle = TWO_PI * float(offset) / float(span);
+            vec2 twiddle = vec2(cos(angle), sin(angle));
+
+            vec4 upperA = valuesA[groupStart + offset];
+            vec4 lowerA = MultiplyComplexPairs(
+                valuesA[groupStart + offset + halfSpan], twiddle);
+            vec4 upperB = valuesB[groupStart + offset];
+            vec4 lowerB = MultiplyComplexPairs(
+                valuesB[groupStart + offset + halfSpan], twiddle);
+            vec4 upperC = valuesC[groupStart + offset];
+            vec4 lowerC = MultiplyComplexPairs(
+                valuesC[groupStart + offset + halfSpan], twiddle);
+
+            scratchA[groupStart + offset] = upperA + lowerA;
+            scratchA[groupStart + offset + halfSpan] = upperA - lowerA;
+            scratchB[groupStart + offset] = upperB + lowerB;
+            scratchB[groupStart + offset + halfSpan] = upperB - lowerB;
+            scratchC[groupStart + offset] = upperC + lowerC;
+            scratchC[groupStart + offset + halfSpan] = upperC - lowerC;
+        }
+        barrier();
+
+        valuesA[index] = scratchA[index];
+        valuesB[index] = scratchB[index];
+        valuesC[index] = scratchC[index];
+        barrier();
+    }
+
+    float inverseSize = 1.0 / float(uSize);
+    ivec2 outputCell = inputCell;
+    imageStore(uOutputA, outputCell, valuesA[index] * inverseSize);
+    imageStore(uOutputB, outputCell, valuesB[index] * inverseSize);
+    imageStore(uOutputC, outputCell, valuesC[index] * inverseSize);
+}

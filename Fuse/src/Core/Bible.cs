@@ -91,6 +91,9 @@ public static class Bible
     public const string OceanVert = "Shaders/Ocean/ocean.vert";
     public const string OceanFrag = "Shaders/Ocean/ocean.frag";
     public const string OceanSimulationCompute = "Shaders/Ocean/ocean_simulation.comp";
+    public const string OceanSpectrumCompute = "Shaders/Ocean/ocean_spectrum.comp";
+    public const string OceanFftCompute = "Shaders/Ocean/ocean_fft.comp";
+    public const string OceanResolveCompute = "Shaders/Ocean/ocean_resolve.comp";
     public const string UnderwaterFrag = "Shaders/Ocean/underwater.frag";
 
     // Shaders - DeathScreen

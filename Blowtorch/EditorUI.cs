@@ -4685,6 +4685,43 @@ public unsafe class EditorUI : IDisposable
                 }
                 Undo.TrackItem(_frameBeginState);
 
+                float windSpeed = ocean.WindSpeed;
+                if (ImGui.DragFloat("Wind speed##oceanWindSpeed", ref windSpeed, 0.1f, 0.1f, 200.0f, "%.1f"))
+                {
+                    ocean.WindSpeed = Math.Clamp(windSpeed, 0.1f, 200.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float smallWaveLength = ocean.SmallWaveLength;
+                if (ImGui.DragFloat("Small wave length##oceanSmallWaveLength", ref smallWaveLength, 0.01f, 0.05f, 20.0f, "%.2f"))
+                {
+                    ocean.SmallWaveLength = Math.Clamp(smallWaveLength, 0.05f, 20.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                int spectrumSeed = ocean.SpectrumSeed;
+                if (ImGui.InputInt("Spectrum seed##oceanSpectrumSeed", ref spectrumSeed))
+                {
+                    ocean.SpectrumSeed = spectrumSeed;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                string[] oceanDebugLabels = ["Final", "Height", "Slope", "Displacement"];
+                int oceanDebugView = Math.Clamp(ocean.DebugView, 0, oceanDebugLabels.Length - 1);
+                if (ImGui.Combo(
+                        "Debug view##oceanDebugView",
+                        ref oceanDebugView,
+                        oceanDebugLabels,
+                        oceanDebugLabels.Length))
+                {
+                    ocean.DebugView = oceanDebugView;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
                 ImGui.SeparatorText("Surface");
                 Vector3 shallowColor = ocean.ShallowColor;
                 if (ImGui.ColorEdit3("Shallow color##oceanShallowColor", ref shallowColor, ImGuiColorEditFlags.Float))

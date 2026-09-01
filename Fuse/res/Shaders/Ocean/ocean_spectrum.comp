@@ -1,0 +1,90 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(rg32f, binding = 0) readonly uniform image2D uH0;
+layout(rgba32f, binding = 1) writeonly uniform image2D uSpectrumA;
+layout(rgba32f, binding = 2) writeonly uniform image2D uSpectrumB;
+layout(rgba32f, binding = 3) writeonly uniform image2D uSpectrumC;
+
+uniform int uSize;
+uniform float uPatchSize;
+uniform float uTime;
+uniform float uAmplitude;
+uniform float uChoppiness;
+uniform float uCascadeWeight;
+
+const float TWO_PI = 6.28318530718;
+const float GRAVITY = 9.81;
+
+vec2 ComplexMultiply(vec2 a, vec2 b)
+{
+    return vec2(
+        a.x * b.x - a.y * b.y,
+        a.x * b.y + a.y * b.x);
+}
+
+vec2 ComplexConjugate(vec2 value)
+{
+    return vec2(value.x, -value.y);
+}
+
+vec2 ComplexExp(float angle)
+{
+    return vec2(cos(angle), sin(angle));
+}
+
+void main()
+{
+    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
+    if (cell.x >= uSize || cell.y >= uSize)
+        return;
+
+    int negativeX = (uSize - cell.x) % uSize;
+    int negativeY = (uSize - cell.y) % uSize;
+    ivec2 negativeCell = ivec2(negativeX, negativeY);
+
+    int signedX = cell.x <= uSize / 2 ? cell.x : cell.x - uSize;
+    int signedY = cell.y <= uSize / 2 ? cell.y : cell.y - uSize;
+    vec2 waveNumber = TWO_PI * vec2(signedX, signedY) / max(uPatchSize, 0.001);
+    float waveNumberLength = length(waveNumber);
+
+    vec2 height = vec2(0.0);
+    vec2 slopeX = vec2(0.0);
+    vec2 slopeZ = vec2(0.0);
+    vec2 displacementX = vec2(0.0);
+    vec2 displacementZ = vec2(0.0);
+
+    if (waveNumberLength > 0.00001)
+    {
+        vec2 h0 = imageLoad(uH0, cell).rg;
+        vec2 h0Negative = imageLoad(uH0, negativeCell).rg;
+        float angularFrequency = sqrt(GRAVITY * waveNumberLength);
+
+        vec2 forward = ComplexMultiply(
+            h0,
+            ComplexExp(angularFrequency * uTime));
+        vec2 backward = ComplexMultiply(
+            ComplexConjugate(h0Negative),
+            ComplexExp(-angularFrequency * uTime));
+        height = (forward + backward) * (uAmplitude * uCascadeWeight);
+
+        slopeX = ComplexMultiply(vec2(0.0, waveNumber.x), height);
+        slopeZ = ComplexMultiply(vec2(0.0, waveNumber.y), height);
+
+        float inverseLength = 1.0 / waveNumberLength;
+        displacementX = ComplexMultiply(
+            vec2(0.0, -waveNumber.x * inverseLength * uChoppiness),
+            height);
+        displacementZ = ComplexMultiply(
+            vec2(0.0, -waveNumber.y * inverseLength * uChoppiness),
+            height);
+    }
+
+    // A: height and d(height)/dx
+    // B: d(height)/dz and horizontal displacement X
+    // C: horizontal displacement Z
+    imageStore(uSpectrumA, cell, vec4(height, slopeX));
+    imageStore(uSpectrumB, cell, vec4(slopeZ, displacementX));
+    imageStore(uSpectrumC, cell, vec4(displacementZ, 0.0, 0.0));
+}

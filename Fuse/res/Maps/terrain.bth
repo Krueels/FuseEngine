@@ -4619,7 +4619,7 @@
     "exposure": 1
   },
   "volumetric_clouds": {
-    "enabled": true,
+    "enabled": false,
     "preset": "weathermix",
     "base_height": -451,
     "thickness": 5000,
@@ -4657,16 +4657,20 @@
   "ocean": {
     "enabled": true,
     "water_level": 20,
-    "ocean_size": 8192,
+    "ocean_size": 11672,
     "grid_resolution": 256,
-    "wave_amplitude": 4.85,
-    "wave_length": 49,
+    "wave_amplitude": 0.75,
+    "wave_length": 0.5,
     "wave_speed": 2,
     "wave_choppiness": 0.69,
     "wave_direction": [
       -0.60433406,
       0.7967311
     ],
+    "wind_speed": 18,
+    "small_wave_length": 0.36,
+    "spectrum_seed": 1337,
+    "debug_view": 0,
     "shallow_color": [
       0.035,
       0.28,
