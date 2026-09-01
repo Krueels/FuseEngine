@@ -5754,6 +5754,34 @@
     "star_density": 1,
     "exposure": 1
   },
+  "volumetric_clouds": {
+    "enabled": true,
+    "base_height": 406,
+    "thickness": 816,
+    "coverage": 0.24,
+    "density": 2.28,
+    "scale": 0.05,
+    "detail_scale": 4.16,
+    "detail_strength": 0.48,
+    "wind_direction": [
+      0.6315095,
+      0.77536815
+    ],
+    "wind_speed": 17.8,
+    "max_distance": 7370,
+    "primary_steps": 32,
+    "light_steps": 4,
+    "resolution_scale": 0.5,
+    "temporal_blend": 0.84,
+    "anisotropy": 0.55,
+    "absorption": 0.59,
+    "ambient_strength": 0.77,
+    "shadows_enabled": true,
+    "shadow_strength": 1,
+    "shadow_extent": 2200,
+    "shadow_resolution": 1024,
+    "shadow_update_interval": 0.12
+  },
   "player_spawn": {
     "position": [
       9.3,

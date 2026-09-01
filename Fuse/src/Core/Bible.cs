@@ -80,6 +80,11 @@ public static class Bible
     public const string PostProcessVert = "Shaders/PostProcess/composite.vert";
     public const string PostProcessFrag = "Shaders/PostProcess/composite.frag";
 
+    // Shaders - Volumetric Clouds
+    public const string VolumetricCloudFrag = "Shaders/Clouds/volumetric_clouds.frag";
+    public const string VolumetricCloudCompositeFrag = "Shaders/Clouds/cloud_composite.frag";
+    public const string VolumetricCloudShadowFrag = "Shaders/Clouds/cloud_shadow.frag";
+
     // Shaders - DeathScreen
     public const string DeathScreenGlsl = "Shaders/death_screen.glsl";
     public const string DeathScreenVert = "Shaders/death_screen.vert";

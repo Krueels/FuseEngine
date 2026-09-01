@@ -54,6 +54,39 @@ uniform bool uUseIbl;
 uniform float uIblIntensity;
 uniform bool uOutputSrgb;
 uniform int uMaterialPreviewOutput;
+uniform sampler2D uCloudShadowMap;
+uniform bool uCloudShadowsEnabled;
+uniform vec2 uCloudShadowCenter;
+uniform float uCloudShadowExtent;
+uniform float uCloudShadowStrength;
+uniform vec3 uCloudShadowSunDirection;
+uniform float uCloudLayerBaseHeight;
+uniform float uCloudLayerThickness;
+
+float CloudShadowVisibility(vec3 worldPosition)
+{
+    if (!uCloudShadowsEnabled || uCloudShadowExtent <= 0.0)
+        return 1.0;
+    if (worldPosition.y >= uCloudLayerBaseHeight + uCloudLayerThickness)
+        return 1.0;
+
+    // The texture is parameterized by the point where the receiver-to-sun
+    // ray enters the cloud base. This projects angled shadows correctly and
+    // also accounts for terrain elevation at the shaded fragment.
+    vec2 cloudEntry = worldPosition.xz;
+    if (uCloudShadowSunDirection.y > 0.01 && worldPosition.y < uCloudLayerBaseHeight)
+    {
+        float distanceToLayer = (uCloudLayerBaseHeight - worldPosition.y) /
+            uCloudShadowSunDirection.y;
+        cloudEntry += uCloudShadowSunDirection.xz * distanceToLayer;
+    }
+    vec2 uv = (cloudEntry - uCloudShadowCenter) /
+        (uCloudShadowExtent * 2.0) + 0.5;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+        return 1.0;
+    float cloudTransmittance = texture(uCloudShadowMap, uv).r;
+    return mix(1.0, cloudTransmittance, clamp(uCloudShadowStrength, 0.0, 1.0));
+}
 
 struct MaterialSurface {
     vec3 baseColor;
@@ -444,9 +477,11 @@ void main()
     if (uMaterialReceiveShadows && DirectionalShadowsEnabled() && length(directionalColor) > 0.0001)
         directionalShadow = DirectionalShadow(vWorldPos, normal, lightDir);
 
-    vec3 materialDirectional = (1.0 - directionalShadow) *
+    float cloudShadow = CloudShadowVisibility(vWorldPos);
+
+    vec3 materialDirectional = cloudShadow * (1.0 - directionalShadow) *
         EvaluateCookTorrance(normal, viewDir, lightDir, directionalColor, color, metallic, roughness);
-    vec3 legacyDirectional = (ambient + (1.0 - directionalShadow) *
+    vec3 legacyDirectional = (ambient + cloudShadow * (1.0 - directionalShadow) *
         (diffuseAmount + legacySpecularAmount * 0.5) * directionalColor) * color;
     vec3 result = mix(EvaluateIbl(normal, viewDir, color, metallic, roughness, material.ao) + materialDirectional,
                       legacyDirectional, material.legacyLighting);

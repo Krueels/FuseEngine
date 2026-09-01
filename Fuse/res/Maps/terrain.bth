@@ -2,442 +2,9 @@
   "version": 1,
   "objects": [
     {
-      "id": "terrain_terrain",
-      "visible": true,
-      "type": "terrain",
-      "terrain_asset": "Terrains/terrain.terrain",
-      "uv_scale": [
-        512,
-        512
-      ],
-      "material": "Materials/GRASS.fmat",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          0,
-          0,
-          0
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0.5,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
-      "id": "brush_43df7dc7",
-      "visible": true,
-      "type": "brush",
-      "faces": [
-        {
-          "normal": [
-            0,
-            0,
-            1
-          ],
-          "d": -28.500011,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            0,
-            -1
-          ],
-          "d": -28.500011,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            1,
-            0
-          ],
-          "d": -1.3750001,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            0,
-            -1,
-            0
-          ],
-          "d": -1.3750001,
-          "texture": "default",
-          "u_axis": [
-            1,
-            0,
-            0
-          ],
-          "v_axis": [
-            -0,
-            -0,
-            -1
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            1,
-            0,
-            0
-          ],
-          "d": -36.50002,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        },
-        {
-          "normal": [
-            -1,
-            0,
-            0
-          ],
-          "d": -36.50002,
-          "texture": "default",
-          "u_axis": [
-            0,
-            0,
-            1
-          ],
-          "v_axis": [
-            -0,
-            -1,
-            -0
-          ],
-          "u_scale": 1,
-          "v_scale": 1,
-          "u_offset": 0,
-          "v_offset": 0,
-          "rotation": 0
-        }
-      ],
-      "geometry_mode": "editable_mesh",
-      "editable_mesh": {
-        "next_vertex_id": 9,
-        "next_face_id": 7,
-        "vertices": [
-          {
-            "id": 1,
-            "position": [
-              36.50002,
-              1.3750001,
-              28.500011
-            ]
-          },
-          {
-            "id": 2,
-            "position": [
-              -36.50002,
-              1.3750001,
-              28.500011
-            ]
-          },
-          {
-            "id": 3,
-            "position": [
-              -36.50002,
-              -1.3750001,
-              28.500011
-            ]
-          },
-          {
-            "id": 4,
-            "position": [
-              36.50002,
-              -1.3750001,
-              28.500011
-            ]
-          },
-          {
-            "id": 5,
-            "position": [
-              -36.50002,
-              1.3750001,
-              -28.500011
-            ]
-          },
-          {
-            "id": 6,
-            "position": [
-              36.50002,
-              1.3750001,
-              -28.500011
-            ]
-          },
-          {
-            "id": 7,
-            "position": [
-              36.50002,
-              -1.3750001,
-              -28.500011
-            ]
-          },
-          {
-            "id": 8,
-            "position": [
-              -36.50002,
-              -1.3750001,
-              -28.500011
-            ]
-          }
-        ],
-        "faces": [
-          {
-            "id": 1,
-            "vertices": [
-              1,
-              2,
-              3,
-              4
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              1,
-              0,
-              0
-            ],
-            "v_axis": [
-              -0,
-              -1,
-              -0
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 2,
-            "vertices": [
-              5,
-              6,
-              7,
-              8
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              1,
-              0,
-              0
-            ],
-            "v_axis": [
-              -0,
-              -1,
-              -0
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 3,
-            "vertices": [
-              1,
-              6,
-              5,
-              2
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              1,
-              0,
-              0
-            ],
-            "v_axis": [
-              -0,
-              -0,
-              -1
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 4,
-            "vertices": [
-              7,
-              4,
-              3,
-              8
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              1,
-              0,
-              0
-            ],
-            "v_axis": [
-              -0,
-              -0,
-              -1
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 5,
-            "vertices": [
-              6,
-              1,
-              4,
-              7
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              0,
-              0,
-              1
-            ],
-            "v_axis": [
-              -0,
-              -1,
-              -0
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          },
-          {
-            "id": 6,
-            "vertices": [
-              2,
-              5,
-              8,
-              3
-            ],
-            "texture": "default",
-            "material_slot": 0,
-            "u_axis": [
-              0,
-              0,
-              1
-            ],
-            "v_axis": [
-              -0,
-              -1,
-              -0
-            ],
-            "u_scale": 1,
-            "v_scale": 1,
-            "u_offset": 0,
-            "v_offset": 0,
-            "rotation": 0
-          }
-        ]
-      },
-      "material": "Materials/DevMeasureCrate.fmat",
-      "texture": "Textures/dev_measurecrate01.bmp",
-      "body": {
-        "shape": "trimesh",
-        "position": [
-          2043.5,
-          1.375,
-          2532.5
-        ],
-        "rotation": [
-          1,
-          0,
-          0,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false,
-        "half_extents": [
-          36.50002,
-          1.3750001,
-          28.500011
-        ]
-      }
-    },
-    {
       "id": "brush_fbda3806",
       "visible": true,
+      "parent": "group_1",
       "type": "brush",
       "faces": [
         {
@@ -4491,9 +4058,9 @@
       "body": {
         "shape": "trimesh",
         "position": [
-          2045,
-          5.75,
-          2518
+          317.5,
+          30.375,
+          603.5
         ],
         "rotation": [
           1,
@@ -4511,13 +4078,579 @@
           12
         ]
       }
+    },
+    {
+      "id": "brush_43df7dc7",
+      "visible": true,
+      "parent": "group_1",
+      "type": "brush",
+      "faces": [
+        {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "d": -28.500011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "d": -28.500011,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "d": -1.3750001,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            0,
+            -1,
+            0
+          ],
+          "d": -1.3750001,
+          "texture": "default",
+          "u_axis": [
+            1,
+            0,
+            0
+          ],
+          "v_axis": [
+            -0,
+            -0,
+            -1
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "d": -36.50002,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        },
+        {
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "d": -36.50002,
+          "texture": "default",
+          "u_axis": [
+            0,
+            0,
+            1
+          ],
+          "v_axis": [
+            -0,
+            -1,
+            -0
+          ],
+          "u_scale": 1,
+          "v_scale": 1,
+          "u_offset": 0,
+          "v_offset": 0,
+          "rotation": 0
+        }
+      ],
+      "geometry_mode": "editable_mesh",
+      "editable_mesh": {
+        "next_vertex_id": 9,
+        "next_face_id": 7,
+        "vertices": [
+          {
+            "id": 1,
+            "position": [
+              36.50002,
+              1.3750001,
+              28.500011
+            ]
+          },
+          {
+            "id": 2,
+            "position": [
+              -36.50002,
+              1.3750001,
+              28.500011
+            ]
+          },
+          {
+            "id": 3,
+            "position": [
+              -36.50002,
+              -1.3750001,
+              28.500011
+            ]
+          },
+          {
+            "id": 4,
+            "position": [
+              36.50002,
+              -1.3750001,
+              28.500011
+            ]
+          },
+          {
+            "id": 5,
+            "position": [
+              -36.50002,
+              1.3750001,
+              -28.500011
+            ]
+          },
+          {
+            "id": 6,
+            "position": [
+              36.50002,
+              1.3750001,
+              -28.500011
+            ]
+          },
+          {
+            "id": 7,
+            "position": [
+              36.50002,
+              -1.3750001,
+              -28.500011
+            ]
+          },
+          {
+            "id": 8,
+            "position": [
+              -36.50002,
+              -1.3750001,
+              -28.500011
+            ]
+          }
+        ],
+        "faces": [
+          {
+            "id": 1,
+            "vertices": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 2,
+            "vertices": [
+              5,
+              6,
+              7,
+              8
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 3,
+            "vertices": [
+              1,
+              6,
+              5,
+              2
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -0,
+              -1
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 4,
+            "vertices": [
+              7,
+              4,
+              3,
+              8
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              1,
+              0,
+              0
+            ],
+            "v_axis": [
+              -0,
+              -0,
+              -1
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 5,
+            "vertices": [
+              6,
+              1,
+              4,
+              7
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          },
+          {
+            "id": 6,
+            "vertices": [
+              2,
+              5,
+              8,
+              3
+            ],
+            "texture": "default",
+            "material_slot": 0,
+            "u_axis": [
+              0,
+              0,
+              1
+            ],
+            "v_axis": [
+              -0,
+              -1,
+              -0
+            ],
+            "u_scale": 1,
+            "v_scale": 1,
+            "u_offset": 0,
+            "v_offset": 0,
+            "rotation": 0
+          }
+        ]
+      },
+      "material": "Materials/DevMeasureCrate.fmat",
+      "texture": "Textures/dev_measurecrate01.bmp",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          316,
+          26,
+          618
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false,
+        "half_extents": [
+          36.50002,
+          1.3750001,
+          28.500011
+        ]
+      }
+    },
+    {
+      "id": "new_directional_light",
+      "visible": true,
+      "light_type": "directional",
+      "light_color": [
+        1,
+        0.3,
+        0.2
+      ],
+      "light_intensity": 2,
+      "light_radius": 15,
+      "light_inner_cone": 0.2617994,
+      "light_outer_cone": 0.5235988,
+      "light_cast_shadows": true,
+      "light_shadow_bias": 0.001,
+      "light_dynamic": false,
+      "body": {
+        "shape": "none",
+        "position": [
+          0,
+          111,
+          0
+        ],
+        "rotation": [
+          0.75,
+          0.4330127,
+          0.25,
+          -0.4330127
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "terrain_terrain",
+      "visible": true,
+      "type": "terrain",
+      "terrain_asset": "Terrains/terrain.terrain",
+      "uv_scale": [
+        1024,
+        1024
+      ],
+      "material": "Materials/GRASS.fmat",
+      "body": {
+        "shape": "trimesh",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "group_1",
+      "visible": true,
+      "body": {
+        "shape": "none",
+        "position": [
+          316,
+          26,
+          618
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
     }
   ],
+  "skybox_settings": {
+    "mode": "procedural",
+    "zenith_color": [
+      0.08,
+      0.2,
+      0.55
+    ],
+    "horizon_color": [
+      0.65,
+      0.24,
+      0.1
+    ],
+    "ground_color": [
+      0.025,
+      0.03,
+      0.045
+    ],
+    "night_zenith_color": [
+      0.002,
+      0.005,
+      0.02
+    ],
+    "night_horizon_color": [
+      0.01,
+      0.014,
+      0.035
+    ],
+    "sun_color": [
+      1,
+      1,
+      1
+    ],
+    "star_color": [
+      0.7,
+      0.82,
+      1
+    ],
+    "sun_intensity": 4,
+    "sun_angular_radius_degrees": 0.27,
+    "atmosphere_strength": 1,
+    "rayleigh_strength": 1,
+    "mie_strength": 1,
+    "star_intensity": 2.5,
+    "star_density": 1,
+    "exposure": 1
+  },
+  "volumetric_clouds": {
+    "enabled": true,
+    "base_height": 490,
+    "thickness": 97,
+    "coverage": 0.25,
+    "density": 1.33,
+    "scale": 0.0947,
+    "detail_scale": 10.42,
+    "detail_strength": 0.6,
+    "wind_direction": [
+      0.9578263,
+      0.2873479
+    ],
+    "wind_speed": 3,
+    "max_distance": 3160,
+    "primary_steps": 32,
+    "light_steps": 4,
+    "resolution_scale": 1,
+    "temporal_blend": 0.49,
+    "anisotropy": 0.54,
+    "absorption": 1.29,
+    "ambient_strength": 0.53,
+    "shadows_enabled": true,
+    "shadow_strength": 0.55,
+    "shadow_extent": 2200,
+    "shadow_resolution": 256,
+    "shadow_update_interval": 0.12
+  },
   "player_spawn": {
     "position": [
-      2000,
-      5,
-      2500
+      316,
+      28.85,
+      618
     ],
     "yaw": 0,
     "pitch": 0

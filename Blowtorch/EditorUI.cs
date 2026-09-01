@@ -44,6 +44,7 @@ public unsafe class EditorUI : IDisposable
     private bool _initialMapStatusChecked;
     private string? _previewSkyboxDocumentPath;
     private ulong _previewSkyboxSettingsSignature;
+    private bool _cloudPreviewAnimated;
 
     private enum PendingDocumentAction { None, New, Open, Exit }
     private PendingDocumentAction _pendingDocumentAction;
@@ -206,6 +207,7 @@ public unsafe class EditorUI : IDisposable
     public bool RequiresContinuousViewportRender =>
         _currentMode is EditorMode.DrawBrush or EditorMode.TerrainSculpt ||
         _isDraggingHandle || EditorGizmo.IsUsing() || ImGui.IsAnyItemActive();
+    public bool RequiresContinuousPerspectiveViewportRender => _cloudPreviewAnimated;
 
     public void Dispose()
     {
@@ -243,6 +245,7 @@ public unsafe class EditorUI : IDisposable
             _previewManager.Reset();
         }
         SyncSelection(sceneService.Document);
+        _cloudPreviewAnimated = sceneService.Document.Clouds.Enabled;
         var currentIds = new HashSet<string>(_selectedObjects.Select(o => o.Id));
         if (!_lastSelectedObjectIds.SetEquals(currentIds))
         {
@@ -4294,6 +4297,221 @@ public unsafe class EditorUI : IDisposable
                     viewportFront.RequestRender();
                     viewportSide.RequestRender();
                 }
+            }
+
+            ImGui.Separator();
+            ImGui.TextUnformatted("Volumetric clouds");
+            VolumetricCloudSettings clouds = doc.Clouds;
+            bool cloudSettingsChanged = false;
+
+            bool cloudsEnabled = clouds.Enabled;
+            if (ImGui.Checkbox("Enabled##volumetricCloudsEnabled", ref cloudsEnabled))
+            {
+                clouds.Enabled = cloudsEnabled;
+                cloudSettingsChanged = true;
+            }
+            Undo.TrackItem(_frameBeginState);
+            ImGui.SameLine();
+            ImGui.TextDisabled("Rendered only in the 3D viewport.");
+
+            if (clouds.Enabled && ImGui.TreeNodeEx(
+                    "Cloud layer settings##volumetricCloudSettings",
+                    ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                float baseHeight = clouds.BaseHeight;
+                if (ImGui.DragFloat("Base height##cloudBaseHeight", ref baseHeight, 1.0f, -5000.0f, 10000.0f, "%.1f"))
+                {
+                    clouds.BaseHeight = baseHeight;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float thickness = clouds.Thickness;
+                if (ImGui.DragFloat("Thickness##cloudThickness", ref thickness, 1.0f, 1.0f, 5000.0f, "%.1f"))
+                {
+                    clouds.Thickness = MathF.Max(1.0f, thickness);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float coverage = clouds.Coverage;
+                if (ImGui.SliderFloat("Coverage##cloudCoverage", ref coverage, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.Coverage = Math.Clamp(coverage, 0.0f, 1.0f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float density = clouds.Density;
+                if (ImGui.SliderFloat("Density##cloudDensity", ref density, 0.0f, 4.0f, "%.2f"))
+                {
+                    clouds.Density = Math.Clamp(density, 0.0f, 8.0f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float scale = clouds.Scale;
+                if (ImGui.DragFloat("World scale##cloudScale", ref scale, 0.0001f, 0.0001f, 0.15f, "%.4f"))
+                {
+                    clouds.Scale = Math.Clamp(scale, 0.00001f, 1.0f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float detailScale = clouds.DetailScale;
+                if (ImGui.SliderFloat("Detail scale##cloudDetailScale", ref detailScale, 1.0f, 12.0f, "%.2f"))
+                {
+                    clouds.DetailScale = detailScale;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float detailStrength = clouds.DetailStrength;
+                if (ImGui.SliderFloat("Detail erosion##cloudDetailStrength", ref detailStrength, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.DetailStrength = detailStrength;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector2 windDirection = clouds.WindDirection;
+                if (ImGui.DragFloat2("Wind direction X/Z##cloudWindDirection", ref windDirection, 0.01f, -1.0f, 1.0f, "%.2f"))
+                {
+                    clouds.WindDirection = windDirection.LengthSquared() > 1e-8f
+                        ? Vector2.Normalize(windDirection)
+                        : Vector2.UnitX;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float windSpeed = clouds.WindSpeed;
+                if (ImGui.DragFloat("Wind speed##cloudWindSpeed", ref windSpeed, 0.1f, -100.0f, 100.0f, "%.1f"))
+                {
+                    clouds.WindSpeed = windSpeed;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float maxDistance = clouds.MaxDistance;
+                if (ImGui.DragFloat("Maximum distance##cloudMaxDistance", ref maxDistance, 10.0f, 100.0f, 20000.0f, "%.0f"))
+                {
+                    clouds.MaxDistance = Math.Clamp(maxDistance, 10.0f, 20000.0f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Quality and lighting");
+                int primarySteps = clouds.PrimarySteps;
+                if (ImGui.SliderInt("Ray-march steps##cloudPrimarySteps", ref primarySteps, 8, 128))
+                {
+                    clouds.PrimarySteps = Math.Clamp(primarySteps, 8, 128);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                int lightSteps = clouds.LightSteps;
+                if (ImGui.SliderInt("Light steps##cloudLightSteps", ref lightSteps, 1, 24))
+                {
+                    clouds.LightSteps = Math.Clamp(lightSteps, 1, 24);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float resolutionScale = clouds.ResolutionScale;
+                if (ImGui.SliderFloat("Render resolution##cloudResolution", ref resolutionScale, 0.25f, 1.0f, "%.2fx"))
+                {
+                    clouds.ResolutionScale = Math.Clamp(resolutionScale, 0.25f, 1.0f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float temporalBlend = clouds.TemporalBlend;
+                if (ImGui.SliderFloat("Temporal reuse##cloudTemporal", ref temporalBlend, 0.0f, 0.98f, "%.2f"))
+                {
+                    clouds.TemporalBlend = Math.Clamp(temporalBlend, 0.0f, 0.98f);
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float anisotropy = clouds.Anisotropy;
+                if (ImGui.SliderFloat("Forward scattering##cloudAnisotropy", ref anisotropy, -0.8f, 0.9f, "%.2f"))
+                {
+                    clouds.Anisotropy = anisotropy;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float absorption = clouds.Absorption;
+                if (ImGui.SliderFloat("Light absorption##cloudAbsorption", ref absorption, 0.05f, 4.0f, "%.2f"))
+                {
+                    clouds.Absorption = absorption;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float ambientStrength = clouds.AmbientStrength;
+                if (ImGui.SliderFloat("Ambient light##cloudAmbient", ref ambientStrength, 0.0f, 2.0f, "%.2f"))
+                {
+                    clouds.AmbientStrength = ambientStrength;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("World shadows");
+                bool shadowsEnabled = clouds.ShadowsEnabled;
+                if (ImGui.Checkbox("Cast cloud shadows##cloudShadows", ref shadowsEnabled))
+                {
+                    clouds.ShadowsEnabled = shadowsEnabled;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                if (clouds.ShadowsEnabled)
+                {
+                    float shadowStrength = clouds.ShadowStrength;
+                    if (ImGui.SliderFloat("Shadow strength##cloudShadowStrength", ref shadowStrength, 0.0f, 1.0f, "%.2f"))
+                    {
+                        clouds.ShadowStrength = shadowStrength;
+                        cloudSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float shadowExtent = clouds.ShadowExtent;
+                    if (ImGui.DragFloat("Shadow area radius##cloudShadowExtent", ref shadowExtent, 10.0f, 50.0f, 20000.0f, "%.0f"))
+                    {
+                        clouds.ShadowExtent = Math.Clamp(shadowExtent, 50.0f, 20000.0f);
+                        cloudSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    int[] shadowResolutions = [64, 128, 256, 512, 1024];
+                    string[] shadowResolutionLabels = ["64", "128", "256", "512", "1024"];
+                    int shadowResolutionIndex = Array.IndexOf(shadowResolutions, clouds.ShadowResolution);
+                    if (shadowResolutionIndex < 0) shadowResolutionIndex = 2;
+                    if (ImGui.Combo("Shadow resolution##cloudShadowResolution", ref shadowResolutionIndex, shadowResolutionLabels, shadowResolutionLabels.Length))
+                    {
+                        clouds.ShadowResolution = shadowResolutions[shadowResolutionIndex];
+                        cloudSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float shadowInterval = clouds.ShadowUpdateInterval;
+                    if (ImGui.SliderFloat("Shadow update interval##cloudShadowInterval", ref shadowInterval, 0.0f, 1.0f, "%.2f s"))
+                    {
+                        clouds.ShadowUpdateInterval = shadowInterval;
+                        cloudSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+                }
+
+                ImGui.TreePop();
+            }
+
+            if (cloudSettingsChanged)
+            {
+                assetService.CloudRenderer?.InvalidateHistory();
+                viewport3D.RequestRender();
+                _cloudPreviewAnimated = clouds.Enabled;
             }
         }
 

@@ -245,12 +245,14 @@ public static class MapSerializer
         out PlayerSpawn? playerSpawn,
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
+        out VolumetricCloudSettings cloudSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
+        cloudSettings = new VolumetricCloudSettings();
         scene.Clear();
         var createdBodies = new List<RigidBody>();
 
@@ -292,6 +294,11 @@ public static class MapSerializer
             skyboxSettingsNode is JsonObject skyboxSettingsObject)
         {
             skyboxSettings = SkyboxSettings.FromJson(skyboxSettingsObject);
+        }
+        if (root.TryGetPropertyValue("volumetric_clouds", out var cloudsNode) &&
+            cloudsNode is JsonObject cloudsObject)
+        {
+            cloudSettings = VolumetricCloudSettings.FromJson(cloudsObject);
         }
 
         if (root.TryGetPropertyValue("player_spawn", out var spawnNode))
@@ -924,12 +931,14 @@ public static class MapSerializer
         out PlayerSpawn? playerSpawn,
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
+        out VolumetricCloudSettings cloudSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
         playerSpawn = null;
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
+        cloudSettings = new VolumetricCloudSettings();
         if (!File.Exists(filepath))
         {
             Logger.Error($"Failed to load map: {filepath}");
@@ -945,6 +954,7 @@ public static class MapSerializer
             out playerSpawn,
             out skyboxPath,
             out skyboxSettings,
+            out cloudSettings,
             resPath,
             onProgress);
     }

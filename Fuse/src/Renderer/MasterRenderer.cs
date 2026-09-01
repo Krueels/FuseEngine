@@ -139,8 +139,18 @@ public unsafe class MasterRenderer
 
     // Post-Process
     private PostProcessPipeline _postPipeline = null!;
+    private VolumetricCloudRenderer? _cloudRenderer;
+    private VolumetricCloudSettings _cloudSettings = new();
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
+    public VolumetricCloudSettings VolumetricClouds => _cloudSettings;
+
+    public void SetVolumetricClouds(VolumetricCloudSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _cloudSettings = settings.Clone();
+        _cloudRenderer?.InvalidateHistory();
+    }
     private readonly EngineProfiler _profiler = new();
     public EngineProfiler Profiler => _profiler;
     private Matrix4x4 _prevViewProj = Matrix4x4.Identity;
@@ -530,6 +540,15 @@ public unsafe class MasterRenderer
         // Post-Process Pipeline
         _postPipeline = new PostProcessPipeline(_gl, assets, _scrWidth, _scrHeight);
         _postSettings = _postPipeline.Settings;
+        try
+        {
+            _cloudRenderer = new VolumetricCloudRenderer(_gl);
+        }
+        catch (Exception ex)
+        {
+            _cloudRenderer = null;
+            Logger.Warn($"Volumetric clouds disabled: {ex.Message}");
+        }
 
         // SSAO Kernel + Noise
         InitSsao();
@@ -664,6 +683,7 @@ public unsafe class MasterRenderer
         _scrWidth = width;
         _scrHeight = height;
         _postPipeline?.Resize(width, height);
+        _cloudRenderer?.InvalidateHistory();
         CreateDecalDepthResources();
     }
 
@@ -723,6 +743,7 @@ public unsafe class MasterRenderer
                 lightDir);
         }
         EnsureProceduralSkyboxIbl(lightDir, skyDirectionalLightColor);
+        _cloudRenderer?.UpdateShadow(camera.Position, lightDir, _cloudSettings);
         bool renderDirShadows = dirLight != null && dirLight.CastShadows && ShadowsEnabled;
 
         CalculateCascadeSplits(camera.NearPlane, ShadowFarPlane, _cascadeLevels);
@@ -887,6 +908,52 @@ public unsafe class MasterRenderer
         if (_decalQueue.Count > 0)
         {
             RenderDecals(view, proj, targetFbo);
+        }
+
+        // Clouds are evaluated after opaque geometry so the scene depth can
+        // stop the ray march. Copy the composed color back into attachment 0;
+        // transparent gameplay billboards are then drawn over it normally.
+        if (_cloudRenderer != null && _cloudSettings.Enabled)
+        {
+            CloudCompositeResult clouds = _cloudRenderer.Render(
+                _postPipeline.HdrColorId,
+                _postPipeline.HdrDepthId,
+                _scrWidth,
+                _scrHeight,
+                view,
+                proj,
+                camera.Position,
+                lightDir,
+                skyDirectionalLightColor,
+                _cloudSettings,
+                sceneIsSrgb: !_postPipeline.Settings.Enabled,
+                outputSrgb: !_postPipeline.Settings.Enabled);
+            if (clouds.Framebuffer != 0)
+            {
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, clouds.Framebuffer);
+                _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, targetFbo);
+                _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
+                _gl.BlitFramebuffer(
+                    0, 0, _scrWidth, _scrHeight,
+                    0, 0, _scrWidth, _scrHeight,
+                    ClearBufferMask.ColorBufferBit,
+                    BlitFramebufferFilter.Nearest);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
+                _gl.DrawBuffers(new[]
+                {
+                    DrawBufferMode.ColorAttachment0,
+                    DrawBufferMode.ColorAttachment1,
+                    DrawBufferMode.ColorAttachment2,
+                    DrawBufferMode.ColorAttachment3
+                });
+                _gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.Enable(EnableCap.CullFace);
+                _gl.CullFace(GLEnum.Back);
+                _gl.DepthFunc(DepthFunction.Less);
+                _gl.DepthMask(true);
+            }
         }
 
 
@@ -1389,6 +1456,7 @@ public unsafe class MasterRenderer
             shader.SetBool("uUseIbl", false);
             shader.SetFloat("uIblIntensity", 1.0f);
         }
+        _cloudRenderer?.BindWorldShadow(shader, _cloudSettings);
     }
 
     private unsafe void UploadBones(Matrix4x4[] bones)
@@ -1910,6 +1978,7 @@ public unsafe class MasterRenderer
                 map.Dispose();
         }
         DestroyDecalDepthResources();
+        _cloudRenderer?.Dispose();
         _postPipeline?.Dispose();
     }
 }

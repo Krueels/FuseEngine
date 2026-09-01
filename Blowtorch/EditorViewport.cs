@@ -19,7 +19,7 @@ public unsafe class EditorViewport : IDisposable
     private readonly GL _gl;
     private uint _fbo;
     private uint _colorTex;
-    private uint _depthRbo;
+    private uint _depthTex;
     private int _width = 800;
     private int _height = 600;
 
@@ -120,7 +120,7 @@ public unsafe class EditorViewport : IDisposable
     public void CreateFbo(int w, int h)
     {
         if (_colorTex != 0) _gl.DeleteTexture(_colorTex);
-        if (_depthRbo != 0) _gl.DeleteRenderbuffer(_depthRbo);
+        if (_depthTex != 0) _gl.DeleteTexture(_depthTex);
 
         _colorTex = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, _colorTex);
@@ -131,15 +131,33 @@ public unsafe class EditorViewport : IDisposable
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
 
-        _depthRbo = _gl.GenRenderbuffer();
-        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _depthRbo);
-        _gl.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.DepthComponent24, (uint)w, (uint)h);
+        _depthTex = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, _depthTex);
+        _gl.TexImage2D(
+            TextureTarget.Texture2D,
+            0,
+            (int)InternalFormat.DepthComponent32f,
+            (uint)w,
+            (uint)h,
+            0,
+            PixelFormat.DepthComponent,
+            PixelType.Float,
+            null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode, (int)TextureCompareMode.None);
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
         _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
             TextureTarget.Texture2D, _colorTex, 0);
-        _gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
-            RenderbufferTarget.Renderbuffer, _depthRbo);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D,
+            _depthTex,
+            0);
 
         if (_gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != GLEnum.FramebufferComplete)
             Logger.Error("Viewport FBO incomplete");
@@ -200,6 +218,18 @@ public unsafe class EditorViewport : IDisposable
             assetService.PointShadowShader,
             assetService.SkyboxSettings);
 
+        ProceduralSky.ResolveSun(
+            scene.Lights,
+            out Vector3 cloudSunDirection,
+            out Vector3 cloudSunColor);
+        if (!_camera.IsOrthographic)
+        {
+            assetService.CloudRenderer?.UpdateShadow(
+                _camera.Position,
+                cloudSunDirection,
+                sceneService.Document.Clouds);
+        }
+
         // Shadow passes render into their own FBOs. Restore this viewport before
         // drawing its color image.
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
@@ -226,6 +256,7 @@ public unsafe class EditorViewport : IDisposable
             target.SetFloat("uEmissiveStrength", 0.0f);
             _lightingSystem.BindShadowMaps(target);
             _lightingSystem.BindImageBasedLighting(target);
+            assetService.CloudRenderer?.BindWorldShadow(target, sceneService.Document.Clouds);
         }
 
         PrepareMaterialShader(shader);
@@ -363,6 +394,44 @@ public unsafe class EditorViewport : IDisposable
         {
             _gl.Disable(EnableCap.Blend);
             _gl.DepthMask(true);
+        }
+
+        if (!_camera.IsOrthographic &&
+            sceneService.Document.Clouds.Enabled &&
+            assetService.CloudRenderer != null)
+        {
+            CloudCompositeResult clouds = assetService.CloudRenderer.Render(
+                _colorTex,
+                _depthTex,
+                _width,
+                _height,
+                view,
+                proj,
+                _camera.Position,
+                cloudSunDirection,
+                cloudSunColor,
+                sceneService.Document.Clouds,
+                sceneIsSrgb: true,
+                outputSrgb: true);
+            if (clouds.Framebuffer != 0)
+            {
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, clouds.Framebuffer);
+                _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
+                _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
+                _gl.BlitFramebuffer(
+                    0, 0, _width, _height,
+                    0, 0, _width, _height,
+                    ClearBufferMask.ColorBufferBit,
+                    BlitFramebufferFilter.Nearest);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+                _gl.Viewport(0, 0, (uint)_width, (uint)_height);
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.Enable(EnableCap.CullFace);
+                _gl.CullFace(GLEnum.Back);
+                _gl.DepthFunc(DepthFunction.Less);
+                _gl.DepthMask(true);
+            }
         }
 
         // Draw the grid after opaque scene geometry. This lets the ground
@@ -808,7 +877,7 @@ public unsafe class EditorViewport : IDisposable
         _debugDrawer.Dispose();
         _gl.DeleteFramebuffer(_fbo);
         _gl.DeleteTexture(_colorTex);
-        _gl.DeleteRenderbuffer(_depthRbo);
+        _gl.DeleteTexture(_depthTex);
         _gridMesh.Dispose();
         _lightingSystem.Dispose();
     }

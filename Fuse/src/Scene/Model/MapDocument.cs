@@ -10,6 +10,7 @@ public class MapDocument
     public int Version { get; set; } = 1;
     public string SkyboxPath { get; set; } = "";
     public SkyboxSettings Skybox { get; set; } = new();
+    public VolumetricCloudSettings Clouds { get; set; } = new();
     public List<MapObject> Objects { get; set; } = [];
     public MapPlayerSpawn? PlayerSpawn { get; set; }
     public List<string> ValidationWarnings { get; } = [];
@@ -84,6 +85,12 @@ public class MapDocument
                 doc.Skybox = SkyboxSettings.FromJson(skyboxObject);
             }
 
+            if (root.TryGetPropertyValue("volumetric_clouds", out var cloudsNode) &&
+                cloudsNode is JsonObject cloudsObject)
+            {
+                doc.Clouds = VolumetricCloudSettings.FromJson(cloudsObject);
+            }
+
             if (root.TryGetPropertyValue("player_spawn", out var spawnNode) && spawnNode != null)
             {
                 var sj = spawnNode.AsObject();
@@ -130,6 +137,7 @@ public class MapDocument
             root["skybox"] = SkyboxPath.Replace('\\', '/');
         if (Skybox.Mode == SkyboxMode.Procedural)
             root["skybox_settings"] = Skybox.ToJson();
+        root["volumetric_clouds"] = Clouds.ToJson();
 
         if (PlayerSpawn != null)
         {

@@ -97,7 +97,9 @@ public unsafe class EditorApplication : IDisposable
                 _ui.Draw(_window, _viewport3D, _viewportTop, _viewportFront, _viewportSide, _sceneService, _assetService, _history, _inputService);
 
                 bool continuousViewportRender = _ui.RequiresContinuousViewportRender;
-                RenderViewportIfNeeded(_viewport3D, fbWidth, fbHeight, continuousViewportRender);
+                bool continuousPerspectiveRender = _ui.RequiresContinuousPerspectiveViewportRender;
+                RenderViewportIfNeeded(_viewport3D, fbWidth, fbHeight,
+                    continuousViewportRender || continuousPerspectiveRender);
                 RenderViewportIfNeeded(_viewportTop, fbWidth, fbHeight, continuousViewportRender);
                 RenderViewportIfNeeded(_viewportFront, fbWidth, fbHeight, continuousViewportRender);
                 RenderViewportIfNeeded(_viewportSide, fbWidth, fbHeight, continuousViewportRender);
