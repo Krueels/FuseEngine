@@ -396,9 +396,42 @@ public unsafe class EditorViewport : IDisposable
             _gl.DepthMask(true);
         }
 
+        // Render the global ocean after opaque scene geometry. OceanRenderer
+        // snapshots this viewport's color/depth first, which keeps the
+        // reflection/refraction pass from sampling the attachment it writes.
+        bool underwater = false;
+        if (!_camera.IsOrthographic &&
+            sceneService.Document.Ocean.Enabled &&
+            assetService.OceanRenderer != null)
+        {
+            Vector3 oceanSkyColor = assetService.IsProceduralSkybox
+                ? ProceduralSky.EstimateAmbientColor(
+                    assetService.SkyboxSettings,
+                    cloudSunDirection)
+                : Vector3.One;
+            assetService.OceanRenderer.Render(
+                _fbo,
+                _width,
+                _height,
+                view,
+                proj,
+                _camera.Position,
+                cloudSunDirection,
+                cloudSunColor,
+                sceneService.Document.Ocean,
+                assetService.SkyboxSettings,
+                oceanSkyColor,
+                assetService.ImageBasedLighting,
+                sceneIsSrgb: true,
+                outputSrgb: true,
+                targetHasMrt: false);
+            underwater = assetService.OceanRenderer.LastFrameUnderwater;
+        }
+
         if (!_camera.IsOrthographic &&
             sceneService.Document.Clouds.Enabled &&
-            assetService.CloudRenderer != null)
+            assetService.CloudRenderer != null &&
+            !underwater)
         {
             CloudCompositeResult clouds = assetService.CloudRenderer.Render(
                 _colorTex,

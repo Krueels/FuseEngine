@@ -282,7 +282,10 @@ public unsafe class Application : IDisposable
                 double now = _window.GlfwApi.GetTime();
                 float dt = float.Clamp((float)(now - _lastTime), 0.0f, 0.25f);
                 _lastTime = now;
-                Engine.Tick(dt);
+                // Rendering continues while paused, but simulation time must
+                // stop so animated render-only systems (such as the ocean)
+                // do not keep moving under a paused game.
+                Engine.Tick(dt, !_paused);
 
                 Input.Input.Update();
                 var gl = _window.GL;

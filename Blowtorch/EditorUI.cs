@@ -3982,6 +3982,17 @@ public unsafe class EditorUI : IDisposable
                 ImGui.SetTooltip("Create a heightmap terrain asset and add it to the map.");
 
             ImGui.Spacing();
+            if (ImGui.Button("Ocean", new Vector2(-1, 0)))
+            {
+                Undo.RecordState(_frameBeginState);
+                doc.Ocean.Enabled = true;
+                Undo.ForceEnd(history, sceneService, assetService);
+                viewport3D.RequestRender();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Enable the render-only global ocean. It does not add player physics.");
+
+            ImGui.Spacing();
             ImGui.Separator();
             ImGui.TextColored(new Vector4(1.0f, 0.82f, 0.38f, 1.0f), "Lights");
             ImGui.Separator();
@@ -4530,6 +4541,215 @@ public unsafe class EditorUI : IDisposable
                 viewport3D.RequestRender();
                 _cloudPreviewAnimated = clouds.Enabled;
             }
+
+            ImGui.Separator();
+            ImGui.TextUnformatted("Ocean");
+            OceanSettings ocean = doc.Ocean;
+            bool oceanSettingsChanged = false;
+
+            bool oceanEnabled = ocean.Enabled;
+            if (ImGui.Checkbox("Enabled##oceanEnabled", ref oceanEnabled))
+            {
+                ocean.Enabled = oceanEnabled;
+                oceanSettingsChanged = true;
+            }
+            Undo.TrackItem(_frameBeginState);
+            ImGui.SameLine();
+            ImGui.TextDisabled("Visual only; no player physics.");
+
+            if (ocean.Enabled && ImGui.TreeNodeEx(
+                    "Ocean settings##oceanSettings",
+                    ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                float waterLevel = ocean.WaterLevel;
+                if (ImGui.DragFloat("Water level##oceanWaterLevel", ref waterLevel, 0.1f, -10000.0f, 10000.0f, "%.2f"))
+                {
+                    ocean.WaterLevel = waterLevel;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float oceanSize = ocean.OceanSize;
+                if (ImGui.DragFloat("Ocean size##oceanSize", ref oceanSize, 10.0f, 64.0f, 100000.0f, "%.0f"))
+                {
+                    ocean.OceanSize = MathF.Max(64.0f, oceanSize);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                int gridResolution = ocean.GridResolution;
+                if (ImGui.SliderInt("Grid resolution##oceanGridResolution", ref gridResolution, 32, 256))
+                {
+                    ocean.GridResolution = Math.Clamp(gridResolution, 32, 256);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Waves");
+                float waveAmplitude = ocean.WaveAmplitude;
+                if (ImGui.DragFloat("Amplitude##oceanWaveAmplitude", ref waveAmplitude, 0.05f, 0.0f, 100.0f, "%.2f"))
+                {
+                    ocean.WaveAmplitude = MathF.Max(0.0f, waveAmplitude);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float waveLength = ocean.WaveLength;
+                if (ImGui.DragFloat("Wavelength##oceanWaveLength", ref waveLength, 0.5f, 0.5f, 10000.0f, "%.1f"))
+                {
+                    ocean.WaveLength = MathF.Max(0.5f, waveLength);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float waveSpeed = ocean.WaveSpeed;
+                if (ImGui.DragFloat("Speed##oceanWaveSpeed", ref waveSpeed, 0.05f, -100.0f, 100.0f, "%.2f"))
+                {
+                    ocean.WaveSpeed = waveSpeed;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float waveChoppiness = ocean.WaveChoppiness;
+                if (ImGui.SliderFloat("Choppiness##oceanWaveChoppiness", ref waveChoppiness, 0.0f, 2.0f, "%.2f"))
+                {
+                    ocean.WaveChoppiness = Math.Clamp(waveChoppiness, 0.0f, 2.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector2 waveDirection = ocean.WaveDirection;
+                if (ImGui.DragFloat2("Direction X/Z##oceanWaveDirection", ref waveDirection, 0.01f, -1.0f, 1.0f, "%.2f"))
+                {
+                    ocean.WaveDirection = waveDirection.LengthSquared() > 1e-8f
+                        ? Vector2.Normalize(waveDirection)
+                        : Vector2.UnitX;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Surface");
+                Vector3 shallowColor = ocean.ShallowColor;
+                if (ImGui.ColorEdit3("Shallow color##oceanShallowColor", ref shallowColor, ImGuiColorEditFlags.Float))
+                {
+                    ocean.ShallowColor = shallowColor;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 deepColor = ocean.DeepColor;
+                if (ImGui.ColorEdit3("Deep color##oceanDeepColor", ref deepColor, ImGuiColorEditFlags.Float))
+                {
+                    ocean.DeepColor = deepColor;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector3 foamColor = ocean.FoamColor;
+                if (ImGui.ColorEdit3("Foam color##oceanFoamColor", ref foamColor, ImGuiColorEditFlags.Float))
+                {
+                    ocean.FoamColor = foamColor;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float reflectionStrength = ocean.ReflectionStrength;
+                if (ImGui.SliderFloat("Reflection##oceanReflection", ref reflectionStrength, 0.0f, 2.0f, "%.2f"))
+                {
+                    ocean.ReflectionStrength = Math.Clamp(reflectionStrength, 0.0f, 2.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float refractionStrength = ocean.RefractionStrength;
+                if (ImGui.SliderFloat("Refraction##oceanRefraction", ref refractionStrength, 0.0f, 0.25f, "%.3f"))
+                {
+                    ocean.RefractionStrength = Math.Clamp(refractionStrength, 0.0f, 0.25f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float absorptionDistance = ocean.AbsorptionDistance;
+                if (ImGui.DragFloat("Absorption distance##oceanAbsorption", ref absorptionDistance, 1.0f, 0.1f, 10000.0f, "%.1f"))
+                {
+                    ocean.AbsorptionDistance = MathF.Max(0.1f, absorptionDistance);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float surfaceRoughness = ocean.SurfaceRoughness;
+                if (ImGui.SliderFloat("Roughness##oceanRoughness", ref surfaceRoughness, 0.02f, 1.0f, "%.2f"))
+                {
+                    ocean.SurfaceRoughness = Math.Clamp(surfaceRoughness, 0.02f, 1.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float foamStrength = ocean.FoamStrength;
+                if (ImGui.SliderFloat("Foam strength##oceanFoamStrength", ref foamStrength, 0.0f, 2.0f, "%.2f"))
+                {
+                    ocean.FoamStrength = Math.Clamp(foamStrength, 0.0f, 2.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float foamDepth = ocean.FoamDepth;
+                if (ImGui.DragFloat("Foam depth##oceanFoamDepth", ref foamDepth, 0.1f, 0.0f, 100.0f, "%.2f"))
+                {
+                    ocean.FoamDepth = MathF.Max(0.0f, foamDepth);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Underwater");
+                bool underwaterEnabled = ocean.UnderwaterEnabled;
+                if (ImGui.Checkbox("Enable underwater##oceanUnderwaterEnabled", ref underwaterEnabled))
+                {
+                    ocean.UnderwaterEnabled = underwaterEnabled;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                if (ocean.UnderwaterEnabled)
+                {
+                    Vector3 underwaterColor = ocean.UnderwaterColor;
+                    if (ImGui.ColorEdit3("Color##oceanUnderwaterColor", ref underwaterColor, ImGuiColorEditFlags.Float))
+                    {
+                        ocean.UnderwaterColor = underwaterColor;
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float underwaterFog = ocean.UnderwaterFogDensity;
+                    if (ImGui.SliderFloat("Fog density##oceanUnderwaterFog", ref underwaterFog, 0.0f, 0.5f, "%.3f"))
+                    {
+                        ocean.UnderwaterFogDensity = MathF.Max(0.0f, underwaterFog);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float underwaterDistortion = ocean.UnderwaterDistortion;
+                    if (ImGui.SliderFloat("Distortion##oceanUnderwaterDistortion", ref underwaterDistortion, 0.0f, 0.1f, "%.3f"))
+                    {
+                        ocean.UnderwaterDistortion = Math.Clamp(underwaterDistortion, 0.0f, 0.1f);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float underwaterDarkening = ocean.UnderwaterDarkening;
+                    if (ImGui.SliderFloat("Darkening##oceanUnderwaterDarkening", ref underwaterDarkening, 0.0f, 1.0f, "%.2f"))
+                    {
+                        ocean.UnderwaterDarkening = Math.Clamp(underwaterDarkening, 0.0f, 1.0f);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+                }
+
+                ImGui.TreePop();
+            }
+
+            if (oceanSettingsChanged)
+                viewport3D.RequestRender();
         }
 
         if (doc.PlayerSpawn != null && ImGui.CollapsingHeader("Player Spawn", ImGuiTreeNodeFlags.None))

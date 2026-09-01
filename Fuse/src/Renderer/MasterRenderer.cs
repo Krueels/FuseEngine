@@ -140,16 +140,25 @@ public unsafe class MasterRenderer
     // Post-Process
     private PostProcessPipeline _postPipeline = null!;
     private VolumetricCloudRenderer? _cloudRenderer;
+    private OceanRenderer? _oceanRenderer;
     private VolumetricCloudSettings _cloudSettings = new();
+    private OceanSettings _oceanSettings = new();
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
     public VolumetricCloudSettings VolumetricClouds => _cloudSettings;
+    public OceanSettings Ocean => _oceanSettings;
 
     public void SetVolumetricClouds(VolumetricCloudSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _cloudSettings = settings.Clone();
         _cloudRenderer?.InvalidateHistory();
+    }
+
+    public void SetOcean(OceanSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _oceanSettings = settings.Clone();
     }
     private readonly EngineProfiler _profiler = new();
     public EngineProfiler Profiler => _profiler;
@@ -549,6 +558,15 @@ public unsafe class MasterRenderer
             _cloudRenderer = null;
             Logger.Warn($"Volumetric clouds disabled: {ex.Message}");
         }
+        try
+        {
+            _oceanRenderer = new OceanRenderer(_gl);
+        }
+        catch (Exception ex)
+        {
+            _oceanRenderer = null;
+            Logger.Warn($"Ocean rendering disabled: {ex.Message}");
+        }
 
         // SSAO Kernel + Noise
         InitSsao();
@@ -910,10 +928,37 @@ public unsafe class MasterRenderer
             RenderDecals(view, proj, targetFbo);
         }
 
+        // The ocean is rendered after opaque geometry and decals. It copies
+        // attachment 0 plus depth before sampling them, so reflection and
+        // refraction never read from the color attachment currently being
+        // written. Underwater is a fullscreen pass at the same stage.
+        bool underwater = false;
+        if (_oceanRenderer != null && _oceanSettings.Enabled)
+        {
+            _oceanRenderer.Render(
+                targetFbo,
+                _scrWidth,
+                _scrHeight,
+                view,
+                proj,
+                camera.Position,
+                lightDir,
+                skyDirectionalLightColor,
+                _oceanSettings,
+                _skyboxSettings,
+                _skyboxDominantColor,
+                _imageBasedLighting,
+                sceneIsSrgb: !_postPipeline.Settings.Enabled,
+                outputSrgb: !_postPipeline.Settings.Enabled,
+                targetHasMrt: true,
+                simulationTimeSeconds: Engine.Time);
+            underwater = _oceanRenderer.LastFrameUnderwater;
+        }
+
         // Clouds are evaluated after opaque geometry so the scene depth can
         // stop the ray march. Copy the composed color back into attachment 0;
         // transparent gameplay billboards are then drawn over it normally.
-        if (_cloudRenderer != null && _cloudSettings.Enabled)
+        if (_cloudRenderer != null && _cloudSettings.Enabled && !underwater)
         {
             CloudCompositeResult clouds = _cloudRenderer.Render(
                 _postPipeline.HdrColorId,
@@ -1979,6 +2024,7 @@ public unsafe class MasterRenderer
         }
         DestroyDecalDepthResources();
         _cloudRenderer?.Dispose();
+        _oceanRenderer?.Dispose();
         _postPipeline?.Dispose();
     }
 }

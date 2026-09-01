@@ -36,6 +36,7 @@ public class EditorAssetService : IDisposable
     private ImageBasedLighting? _imageBasedLighting;
     private SkyboxSettings _skyboxSettings = new();
     private VolumetricCloudRenderer? _cloudRenderer;
+    private OceanRenderer? _oceanRenderer;
     private ulong _skyboxSettingsSignature;
     private ulong _proceduralIblSignature;
     private long _proceduralIblLastAttemptMilliseconds;
@@ -82,6 +83,7 @@ public class EditorAssetService : IDisposable
     public string SkyboxPath => _skyboxPath;
     public SkyboxSettings SkyboxSettings => _skyboxSettings;
     public VolumetricCloudRenderer? CloudRenderer => _cloudRenderer;
+    public OceanRenderer? OceanRenderer => _oceanRenderer;
     public bool IsProceduralSkybox => _skyboxSettings.Mode == SkyboxMode.Procedural;
     public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
 
@@ -547,6 +549,16 @@ public class EditorAssetService : IDisposable
             Logger.Warn($"Blowtorch volumetric clouds disabled: {ex.Message}");
         }
 
+        try
+        {
+            _oceanRenderer = new OceanRenderer(_gl);
+        }
+        catch (Exception ex)
+        {
+            _oceanRenderer = null;
+            Logger.Warn($"Blowtorch ocean rendering disabled: {ex.Message}");
+        }
+
         string crateTexPath = Path.Combine(_fuseResPath, "Textures", "dev_measurecrate01.bmp");
         if (File.Exists(crateTexPath))
         {
@@ -971,6 +983,7 @@ public class EditorAssetService : IDisposable
         _meshCache.Clear();
         if (_defaultTex != 0) _gl.DeleteTexture(_defaultTex);
         _cloudRenderer?.Dispose();
+        _oceanRenderer?.Dispose();
         _imageBasedLighting?.Dispose();
         _assets.Clear();
     }

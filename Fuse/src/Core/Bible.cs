@@ -87,6 +87,12 @@ public static class Bible
     public const string VolumetricCloudNoiseCompute = "Shaders/Clouds/cloud_noise.comp";
     public const string VolumetricCloudWeatherCompute = "Shaders/Clouds/cloud_weather.comp";
 
+    // Shaders - Ocean
+    public const string OceanVert = "Shaders/Ocean/ocean.vert";
+    public const string OceanFrag = "Shaders/Ocean/ocean.frag";
+    public const string OceanSimulationCompute = "Shaders/Ocean/ocean_simulation.comp";
+    public const string UnderwaterFrag = "Shaders/Ocean/underwater.frag";
+
     // Shaders - DeathScreen
     public const string DeathScreenGlsl = "Shaders/death_screen.glsl";
     public const string DeathScreenVert = "Shaders/death_screen.vert";

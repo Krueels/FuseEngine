@@ -8,10 +8,11 @@ public static class Engine
     private static int s_fpsCount;
     private static float s_time;
 
-    public static void Tick(float dt)
+    public static void Tick(float dt, bool advanceSimulation = true)
     {
         s_dt = dt;
-        s_time += dt;
+        if (advanceSimulation)
+            s_time += dt;
         s_fpsAccum += dt;
         s_fpsCount++;
         if (s_fpsAccum >= 0.5f)

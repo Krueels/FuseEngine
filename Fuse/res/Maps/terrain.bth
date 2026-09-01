@@ -4491,10 +4491,10 @@
       "light_type": "directional",
       "light_color": [
         1,
-        0.3,
-        0.2
+        0.9232987,
+        0.3480392
       ],
-      "light_intensity": 2,
+      "light_intensity": 1,
       "light_radius": 15,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -4504,15 +4504,15 @@
       "body": {
         "shape": "none",
         "position": [
-          0,
+          248,
           111,
-          0
+          617
         ],
         "rotation": [
-          0.75,
-          0.4330127,
-          0.25,
-          -0.4330127
+          -0.7046807,
+          -0.38836852,
+          -0.3274079,
+          0.4953778
         ],
         "mass": 0,
         "friction": 0.5,
@@ -4621,31 +4621,75 @@
   "volumetric_clouds": {
     "enabled": true,
     "preset": "weathermix",
-    "base_height": 219,
-    "thickness": 5800,
-    "coverage": 0.21,
-    "density": 1.33,
-    "scale": 0.1066,
-    "detail_scale": 8.92,
-    "detail_strength": 0.6,
+    "base_height": 0,
+    "thickness": 5000,
+    "coverage": 0.25,
+    "density": 1.55,
+    "scale": 0.07,
+    "detail_scale": 7,
+    "detail_strength": 0.55,
     "wind_direction": [
       0.9578263,
       0.2873479
     ],
     "wind_speed": 3,
-    "max_distance": 5580,
+    "max_distance": 8000,
     "primary_steps": 64,
     "light_steps": 6,
     "resolution_scale": 0.5,
     "temporal_blend": 0.5,
-    "anisotropy": 0.9,
-    "absorption": 2.45,
-    "ambient_strength": 1.22,
+    "anisotropy": 0.6,
+    "absorption": 1.25,
+    "ambient_strength": 0.22,
     "shadows_enabled": true,
     "shadow_strength": 0.55,
     "shadow_extent": 2200,
     "shadow_resolution": 256,
     "shadow_update_interval": 0.12
+  },
+  "ocean": {
+    "enabled": true,
+    "water_level": 20,
+    "ocean_size": 8192,
+    "grid_resolution": 256,
+    "wave_amplitude": 4.85,
+    "wave_length": 49,
+    "wave_speed": 2,
+    "wave_choppiness": 0.69,
+    "wave_direction": [
+      -0.60433406,
+      0.7967311
+    ],
+    "shallow_color": [
+      0.035,
+      0.28,
+      0.3
+    ],
+    "deep_color": [
+      0.005,
+      0.045,
+      0.075
+    ],
+    "foam_color": [
+      0.75,
+      0.92,
+      0.95
+    ],
+    "reflection_strength": 0.91,
+    "refraction_strength": 0.075,
+    "absorption_distance": 42,
+    "surface_roughness": 0.07,
+    "foam_strength": 1.64,
+    "foam_depth": 4.1,
+    "underwater_enabled": true,
+    "underwater_color": [
+      0.015,
+      0.12,
+      0.16
+    ],
+    "underwater_fog_density": 0.035,
+    "underwater_distortion": 0.004,
+    "underwater_darkening": 0.18
   },
   "player_spawn": {
     "position": [

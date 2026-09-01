@@ -106,7 +106,8 @@ public static class MapSerializer
     }
 
     public static string SerializeScene(Renderer.Scene scene, PhysicsWorld physics,
-        PlayerSpawn? playerSpawn = null)
+        PlayerSpawn? playerSpawn = null,
+        OceanSettings? oceanSettings = null)
     {
         var j = new JsonObject
         {
@@ -124,6 +125,9 @@ public static class MapSerializer
                 ["pitch"] = ps.Pitch
             };
         }
+
+        if (oceanSettings != null)
+            j["ocean"] = oceanSettings.ToJson();
 
         var objects = (JsonArray)j["objects"]!;
         foreach (var e in scene.Entities)
@@ -246,6 +250,7 @@ public static class MapSerializer
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
         out VolumetricCloudSettings cloudSettings,
+        out OceanSettings oceanSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
@@ -253,6 +258,7 @@ public static class MapSerializer
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
         cloudSettings = new VolumetricCloudSettings();
+        oceanSettings = new OceanSettings();
         scene.Clear();
         var createdBodies = new List<RigidBody>();
 
@@ -299,6 +305,11 @@ public static class MapSerializer
             cloudsNode is JsonObject cloudsObject)
         {
             cloudSettings = VolumetricCloudSettings.FromJson(cloudsObject);
+        }
+        if (root.TryGetPropertyValue("ocean", out var oceanNode) &&
+            oceanNode is JsonObject oceanObject)
+        {
+            oceanSettings = OceanSettings.FromJson(oceanObject);
         }
 
         if (root.TryGetPropertyValue("player_spawn", out var spawnNode))
@@ -932,6 +943,7 @@ public static class MapSerializer
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
         out VolumetricCloudSettings cloudSettings,
+        out OceanSettings oceanSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
     {
@@ -939,6 +951,7 @@ public static class MapSerializer
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
         cloudSettings = new VolumetricCloudSettings();
+        oceanSettings = new OceanSettings();
         if (!File.Exists(filepath))
         {
             Logger.Error($"Failed to load map: {filepath}");
@@ -955,6 +968,7 @@ public static class MapSerializer
             out skyboxPath,
             out skyboxSettings,
             out cloudSettings,
+            out oceanSettings,
             resPath,
             onProgress);
     }
