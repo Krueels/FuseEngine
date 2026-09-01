@@ -4402,17 +4402,17 @@ public unsafe class EditorUI : IDisposable
 
                 ImGui.SeparatorText("Quality and lighting");
                 int primarySteps = clouds.PrimarySteps;
-                if (ImGui.SliderInt("Ray-march steps##cloudPrimarySteps", ref primarySteps, 8, 128))
+                if (ImGui.SliderInt("Ray-march steps##cloudPrimarySteps", ref primarySteps, 64, 128))
                 {
-                    clouds.PrimarySteps = Math.Clamp(primarySteps, 8, 128);
+                    clouds.PrimarySteps = Math.Clamp(primarySteps, 64, 128);
                     cloudSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);
 
                 int lightSteps = clouds.LightSteps;
-                if (ImGui.SliderInt("Light steps##cloudLightSteps", ref lightSteps, 1, 24))
+                if (ImGui.SliderInt("Light steps##cloudLightSteps", ref lightSteps, 6, 24))
                 {
-                    clouds.LightSteps = Math.Clamp(lightSteps, 1, 24);
+                    clouds.LightSteps = Math.Clamp(lightSteps, 6, 24);
                     cloudSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);

@@ -22,6 +22,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     private readonly Shader _cloudShader;
     private readonly Shader _compositeShader;
     private readonly Shader _shadowShader;
+    private readonly ComputeShader _cloudNoiseCompute;
+    private readonly ComputeShader _cloudWeatherCompute;
     private readonly long _timeOriginMilliseconds = Environment.TickCount64;
 
     private uint _baseNoiseTexture;
@@ -73,13 +75,32 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
             Bible.Shader(Bible.PostProcessVert),
             Bible.Shader(Bible.VolumetricCloudShadowFrag));
 
+        _cloudNoiseCompute = ComputeShader.FromFile(
+            gl,
+            Bible.Shader(Bible.VolumetricCloudNoiseCompute));
+        _cloudWeatherCompute = ComputeShader.FromFile(
+            gl,
+            Bible.Shader(Bible.VolumetricCloudWeatherCompute));
+
         // The reference technique separates broad Perlin-Worley shapes from
-        // small Worley erosion and large-scale weather coverage. RGBA volumes
-        // carry three octaves in one filtered lookup instead of recomputing
-        // procedural noise in every ray-march sample.
-        _baseNoiseTexture = CreateNoiseTexture(64, detail: false, seed: 0x51F15E);
-        _detailNoiseTexture = CreateNoiseTexture(32, detail: true, seed: 0xC10D5);
-        _weatherTexture = CreateWeatherTexture(256, seed: 0x7EA7E2);
+        // small Worley erosion and large-scale weather coverage. The volumes
+        // are generated once on the GPU so increasing their resolution does
+        // not add work to every ray-march sample or stall the render loop.
+        if (_cloudNoiseCompute.IsValid && _cloudWeatherCompute.IsValid)
+        {
+            _baseNoiseTexture = CreateGeneratedNoiseTexture(
+                128, detail: false, seed: 0x51F15E);
+            _detailNoiseTexture = CreateGeneratedNoiseTexture(
+                32, detail: true, seed: 0xC10D5);
+            _weatherTexture = CreateGeneratedWeatherTexture(1024, 0x7EA7E2);
+        }
+        else
+        {
+            Logger.Warn("Volumetric cloud compute shaders are unavailable; using the CPU fallback noise generator.");
+            _baseNoiseTexture = CreateNoiseTexture(128, detail: false, seed: 0x51F15E);
+            _detailNoiseTexture = CreateNoiseTexture(32, detail: true, seed: 0xC10D5);
+            _weatherTexture = CreateWeatherTexture(1024, seed: 0x7EA7E2);
+        }
     }
 
     public void InvalidateHistory()
@@ -125,7 +146,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _gl.Clear(ClearBufferMask.ColorBufferBit);
 
         _shadowShader.Use();
-        ApplyCommonParameters(_shadowShader, settings, time);
+        ApplyCommonParameters(_shadowShader, settings, time, cameraPosition);
         _shadowShader.SetVec2("uCloudShadowCenter", center);
         _shadowShader.SetFloat("uCloudShadowExtent", extent);
         _shadowShader.SetVec3("uSunDirection", normalizedSun);
@@ -211,7 +232,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
             ? Vector3.Normalize(sunDirection)
             : ProceduralSky.FallbackSunDirection;
         _cloudShader.Use();
-        ApplyCommonParameters(_cloudShader, settings, time);
+        ApplyCommonParameters(_cloudShader, settings, time, cameraPosition);
         _cloudShader.SetInt("uSceneDepth", 0);
         _cloudShader.SetInt("uCloudHistory", 1);
         _cloudShader.SetMat4("uInvViewProj", inverseViewProjection);
@@ -220,8 +241,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _cloudShader.SetVec3("uSunDirection", normalizedSun);
         _cloudShader.SetVec3("uSunColor", Vector3.Max(sunColor, Vector3.Zero));
         _cloudShader.SetFloat("uCloudMaxDistance", settings.MaxDistance);
-        _cloudShader.SetInt("uCloudPrimarySteps", settings.PrimarySteps);
-        _cloudShader.SetInt("uCloudLightSteps", settings.LightSteps);
+        _cloudShader.SetInt("uCloudPrimarySteps", System.Math.Max(64, settings.PrimarySteps));
+        _cloudShader.SetInt("uCloudLightSteps", System.Math.Max(6, settings.LightSteps));
         _cloudShader.SetFloat("uCloudTemporalBlend", settings.TemporalBlend);
         _cloudShader.SetFloat("uCloudAnisotropy", settings.Anisotropy);
         _cloudShader.SetFloat("uCloudAbsorption", settings.Absorption);
@@ -272,7 +293,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     private void ApplyCommonParameters(
         Shader shader,
         VolumetricCloudSettings settings,
-        float time)
+        float time,
+        Vector3 cameraPosition)
     {
         Vector2 windDirection = settings.WindDirection.LengthSquared() > 1e-8f
             ? Vector2.Normalize(settings.WindDirection)
@@ -290,7 +312,26 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         shader.SetVec2("uCloudWindDirection", windDirection);
         shader.SetFloat("uCloudWindSpeed", settings.WindSpeed);
         shader.SetFloat("uCloudTime", time);
-        shader.SetFloat("uCloudWorldTileSize", MathF.Max(4096.0f, settings.MaxDistance * 1.5f));
+
+        // The sphere is centered beneath the current camera to keep the local
+        // shell numerically stable in Fuse-sized worlds. Its radius grows with
+        // the view distance, so the visible horizon curves without turning a
+        // small test map into a visibly tiny planet.
+        float curvatureRadius = MathF.Max(
+            20000.0f,
+            MathF.Max(settings.MaxDistance * 8.0f, settings.Thickness * 64.0f));
+        shader.SetVec3(
+            "uCloudSphereCenter",
+            new Vector3(cameraPosition.X, settings.BaseHeight - curvatureRadius, cameraPosition.Z));
+        shader.SetFloat("uCloudInnerRadius", curvatureRadius);
+        shader.SetFloat(
+            "uCloudOuterRadius",
+            curvatureRadius + MathF.Max(1.0f, settings.Thickness));
+
+        // Keep enough world space for several distinct cloud formations. The
+        // weather projection uses an irrational multiple of this period so
+        // the two tileable textures do not repeat as a visible grid.
+        shader.SetFloat("uCloudWorldTileSize", MathF.Max(16384.0f, settings.MaxDistance * 8.0f));
     }
 
     private void BindNoiseTextures(Shader shader)
@@ -391,6 +432,101 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         if (status != GLEnum.FramebufferComplete)
             throw new InvalidOperationException($"Volumetric cloud framebuffer is incomplete: {status}");
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
+    private uint CreateGeneratedNoiseTexture(int size, bool detail, int seed)
+    {
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture3D, texture);
+        _gl.TexStorage3D(
+            TextureTarget.Texture3D,
+            (uint)CalculateMipLevels(size),
+            SizedInternalFormat.Rgba8,
+            (uint)size,
+            (uint)size,
+            (uint)size);
+        ConfigureNoiseTexture(TextureTarget.Texture3D);
+
+        _cloudNoiseCompute.Use();
+        _cloudNoiseCompute.SetInt("uSize", size);
+        _cloudNoiseCompute.SetInt("uDetail", detail ? 1 : 0);
+        _cloudNoiseCompute.SetInt("uSeed", seed);
+        _gl.BindImageTexture(
+            0,
+            texture,
+            0,
+            true,
+            0,
+            GLEnum.WriteOnly,
+            GLEnum.Rgba8);
+        _gl.DispatchCompute(
+            (uint)((size + 3) / 4),
+            (uint)((size + 3) / 4),
+            (uint)((size + 3) / 4));
+        _gl.MemoryBarrier(
+            MemoryBarrierMask.ShaderImageAccessBarrierBit |
+            MemoryBarrierMask.TextureFetchBarrierBit);
+        _gl.BindImageTexture(0, 0, 0, false, 0, GLEnum.WriteOnly, GLEnum.Rgba8);
+        _gl.GenerateMipmap(TextureTarget.Texture3D);
+        _gl.BindTexture(TextureTarget.Texture3D, 0);
+        return texture;
+    }
+
+    private uint CreateGeneratedWeatherTexture(int size, int seed)
+    {
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        _gl.TexStorage2D(
+            TextureTarget.Texture2D,
+            (uint)CalculateMipLevels(size),
+            SizedInternalFormat.Rgba8,
+            (uint)size,
+            (uint)size);
+        ConfigureNoiseTexture(TextureTarget.Texture2D);
+
+        _cloudWeatherCompute.Use();
+        _cloudWeatherCompute.SetInt("uSize", size);
+        _cloudWeatherCompute.SetInt("uSeed", seed);
+        _gl.BindImageTexture(
+            0,
+            texture,
+            0,
+            false,
+            0,
+            GLEnum.WriteOnly,
+            GLEnum.Rgba8);
+        _gl.DispatchCompute(
+            (uint)((size + 7) / 8),
+            (uint)((size + 7) / 8),
+            1);
+        _gl.MemoryBarrier(
+            MemoryBarrierMask.ShaderImageAccessBarrierBit |
+            MemoryBarrierMask.TextureFetchBarrierBit);
+        _gl.BindImageTexture(0, 0, 0, false, 0, GLEnum.WriteOnly, GLEnum.Rgba8);
+        _gl.GenerateMipmap(TextureTarget.Texture2D);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        return texture;
+    }
+
+    private void ConfigureNoiseTexture(TextureTarget target)
+    {
+        _gl.TexParameter(target, TextureParameterName.TextureMinFilter, (int)GLEnum.LinearMipmapLinear);
+        _gl.TexParameter(target, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(target, TextureParameterName.TextureWrapS, (int)GLEnum.Repeat);
+        _gl.TexParameter(target, TextureParameterName.TextureWrapT, (int)GLEnum.Repeat);
+        if (target == TextureTarget.Texture3D)
+            _gl.TexParameter(target, TextureParameterName.TextureWrapR, (int)GLEnum.Repeat);
+    }
+
+    private static int CalculateMipLevels(int size)
+    {
+        int levels = 1;
+        while (size > 1)
+        {
+            size >>= 1;
+            levels++;
+        }
+        return levels;
     }
 
     private uint CreateNoiseTexture(int size, bool detail, int seed)
@@ -713,6 +849,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _cloudShader.Dispose();
         _compositeShader.Dispose();
         _shadowShader.Dispose();
+        _cloudNoiseCompute.Dispose();
+        _cloudWeatherCompute.Dispose();
         _quad.Dispose();
     }
 }

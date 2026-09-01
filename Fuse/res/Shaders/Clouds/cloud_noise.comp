@@ -1,0 +1,184 @@
+#version 430 core
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(rgba8, binding = 0) uniform writeonly image3D uOutput;
+
+uniform int uSize;
+uniform int uDetail;
+uniform int uSeed;
+
+int WrapCell(int value, int period)
+{
+    int wrapped = value % period;
+    return wrapped < 0 ? wrapped + period : wrapped;
+}
+
+ivec3 WrapCell(ivec3 value, int period)
+{
+    return ivec3(
+        WrapCell(value.x, period),
+        WrapCell(value.y, period),
+        WrapCell(value.z, period));
+}
+
+uint Hash(ivec3 cell, int seed)
+{
+    uvec3 c = uvec3(cell);
+    uint hash = uint(seed);
+    hash ^= c.x * 0x9E3779B9u;
+    hash ^= c.y * 0x85EBCA6Bu;
+    hash ^= c.z * 0xC2B2AE35u;
+    hash ^= hash >> 16;
+    hash *= 0x7FEB352Du;
+    hash ^= hash >> 15;
+    hash *= 0x846CA68Bu;
+    hash ^= hash >> 16;
+    return hash;
+}
+
+float Hash01(ivec3 cell, int seed)
+{
+    return float(Hash(cell, seed) & 0x00FFFFFFu) / 16777215.0;
+}
+
+vec3 Gradient(ivec3 cell, int seed)
+{
+    float z = Hash01(cell, seed + 17) * 2.0 - 1.0;
+    float angle = Hash01(cell, seed + 31) * 6.28318530718;
+    float xy = sqrt(max(0.0, 1.0 - z * z));
+    return vec3(cos(angle) * xy, sin(angle) * xy, z);
+}
+
+vec3 Fade(vec3 value)
+{
+    return value * value * value * (value * (value * 6.0 - 15.0) + 10.0);
+}
+
+float Perlin3D(vec3 coordinate, int cellCount, int seed)
+{
+    vec3 position = coordinate * float(cellCount);
+    ivec3 cell = ivec3(floor(position));
+    vec3 local = fract(position);
+    vec3 fade = Fade(local);
+
+    float n000 = dot(Gradient(WrapCell(cell + ivec3(0, 0, 0), cellCount), seed), local - vec3(0, 0, 0));
+    float n100 = dot(Gradient(WrapCell(cell + ivec3(1, 0, 0), cellCount), seed), local - vec3(1, 0, 0));
+    float n010 = dot(Gradient(WrapCell(cell + ivec3(0, 1, 0), cellCount), seed), local - vec3(0, 1, 0));
+    float n110 = dot(Gradient(WrapCell(cell + ivec3(1, 1, 0), cellCount), seed), local - vec3(1, 1, 0));
+    float n001 = dot(Gradient(WrapCell(cell + ivec3(0, 0, 1), cellCount), seed), local - vec3(0, 0, 1));
+    float n101 = dot(Gradient(WrapCell(cell + ivec3(1, 0, 1), cellCount), seed), local - vec3(1, 0, 1));
+    float n011 = dot(Gradient(WrapCell(cell + ivec3(0, 1, 1), cellCount), seed), local - vec3(0, 1, 1));
+    float n111 = dot(Gradient(WrapCell(cell + ivec3(1, 1, 1), cellCount), seed), local - vec3(1, 1, 1));
+
+    float x00 = mix(n000, n100, fade.x);
+    float x10 = mix(n010, n110, fade.x);
+    float x01 = mix(n001, n101, fade.x);
+    float x11 = mix(n011, n111, fade.x);
+    float y0 = mix(x00, x10, fade.y);
+    float y1 = mix(x01, x11, fade.y);
+    return clamp((y0 * (1.0 - fade.z) + y1 * fade.z) * 0.5 + 0.5, 0.0, 1.0);
+}
+
+float PerlinFbm(vec3 coordinate, int seed)
+{
+    float sum = 0.0;
+    float weight = 0.5;
+    float weightSum = 0.0;
+    int frequency = 8;
+    for (int octave = 0; octave < 3; ++octave)
+    {
+        sum += Perlin3D(coordinate, frequency, seed) * weight;
+        weightSum += weight;
+        weight *= weight;
+        frequency *= 2;
+    }
+    return clamp(sum / max(weightSum, 0.0001), 0.0, 1.0);
+}
+
+float Worley3D(vec3 coordinate, int cellCount, int seed)
+{
+    vec3 position = coordinate * float(cellCount);
+    ivec3 baseCell = ivec3(floor(position));
+    float closestSquared = 1000000.0;
+
+    for (int z = -1; z <= 1; ++z)
+    for (int y = -1; y <= 1; ++y)
+    for (int x = -1; x <= 1; ++x)
+    {
+        ivec3 cell = baseCell + ivec3(x, y, z);
+        ivec3 wrapped = WrapCell(cell, cellCount);
+        vec3 feature = vec3(cell) + vec3(
+            Hash01(wrapped, seed + 1),
+            Hash01(wrapped, seed + 2),
+            Hash01(wrapped, seed + 3));
+        vec3 delta = feature - position;
+        closestSquared = min(closestSquared, dot(delta, delta));
+    }
+
+    return 1.0 - clamp(sqrt(closestSquared) / 1.7320508, 0.0, 1.0);
+}
+
+float Remap(float value, float oldMinimum, float oldMaximum, float newMinimum, float newMaximum)
+{
+    float normalized = (value - oldMinimum) / max(oldMaximum - oldMinimum, 0.0001);
+    return newMinimum + normalized * (newMaximum - newMinimum);
+}
+
+void main()
+{
+    ivec3 pixel = ivec3(gl_GlobalInvocationID.xyz);
+    if (pixel.x >= uSize || pixel.y >= uSize || pixel.z >= uSize)
+        return;
+
+    vec3 coordinate = (vec3(pixel) + 0.5) / float(uSize);
+
+    if (uDetail != 0)
+    {
+        // The detail volume uses four octaves. Starting at four cells keeps
+        // the last octave below the 32^3 texel Nyquist limit.
+        float worley0 = Worley3D(coordinate, 4, uSeed);
+        float worley1 = Worley3D(coordinate, 8, uSeed + 101);
+        float worley2 = Worley3D(coordinate, 16, uSeed + 211);
+        float worley3 = Worley3D(coordinate, 32, uSeed + 307);
+
+        float fbm0 = worley0 * 0.625 + worley1 * 0.250 + worley2 * 0.125;
+        float fbm1 = worley1 * 0.625 + worley2 * 0.250 + worley3 * 0.125;
+        float fbm2 = worley2 * 0.750 + worley3 * 0.250;
+        imageStore(uOutput, pixel, vec4(fbm0, fbm1, fbm2, 1.0));
+        return;
+    }
+
+    // Perlin-Worley broad shape: the six frequencies are the same 2, 8, 14,
+    // 20, 26 and 32 multipliers used with a base cell count of four by the
+    // reference implementation. The first FBM is the Worley remap target.
+    float pwWorley0 = Worley3D(coordinate, 8, uSeed);
+    float pwWorley1 = Worley3D(coordinate, 32, uSeed + 101);
+    float pwWorley2 = Worley3D(coordinate, 56, uSeed + 211);
+    float pwWorley3 = Worley3D(coordinate, 80, uSeed + 307);
+    float pwWorley4 = Worley3D(coordinate, 104, uSeed + 401);
+    float pwWorley5 = Worley3D(coordinate, 128, uSeed + 503);
+    float pwFbm = pwWorley0 * 0.625 + pwWorley1 * 0.250 + pwWorley2 * 0.125;
+
+    // Perlin-Worley is a remap, not a linear blend: Perlin supplies the
+    // coherent body and Worley supplies the cloud-shaped lower bound.
+    float perlinWorley = Remap(
+        PerlinFbm(coordinate, uSeed + 601), 0.0, 1.0, pwFbm, 1.0);
+
+    // The remaining channels are the low-frequency Worley FBMs consumed by
+    // the erosion stage. They intentionally use 4, 8, 16, 32 and 64 cells,
+    // separate from the higher-frequency Perlin-Worley construction above.
+    float worley0 = Worley3D(coordinate, 4, uSeed + 701);
+    float worley1 = Worley3D(coordinate, 8, uSeed + 809);
+    float worley2 = Worley3D(coordinate, 16, uSeed + 907);
+    float worley3 = Worley3D(coordinate, 32, uSeed + 1009);
+    float worley4 = Worley3D(coordinate, 64, uSeed + 1103);
+    float fbm0 = worley1 * 0.625 + worley2 * 0.250 + worley3 * 0.125;
+    float fbm1 = worley2 * 0.625 + worley3 * 0.250 + worley4 * 0.125;
+    float fbm2 = worley3 * 0.750 + worley4 * 0.250;
+
+    imageStore(uOutput, pixel, vec4(
+        clamp(perlinWorley * perlinWorley, 0.0, 1.0),
+        clamp(fbm0, 0.0, 1.0),
+        clamp(fbm1, 0.0, 1.0),
+        clamp(fbm2, 0.0, 1.0)));
+}

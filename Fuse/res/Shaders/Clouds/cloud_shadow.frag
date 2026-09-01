@@ -18,7 +18,7 @@ void main()
     }
 
     vec2 worldXZ = uCloudShadowCenter + (vTexCoord * 2.0 - 1.0) * uCloudShadowExtent;
-    vec3 start = vec3(worldXZ.x, uCloudBaseHeight + 0.01, worldXZ.y);
+    vec3 start = vec3(worldXZ.x, CloudInnerSurfaceHeight(worldXZ) + 0.01, worldXZ.y);
     float travelDistance = uCloudThickness / max(uSunDirection.y, 0.05);
     const int shadowSteps = 16;
     float stepLength = travelDistance / float(shadowSteps);

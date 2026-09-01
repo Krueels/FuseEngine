@@ -154,8 +154,7 @@ void main()
                 cachedLightVisibility = LightTransmittance(samplePosition);
             float lightVisibility = cachedLightVisibility;
 
-            float heightFraction = CloudSaturate(
-                (samplePosition.y - uCloudBaseHeight) / max(uCloudThickness, 0.001));
+            float heightFraction = CloudSaturate(CloudHeightFraction(samplePosition));
             vec3 dayAmbientBottom = vec3(0.20, 0.25, 0.34);
             vec3 dayAmbientTop = vec3(0.42, 0.52, 0.68);
             vec3 nightAmbientBottom = vec3(0.008, 0.012, 0.025);

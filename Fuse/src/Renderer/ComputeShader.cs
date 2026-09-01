@@ -114,6 +114,9 @@ public unsafe sealed class ComputeShader : IDisposable
     public void SetInt(string name, int value) =>
         _gl.Uniform1(GetUniformLoc(name), value);
 
+    public void SetFloat(string name, float value) =>
+        _gl.Uniform1(GetUniformLoc(name), value);
+
     private readonly Dictionary<string, int> _uniformCache = new();
     private int GetUniformLoc(string name)
     {

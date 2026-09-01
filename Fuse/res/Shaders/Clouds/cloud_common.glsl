@@ -15,6 +15,12 @@ uniform float uCloudTime;
 // intentionally kept independent from the editor's visual scale so changing
 // Scale cannot turn the whole cloud layer into a small repeating grid.
 uniform float uCloudWorldTileSize;
+// The cloud layer is a local spherical shell. The sphere center follows the
+// camera horizontally, which keeps the horizon stable without requiring a
+// planet-sized scene in Fuse.
+uniform vec3 uCloudSphereCenter;
+uniform float uCloudInnerRadius;
+uniform float uCloudOuterRadius;
 
 float CloudSaturate(float value)
 {
@@ -51,6 +57,23 @@ float CloudHeightProfile(float heightFraction, float cloudType)
     return CloudHeightGradient(heightFraction, gradient);
 }
 
+float CloudHeightFraction(vec3 worldPosition)
+{
+    return (length(worldPosition - uCloudSphereCenter) - uCloudInnerRadius) /
+        max(uCloudOuterRadius - uCloudInnerRadius, 0.001);
+}
+
+float CloudInnerSurfaceHeight(vec2 worldXZ)
+{
+    vec2 horizontalOffset = worldXZ - uCloudSphereCenter.xz;
+    float horizontalDistanceSquared = dot(horizontalOffset, horizontalOffset);
+    float radiusSquared = uCloudInnerRadius * uCloudInnerRadius;
+    if (horizontalDistanceSquared >= radiusSquared)
+        return uCloudBaseHeight;
+
+    return uCloudSphereCenter.y + sqrt(max(radiusSquared - horizontalDistanceSquared, 0.0));
+}
+
 vec4 SampleCloudWeather(vec3 worldPosition)
 {
     vec2 windOffset = uCloudWindDirection * uCloudWindSpeed * uCloudTime;
@@ -64,8 +87,7 @@ vec4 SampleCloudWeather(vec3 worldPosition)
 
 float SampleCloudDensity(vec3 worldPosition)
 {
-    float heightFraction = (worldPosition.y - uCloudBaseHeight) /
-        max(uCloudThickness, 0.001);
+    float heightFraction = CloudHeightFraction(worldPosition);
     if (heightFraction <= 0.0 || heightFraction >= 1.0)
         return 0.0;
 
@@ -78,12 +100,16 @@ float SampleCloudDensity(vec3 worldPosition)
 
     vec4 weather = SampleCloudWeather(worldPosition);
 
-    // Scale controls feature size within a bounded world projection.  It is
-    // deliberately clamped: using it directly as the texture frequency makes
-    // Scale=0.05 repeat a 64^3 volume every ~167 world units.
-    float visualScale = clamp(uCloudScale / 0.0035, 0.55, 2.25);
-    float worldTileSize = max(uCloudWorldTileSize, 4096.0);
-    vec2 basePlane = horizontalPosition * (visualScale / worldTileSize);
+    // World scale changes the size of features continuously. The old clamp
+    // compressed most editor values into the same two visual sizes, which made
+    // the 3D volume read as a repeated grid. The exponent keeps the control
+    // useful over a wide range without making the smallest values unusable.
+    float scaleRatio = max(uCloudScale, 0.0001) / 0.0035;
+    float visualScale = pow(scaleRatio, 0.35);
+    float worldTileSize = max(uCloudWorldTileSize, 16384.0);
+    float shellRadius = max(uCloudInnerRadius, 1.0);
+    vec2 shellProjection = horizontalPosition / shellRadius + vec2(0.5);
+    vec2 basePlane = shellProjection * (shellRadius * visualScale / worldTileSize);
     vec2 weatherWarp = vec2(weather.b, weather.g) * 2.0 - 1.0;
     basePlane += weatherWarp * 0.32;
     basePlane = mat2(0.8660254, -0.5000000,
@@ -164,25 +190,66 @@ float CloudOpticalDepth(float density, float travelDistance, float absorption)
         max(absorption, 0.0) * extinctionPerWorldUnit;
 }
 
+bool CloudRaySphere(
+    vec3 rayOrigin,
+    vec3 rayDirection,
+    float radius,
+    out float nearDistance,
+    out float farDistance)
+{
+    vec3 offset = rayOrigin - uCloudSphereCenter;
+    float halfB = dot(offset, rayDirection);
+    float c = dot(offset, offset) - radius * radius;
+    float discriminant = halfB * halfB - c;
+    if (discriminant < 0.0)
+        return false;
+
+    float root = sqrt(discriminant);
+    nearDistance = -halfB - root;
+    farDistance = -halfB + root;
+    return farDistance >= 0.0;
+}
+
 bool IntersectCloudLayer(vec3 rayOrigin, vec3 rayDirection, out float nearDistance, out float farDistance)
 {
-    float layerBottom = uCloudBaseHeight;
-    float layerTop = uCloudBaseHeight + uCloudThickness;
+    float outerNear;
+    float outerFar;
+    if (!CloudRaySphere(rayOrigin, rayDirection, uCloudOuterRadius, outerNear, outerFar))
+        return false;
 
-    if (abs(rayDirection.y) < 0.00001)
+    float innerNear;
+    float innerFar;
+    bool intersectsInner = CloudRaySphere(
+        rayOrigin, rayDirection, uCloudInnerRadius, innerNear, innerFar);
+    float distanceToCenter = length(rayOrigin - uCloudSphereCenter);
+
+    if (distanceToCenter < uCloudInnerRadius)
     {
-        if (rayOrigin.y < layerBottom || rayOrigin.y > layerTop)
-            return false;
+        // The normal camera position is inside the hollow shell. We first
+        // enter the cloud at the inner-sphere exit and leave at the outer exit.
+        nearDistance = max(innerFar, 0.0);
+        farDistance = outerFar;
+    }
+    else if (distanceToCenter < uCloudOuterRadius)
+    {
+        // Origin is already within the shell. If the ray points inward, the
+        // inner sphere is the first boundary; otherwise the outer sphere is.
         nearDistance = 0.0;
-        farDistance = 100000.0;
-        return true;
+        farDistance = outerFar;
+        if (intersectsInner && innerNear > 0.0)
+            farDistance = min(farDistance, innerNear);
+    }
+    else
+    {
+        // From outside, the interval ends when the ray reaches the inner
+        // sphere, leaving only the shell between the two intersections.
+        nearDistance = max(outerNear, 0.0);
+        farDistance = outerFar;
+        if (intersectsInner && innerNear > nearDistance)
+            farDistance = min(farDistance, innerNear);
     }
 
-    float first = (layerBottom - rayOrigin.y) / rayDirection.y;
-    float second = (layerTop - rayOrigin.y) / rayDirection.y;
-    nearDistance = min(first, second);
-    farDistance = max(first, second);
-    return farDistance > 0.0;
+    return farDistance > nearDistance;
 }
 
 float HenyeyGreenstein(float cosineTheta, float anisotropy)

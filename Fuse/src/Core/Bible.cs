@@ -84,6 +84,8 @@ public static class Bible
     public const string VolumetricCloudFrag = "Shaders/Clouds/volumetric_clouds.frag";
     public const string VolumetricCloudCompositeFrag = "Shaders/Clouds/cloud_composite.frag";
     public const string VolumetricCloudShadowFrag = "Shaders/Clouds/cloud_shadow.frag";
+    public const string VolumetricCloudNoiseCompute = "Shaders/Clouds/cloud_noise.comp";
+    public const string VolumetricCloudWeatherCompute = "Shaders/Clouds/cloud_weather.comp";
 
     // Shaders - DeathScreen
     public const string DeathScreenGlsl = "Shaders/death_screen.glsl";

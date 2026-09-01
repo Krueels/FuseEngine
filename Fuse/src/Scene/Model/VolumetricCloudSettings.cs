@@ -20,8 +20,8 @@ public sealed class VolumetricCloudSettings
     public Vector2 WindDirection { get; set; } = Vector2.Normalize(new Vector2(1.0f, 0.3f));
     public float WindSpeed { get; set; } = 3.0f;
     public float MaxDistance { get; set; } = 3000.0f;
-    public int PrimarySteps { get; set; } = 32;
-    public int LightSteps { get; set; } = 4;
+    public int PrimarySteps { get; set; } = 64;
+    public int LightSteps { get; set; } = 6;
     public float ResolutionScale { get; set; } = 0.5f;
     public float TemporalBlend { get; set; } = 0.88f;
     public float Anisotropy { get; set; } = 0.55f;
@@ -108,8 +108,8 @@ public sealed class VolumetricCloudSettings
             settings.WindDirection = Vector2.UnitX;
         settings.WindSpeed = System.Math.Clamp(ReadFloat(source, "wind_speed", settings.WindSpeed), -100.0f, 100.0f);
         settings.MaxDistance = System.Math.Clamp(ReadFloat(source, "max_distance", settings.MaxDistance), 10.0f, 20000.0f);
-        settings.PrimarySteps = System.Math.Clamp(ReadInt(source, "primary_steps", settings.PrimarySteps), 8, 128);
-        settings.LightSteps = System.Math.Clamp(ReadInt(source, "light_steps", settings.LightSteps), 1, 24);
+        settings.PrimarySteps = System.Math.Clamp(ReadInt(source, "primary_steps", settings.PrimarySteps), 64, 128);
+        settings.LightSteps = System.Math.Clamp(ReadInt(source, "light_steps", settings.LightSteps), 6, 24);
         settings.ResolutionScale = System.Math.Clamp(ReadFloat(source, "resolution_scale", settings.ResolutionScale), 0.25f, 1.0f);
         settings.TemporalBlend = System.Math.Clamp(ReadFloat(source, "temporal_blend", settings.TemporalBlend), 0.0f, 0.98f);
         settings.Anisotropy = System.Math.Clamp(ReadFloat(source, "anisotropy", settings.Anisotropy), -0.8f, 0.9f);

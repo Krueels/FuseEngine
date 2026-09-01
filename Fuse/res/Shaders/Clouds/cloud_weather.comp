@@ -1,0 +1,85 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(rgba8, binding = 0) uniform writeonly image2D uOutput;
+
+uniform int uSize;
+uniform int uSeed;
+
+int WrapCell(int value, int period)
+{
+    int wrapped = value % period;
+    return wrapped < 0 ? wrapped + period : wrapped;
+}
+
+uint Hash(ivec2 cell, int seed)
+{
+    uvec2 c = uvec2(cell);
+    uint hash = uint(seed);
+    hash ^= c.x * 0x9E3779B9u;
+    hash ^= c.y * 0x85EBCA6Bu;
+    hash ^= hash >> 16;
+    hash *= 0x7FEB352Du;
+    hash ^= hash >> 15;
+    hash *= 0x846CA68Bu;
+    hash ^= hash >> 16;
+    return hash;
+}
+
+float Hash01(ivec2 cell, int seed)
+{
+    return float(Hash(cell, seed) & 0x00FFFFFFu) / 16777215.0;
+}
+
+vec2 Gradient(ivec2 cell, int seed)
+{
+    float angle = Hash01(cell, seed + 17) * 6.28318530718;
+    return vec2(cos(angle), sin(angle));
+}
+
+vec2 Fade(vec2 value)
+{
+    return value * value * value * (value * (value * 6.0 - 15.0) + 10.0);
+}
+
+float Perlin2D(vec2 coordinate, int cellCount, int seed)
+{
+    vec2 position = coordinate * float(cellCount);
+    ivec2 cell = ivec2(floor(position));
+    vec2 local = fract(position);
+    vec2 fade = Fade(local);
+
+    float n00 = dot(Gradient(ivec2(WrapCell(cell.x, cellCount), WrapCell(cell.y, cellCount)), seed), local - vec2(0, 0));
+    float n10 = dot(Gradient(ivec2(WrapCell(cell.x + 1, cellCount), WrapCell(cell.y, cellCount)), seed), local - vec2(1, 0));
+    float n01 = dot(Gradient(ivec2(WrapCell(cell.x, cellCount), WrapCell(cell.y + 1, cellCount)), seed), local - vec2(0, 1));
+    float n11 = dot(Gradient(ivec2(WrapCell(cell.x + 1, cellCount), WrapCell(cell.y + 1, cellCount)), seed), local - vec2(1, 1));
+
+    float x0 = mix(n00, n10, fade.x);
+    float x1 = mix(n01, n11, fade.x);
+    return clamp((mix(x0, x1, fade.y) * 0.5) + 0.5, 0.0, 1.0);
+}
+
+void main()
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= uSize || pixel.y >= uSize)
+        return;
+
+    vec2 coordinate = (vec2(pixel) + 0.5) / float(uSize);
+    float coverage =
+        Perlin2D(coordinate, 2, uSeed) * 0.58 +
+        Perlin2D(coordinate, 4, uSeed + 79) * 0.29 +
+        Perlin2D(coordinate, 8, uSeed + 151) * 0.13;
+    float cloudType =
+        Perlin2D(coordinate, 2, uSeed + 251) * 0.72 +
+        Perlin2D(coordinate, 5, uSeed + 337) * 0.28;
+    float variation =
+        Perlin2D(coordinate, 5, uSeed + 431) * 0.68 +
+        Perlin2D(coordinate, 11, uSeed + 557) * 0.32;
+
+    imageStore(uOutput, pixel, vec4(
+        clamp(coverage, 0.0, 1.0),
+        clamp(cloudType, 0.0, 1.0),
+        clamp(variation, 0.0, 1.0),
+        1.0));
+}
