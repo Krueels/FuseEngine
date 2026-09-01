@@ -14,7 +14,8 @@ public class RigidBody
         Sphere,
         Capsule,
         Trimesh,
-        ConvexHull
+        ConvexHull,
+        HeightField
     }
 
     private Shape? _shape;
@@ -40,6 +41,10 @@ public class RigidBody
     private Vector3[]? _trimeshVerts;
     private uint[]? _trimeshIndices;
     private Vector3 _trimeshScale = Vector3.One;
+    private float[]? _heightFieldSamples;
+    private Vector3 _heightFieldOffset;
+    private Vector3 _heightFieldScale = Vector3.One;
+    private uint _heightFieldSampleCount;
 
     public RigidBody SetBox(Vector3 halfExtents)
     {
@@ -77,6 +82,35 @@ public class RigidBody
         _trimeshVerts = vertices;
         _trimeshIndices = indices;
         _trimeshScale = scale == default ? Vector3.One : scale;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a static heightfield using one sample per terrain heightmap
+    /// point. Samples are row-major (z * sampleCount + x) and are multiplied
+    /// by <paramref name="scale"/> after <paramref name="offset"/> is applied.
+    /// </summary>
+    public RigidBody SetHeightField(
+        float[] samples,
+        Vector3 offset,
+        Vector3 scale,
+        uint sampleCount)
+    {
+        if (sampleCount < 2)
+            throw new ArgumentOutOfRangeException(nameof(sampleCount), "A heightfield needs at least two samples per side.");
+
+        ulong expectedSampleCount = (ulong)sampleCount * sampleCount;
+        if (expectedSampleCount != (ulong)samples.Length)
+            throw new ArgumentException("Heightfield samples must contain sampleCount squared values.", nameof(samples));
+
+        if (scale.X <= 0.0f || scale.Z <= 0.0f)
+            throw new ArgumentException("Heightfield X and Z scales must be positive.", nameof(scale));
+
+        _shapeType = ShapeType.HeightField;
+        _heightFieldSamples = (float[])samples.Clone();
+        _heightFieldOffset = offset;
+        _heightFieldScale = scale;
+        _heightFieldSampleCount = sampleCount;
         return this;
     }
 
@@ -150,6 +184,35 @@ public class RigidBody
             case ShapeType.Capsule:
                 _shape = new CapsuleShape(_capsuleHeight * 0.5f, _capsuleRadius);
                 break;
+
+            case ShapeType.HeightField:
+            {
+                if (_heightFieldSamples == null || _heightFieldSampleCount < 2)
+                {
+                    Logger.Error("RigidBody.Build HEIGHTFIELD with no data, skipping");
+                    return;
+                }
+
+                var heightFieldSettings = new HeightFieldShapeSettings(
+                    new Span<float>(_heightFieldSamples),
+                    _heightFieldOffset,
+                    _heightFieldScale,
+                    _heightFieldSampleCount);
+
+                // These are Jolt's native heightfield defaults. Keeping the
+                // block structure explicit makes the representation stable as
+                // terrain sizes change and avoids mesh-style seam heuristics.
+                heightFieldSettings.BlockSize = 2;
+                heightFieldSettings.BitsPerSample = 8;
+                _shape = heightFieldSettings.Create();
+                if (_shape == null)
+                {
+                    Logger.Error("RigidBody.Build HeightFieldShape creation failed");
+                    return;
+                }
+
+                break;
+            }
 
             case ShapeType.Trimesh:
             {
@@ -342,5 +405,51 @@ public class RigidBody
     public Vector3[]? TrimeshVertices => _trimeshVerts;
     public uint[]? TrimeshIndices => _trimeshIndices;
     public Vector3 TrimeshScale => _trimeshScale;
+    public float[]? HeightFieldSamples => _heightFieldSamples;
+    public Vector3 HeightFieldOffset => _heightFieldOffset;
+    public Vector3 HeightFieldScale => _heightFieldScale;
+    public uint HeightFieldSampleCount => _heightFieldSampleCount;
     public bool IsTrigger => _isTrigger;
+
+    /// <summary>
+    /// Returns a terrain surface normal for editor/runtime raycasts. Jolt is
+    /// still responsible for the actual contact and collision resolution; this
+    /// keeps the custom scene raycast consistent with the native shape.
+    /// </summary>
+    public Vector3 GetHeightFieldSurfaceNormal(Vector3 localPoint)
+    {
+        if (_heightFieldSamples == null || _heightFieldSampleCount < 3)
+            return Vector3.UnitY;
+
+        int sampleCount = (int)_heightFieldSampleCount;
+        float sampleX = (localPoint.X - _heightFieldOffset.X) / _heightFieldScale.X;
+        float sampleZ = (localPoint.Z - _heightFieldOffset.Z) / _heightFieldScale.Z;
+        int x = System.Math.Clamp((int)MathF.Round(sampleX), 1, sampleCount - 2);
+        int z = System.Math.Clamp((int)MathF.Round(sampleZ), 1, sampleCount - 2);
+
+        float left = GetHeightFieldSampleHeight(x - 1, z);
+        float right = GetHeightFieldSampleHeight(x + 1, z);
+        float back = GetHeightFieldSampleHeight(x, z - 1);
+        float forward = GetHeightFieldSampleHeight(x, z + 1);
+
+        float dx = MathF.Max(MathF.Abs(_heightFieldScale.X), 0.0001f);
+        float dz = MathF.Max(MathF.Abs(_heightFieldScale.Z), 0.0001f);
+        Vector3 normal = new(
+            (left - right) / (2.0f * dx),
+            1.0f,
+            (back - forward) / (2.0f * dz));
+
+        return normal.LengthSquared() > 0.000001f
+            ? Vector3.Normalize(normal)
+            : Vector3.UnitY;
+    }
+
+    private float GetHeightFieldSampleHeight(int x, int z)
+    {
+        int sampleCount = (int)_heightFieldSampleCount;
+        x = System.Math.Clamp(x, 0, sampleCount - 1);
+        z = System.Math.Clamp(z, 0, sampleCount - 1);
+        return _heightFieldOffset.Y +
+            _heightFieldSamples![z * sampleCount + x] * _heightFieldScale.Y;
+    }
 }

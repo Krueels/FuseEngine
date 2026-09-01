@@ -610,6 +610,10 @@ public unsafe class MasterRenderer
 
         // --- 0. Update Physics and Hierarchy ---
         scene.UpdateTransforms(physics);
+        scene.UpdateTerrainLod(
+            camera.Position,
+            _scrHeight,
+            camera.FOV);
         scene.PrepareShadowCasters();
 
         // Update Decals (age, cull expired)

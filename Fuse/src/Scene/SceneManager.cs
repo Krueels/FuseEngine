@@ -414,6 +414,15 @@ private void ClearCurrentMap()
                     hitNormal = Vector3.Normalize(hitPos - bodyPos);
                     break;
                 }
+                case RigidBody.ShapeType.HeightField:
+                {
+                    Vector3 localHit = Vector3.Transform(
+                        hitPos - bodyPos,
+                        Quaternion.Inverse(bodyRot));
+                    Vector3 localNormal = rigidBody.GetHeightFieldSurfaceNormal(localHit);
+                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
+                    break;
+                }
                 case RigidBody.ShapeType.Trimesh:
                 case RigidBody.ShapeType.ConvexHull:
                 {

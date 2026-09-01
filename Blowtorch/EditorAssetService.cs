@@ -35,12 +35,15 @@ public class EditorAssetService : IDisposable
     private string _skyboxPath = "";
     private ImageBasedLighting? _imageBasedLighting;
     private readonly Dictionary<string, uint> _texCache = [];
+    private readonly Dictionary<string, TerrainHeightmapBrush?> _terrainHeightmapBrushCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, uint> _terrainHeightmapBrushPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Mesh?> _meshCache = [];
     private readonly Dictionary<string, GeometryGraphAsset> _liveGeometryGraphs = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _brushMeshKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _geometryMeshKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _catalogLock = new();
     private readonly ConcurrentQueue<string> _pendingTextureInvalidations = new();
+    private readonly ConcurrentQueue<string> _pendingTerrainHeightmapBrushInvalidations = new();
     private readonly ConcurrentQueue<string> _pendingMaterialReloads = new();
     private readonly ConcurrentQueue<string> _pendingGeometryReloads = new();
     private IReadOnlyList<string>? _materialCatalog;
@@ -51,6 +54,7 @@ public class EditorAssetService : IDisposable
     private FileSystemWatcher? _geometryWatcher;
     private long _assetRevision;
     private string _fuseResPath = "";
+    private IReadOnlyList<string>? _terrainHeightmapBrushCatalog;
 
     public EditorAssetService(GL gl)
     {
@@ -124,6 +128,120 @@ public class EditorAssetService : IDisposable
         return _textureCatalog;
     }
 
+    public IReadOnlyList<string> EnumerateTerrainHeightmapBrushes()
+    {
+        lock (_catalogLock)
+        {
+            if (_terrainHeightmapBrushCatalog != null)
+                return _terrainHeightmapBrushCatalog;
+        }
+
+        string brushDirectory = Path.Combine(
+            _fuseResPath,
+            "Textures",
+            "Terrain",
+            "heightmap_brushes");
+        if (!Directory.Exists(brushDirectory))
+            return [];
+
+        string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga", ".exr", ".hdr"];
+        IReadOnlyList<string> catalog = Directory.EnumerateFiles(
+                brushDirectory,
+                "*.*",
+                SearchOption.AllDirectories)
+            .Where(path => extensions.Contains(
+                Path.GetExtension(path),
+                StringComparer.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        lock (_catalogLock)
+            _terrainHeightmapBrushCatalog ??= catalog;
+        return _terrainHeightmapBrushCatalog;
+    }
+
+    public TerrainHeightmapBrush? LoadTerrainHeightmapBrush(string relativePath)
+    {
+        string fullPath = Path.GetFullPath(ResolveEditorAssetPath(relativePath));
+        if (_terrainHeightmapBrushCache.TryGetValue(fullPath, out TerrainHeightmapBrush? cached))
+            return cached;
+
+        if (!File.Exists(fullPath))
+        {
+            _terrainHeightmapBrushCache[fullPath] = null;
+            return null;
+        }
+
+        try
+        {
+            TerrainHeightmapBrush brush = TerrainHeightmapBrush.Load(fullPath);
+            _terrainHeightmapBrushCache[fullPath] = brush;
+            return brush;
+        }
+        catch (Exception ex)
+        {
+            _terrainHeightmapBrushCache[fullPath] = null;
+            Logger.Warn($"Terrain heightmap brush could not be loaded: {fullPath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public uint RequestTerrainHeightmapBrushPreview(string relativePath)
+    {
+        string fullPath = Path.GetFullPath(ResolveEditorAssetPath(relativePath));
+        if (_terrainHeightmapBrushPreviewTextures.TryGetValue(fullPath, out uint cachedTexture))
+            return cachedTexture;
+
+        TerrainHeightmapBrush? brush = LoadTerrainHeightmapBrush(relativePath);
+        if (brush == null)
+            return 0;
+
+        uint texture = 0;
+        try
+        {
+            byte[] pixels = brush.CreatePreviewPixels();
+            texture = _gl.GenTexture();
+            _gl.BindTexture(TextureTarget.Texture2D, texture);
+            _gl.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                (int)InternalFormat.Rgba,
+                (uint)brush.Width,
+                (uint)brush.Height,
+                0,
+                PixelFormat.Rgba,
+                PixelType.UnsignedByte,
+                pixels);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapS,
+                (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapT,
+                (int)TextureWrapMode.ClampToEdge);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMinFilter,
+                (int)TextureMinFilter.Linear);
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMagFilter,
+                (int)TextureMagFilter.Linear);
+
+            _terrainHeightmapBrushPreviewTextures[fullPath] = texture;
+            return texture;
+        }
+        catch (Exception ex)
+        {
+            if (texture != 0)
+                _gl.DeleteTexture(texture);
+            Logger.Warn($"Terrain heightmap brush preview failed: {fullPath}: {ex.Message}");
+            return 0;
+        }
+    }
+
     public IReadOnlyList<string> EnumerateSkyboxes() =>
         EnumerateTextures()
             .Where(path => path.StartsWith("Textures/Skybox/", StringComparison.OrdinalIgnoreCase))
@@ -143,6 +261,19 @@ public class EditorAssetService : IDisposable
             .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public IReadOnlyList<string> EnumerateTerrainAssets()
+    {
+        if (!Directory.Exists(_fuseResPath))
+            return [];
+
+        string[] extensions = [".terrain", ".trn", ".fterrain"];
+        return Directory.EnumerateFiles(_fuseResPath, "*.*", SearchOption.AllDirectories)
+            .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -255,6 +386,7 @@ public class EditorAssetService : IDisposable
         {
             _materialCatalog = null;
             _textureCatalog = null;
+            _terrainHeightmapBrushCatalog = null;
             _geometryCatalog = null;
         }
         System.Threading.Interlocked.Increment(ref _assetRevision);
@@ -487,6 +619,9 @@ public class EditorAssetService : IDisposable
             if (textureId != 0)
                 _gl.DeleteTexture(textureId);
         }
+
+        while (_pendingTerrainHeightmapBrushInvalidations.TryDequeue(out string? brushPath))
+            InvalidateTerrainHeightmapBrush(brushPath);
 
         bool geometryUsedByScene = false;
         var processedGeometry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -727,6 +862,13 @@ public class EditorAssetService : IDisposable
         {
             if (texId != 0) _gl.DeleteTexture(texId);
         }
+        foreach (uint textureId in _terrainHeightmapBrushPreviewTextures.Values)
+        {
+            if (textureId != 0)
+                _gl.DeleteTexture(textureId);
+        }
+        _terrainHeightmapBrushPreviewTextures.Clear();
+        _terrainHeightmapBrushCache.Clear();
         ClearBrushMeshes();
         _meshCache.Clear();
         if (_defaultTex != 0) _gl.DeleteTexture(_defaultTex);
@@ -754,6 +896,8 @@ public class EditorAssetService : IDisposable
             {
                 string extension = Path.GetExtension(args.FullPath);
                 if (extension is not (".png" or ".jpg" or ".jpeg" or ".bmp" or ".tga" or ".dds") &&
+                    !extension.Equals(".exr", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".hdr", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".PNG", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".JPG", StringComparison.OrdinalIgnoreCase) &&
                     !extension.Equals(".JPEG", StringComparison.OrdinalIgnoreCase) &&
@@ -762,8 +906,14 @@ public class EditorAssetService : IDisposable
                     !extension.Equals(".DDS", StringComparison.OrdinalIgnoreCase))
                     return;
 
-                lock (_catalogLock) _textureCatalog = null;
-                _pendingTextureInvalidations.Enqueue(Path.GetRelativePath(_fuseResPath, args.FullPath));
+                string relativePath = Path.GetRelativePath(_fuseResPath, args.FullPath);
+                lock (_catalogLock)
+                {
+                    _textureCatalog = null;
+                    _terrainHeightmapBrushCatalog = null;
+                }
+                _pendingTextureInvalidations.Enqueue(relativePath);
+                _pendingTerrainHeightmapBrushInvalidations.Enqueue(relativePath);
                 System.Threading.Interlocked.Increment(ref _assetRevision);
             });
         }
@@ -798,6 +948,14 @@ public class EditorAssetService : IDisposable
 
     private static bool PathsEqual(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private void InvalidateTerrainHeightmapBrush(string relativePath)
+    {
+        string fullPath = Path.GetFullPath(ResolveEditorAssetPath(relativePath));
+        _terrainHeightmapBrushCache.Remove(fullPath);
+        if (_terrainHeightmapBrushPreviewTextures.Remove(fullPath, out uint textureId) && textureId != 0)
+            _gl.DeleteTexture(textureId);
+    }
 
     private string NormalizeTexturePath(string path)
     {

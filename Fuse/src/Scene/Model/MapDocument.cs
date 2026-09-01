@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Fuse.Scene.Terrain;
 
 namespace Fuse.Scene.Model;
 
@@ -133,8 +134,13 @@ public class MapDocument
 
     public static MapObject ParseObject(JsonObject obj)
     {
-        bool isBrush = obj.TryGetPropertyValue("type", out var typeNode) && (string)typeNode! == "brush";
-        
+        bool isBrush = obj.TryGetPropertyValue("type", out var typeNode) && string.Equals((string?)typeNode, "brush", StringComparison.OrdinalIgnoreCase);
+
+        bool isTerrain = obj.TryGetPropertyValue("type", out var terrainTypeNode) &&
+            string.Equals((string?)terrainTypeNode, "terrain", StringComparison.OrdinalIgnoreCase);
+        isTerrain |= obj.TryGetPropertyValue("terrain_asset", out var terrainAssetMarker) &&
+            !string.IsNullOrWhiteSpace((string?)terrainAssetMarker);
+
         MapObject mo = isBrush ? new Brush() : new MapObject();
 
         mo.Id = obj.TryGetPropertyValue("id", out var idNode) ? (string)idNode! : "unnamed";
@@ -142,6 +148,16 @@ public class MapDocument
         mo.ParentId = obj.TryGetPropertyValue("parent", out var parentNode) ? (string)parentNode! : null;
         mo.Mesh = obj.TryGetPropertyValue("mesh", out var meshNode) ? (string)meshNode! : null;
         mo.Model = obj.TryGetPropertyValue("model", out var modelNode) ? (string)modelNode! : null;
+        mo.TerrainAssetPath = obj.TryGetPropertyValue("terrain_asset", out var terrainAssetNode) ? (string?)terrainAssetNode : null;
+        mo.TerrainChunkQuads = obj.TryGetPropertyValue("terrain_chunk_quads", out var terrainChunkNode)
+            ? System.Math.Max(1, (int)terrainChunkNode!)
+            : 32;
+        mo.TerrainPixelError = obj.TryGetPropertyValue("terrain_pixel_error", out var terrainPixelErrorNode)
+            ? MathF.Max(0.1f, (float)terrainPixelErrorNode!)
+            : 5.0f;
+        mo.TerrainCollisionLod = obj.TryGetPropertyValue("terrain_collision_lod", out var terrainCollisionLodNode)
+            ? System.Math.Max(0, (int)terrainCollisionLodNode!)
+            : TerrainSceneBuilder.DefaultCollisionLod;
         mo.GeometryGraphPath = obj.TryGetPropertyValue("geometry_graph", out var graphNode) ? (string?)graphNode : null;
         if (obj.TryGetPropertyValue("model_scale", out var scaleNode))
         {
@@ -196,6 +212,18 @@ public class MapDocument
 
         if (obj.TryGetPropertyValue("body", out var bodyNode))
             mo.Body = ParseBody(bodyNode!.AsObject());
+        else if (isTerrain)
+        {
+            mo.Body = new MapBody
+            {
+                Shape = MapShapeType.Trimesh,
+                Position = Vector3.Zero,
+                Rotation = Quaternion.Identity,
+                Mass = 0f,
+                Friction = 0.5f,
+                Restitution = 0f
+            };
+        }
 
         if (isBrush && mo is Brush brush)
         {
@@ -276,6 +304,18 @@ public class MapDocument
         if (!string.IsNullOrEmpty(obj.ParentId))
             j["parent"] = obj.ParentId;
 
+        if (!string.IsNullOrWhiteSpace(obj.TerrainAssetPath))
+        {
+            j["type"] = "terrain";
+            j["terrain_asset"] = obj.TerrainAssetPath.Replace('\\', '/');
+            if (obj.TerrainChunkQuads != 32)
+                j["terrain_chunk_quads"] = System.Math.Max(1, obj.TerrainChunkQuads);
+            if (MathF.Abs(obj.TerrainPixelError - 5.0f) > 0.0001f)
+                j["terrain_pixel_error"] = MathF.Max(0.1f, obj.TerrainPixelError);
+            if (obj.TerrainCollisionLod != TerrainSceneBuilder.DefaultCollisionLod)
+                j["terrain_collision_lod"] = System.Math.Max(0, obj.TerrainCollisionLod);
+        }
+
         if (obj is Brush brush)
         {
             j["type"] = "brush";
@@ -302,6 +342,16 @@ public class MapDocument
         else if (obj.Mesh != null)
         {
             j["mesh"] = obj.Mesh;
+            if (obj.UvScale != Vector2.One)
+                j["uv_scale"] = Vec2ToJson(obj.UvScale);
+            if (obj.UvOffset != Vector2.Zero)
+                j["uv_offset"] = Vec2ToJson(obj.UvOffset);
+            if (obj.UvRotation != 0f)
+                j["uv_rotation"] = obj.UvRotation;
+        }
+
+        if (obj.IsTerrain)
+        {
             if (obj.UvScale != Vector2.One)
                 j["uv_scale"] = Vec2ToJson(obj.UvScale);
             if (obj.UvOffset != Vector2.Zero)

@@ -98,7 +98,7 @@ public class Camera
     }
 
     private float _nearPlane = 0.1f;
-    private float _farPlane = 1000.0f;
+    private float _farPlane = 5000.0f;
 
     public float NearPlane { get => _nearPlane; set => _nearPlane = value; }
     public float FarPlane { get => _farPlane; set => _farPlane = value;  }

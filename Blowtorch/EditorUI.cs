@@ -8,6 +8,7 @@ using Fuse.Renderer;
 using Fuse.Core;
 using Fuse;
 using Fuse.Renderer.Materials;
+using Fuse.Scene.Terrain;
 using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch;
@@ -70,7 +71,7 @@ public unsafe class EditorUI : IDisposable
     public UndoManager Undo { get; } = new UndoManager();
 
     // Selection & Modes
-    public enum EditorMode { Select, DrawBrush }
+    public enum EditorMode { Select, DrawBrush, TerrainSculpt }
     public enum GizmoOperation { Translate, Rotate, Scale, Shear }
     private enum BrushComponentMode { Object, Vertex, Edge, Face }
     private enum BrushEditTool { None, Knife }
@@ -83,6 +84,37 @@ public unsafe class EditorUI : IDisposable
     private HashSet<string> _lastSelectedObjectIds = new();
     private double _lastSelectionTime = 0.0;
     private bool _showModelImportDialog = false;
+    private bool _showTerrainCreateDialog;
+    private bool _terrainCreateWaitingForHeightmap;
+    private string _terrainName = "terrain";
+    private int _terrainWidth = 65;
+    private int _terrainDepth = 65;
+    private float _terrainCellSize = 1.0f;
+    private float _terrainHeightScale = 8.0f;
+    private string _terrainHeightmapPath = "";
+    private int _terrainChunkQuads = TerrainSceneBuilder.DefaultChunkQuads;
+    private static readonly string[] TerrainSculptToolLabels =
+    [
+        "Raise / Lower",
+        "Set Height",
+        "Smooth",
+        "Stamp",
+        "Noise"
+    ];
+    private TerrainSculptTool _terrainSculptTool = TerrainSculptTool.RaiseLower;
+    private float _terrainBrushRadius = 2.0f;
+    private float _terrainBrushStrength = 1.0f;
+    private float _terrainSetHeight;
+    private float _terrainNoiseScale = 0.25f;
+    private int _terrainNoiseSeed = 1337;
+    private bool _terrainSculptLower;
+    private string _terrainHeightmapBrushPath = "";
+    private string _terrainHeightmapBrushLoadedPath = "";
+    private TerrainHeightmapBrush? _terrainHeightmapBrush;
+    private bool _terrainSculptActive;
+    private string _terrainSculptAssetPath = "";
+    private TerrainAsset? _terrainSculptAsset;
+    private ushort[]? _terrainSculptBefore;
     private List<string> _modelFiles = new();
     private int _selectedModelIndex = -1;
     private string? _detectedTexturePath = null;
@@ -171,7 +203,8 @@ public unsafe class EditorUI : IDisposable
     public bool ShowMapWindow => _showMapWindow;
     public bool ShowJsonWindow => _showJsonWindow;
     public bool RequiresContinuousViewportRender =>
-        _currentMode == EditorMode.DrawBrush || _isDraggingHandle || EditorGizmo.IsUsing() || ImGui.IsAnyItemActive();
+        _currentMode is EditorMode.DrawBrush or EditorMode.TerrainSculpt ||
+        _isDraggingHandle || EditorGizmo.IsUsing() || ImGui.IsAnyItemActive();
 
     public void Dispose()
     {
@@ -225,6 +258,7 @@ public unsafe class EditorUI : IDisposable
         {
             EndFaceExtrudeDrag(sceneService, assetService, history);
             EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+            EndTerrainSculpt(sceneService, assetService, history);
         }
 
         if (_focusCameraRequested && _selectedObject != null)
@@ -266,6 +300,7 @@ public unsafe class EditorUI : IDisposable
             ExecutePendingDocumentAction(window, sceneService, assetService, history);
         DrawHollowDialog(sceneService, assetService, history);
         DrawNewMaterialDialog(sceneService, assetService, history);
+        DrawTerrainCreateDialog(sceneService, assetService, history);
         //DrawLaunchErrorDialog();
 
         if (_newDocumentRequested)
@@ -302,6 +337,8 @@ public unsafe class EditorUI : IDisposable
             _geometryEditor,
             entry => ActivateAssetFromBrowser(entry, sceneService, assetService, history, viewport3D));
         _showAssetBrowser = _assetBrowser.IsOpen;
+        if (_terrainCreateWaitingForHeightmap && !_assetBrowser.IsOpen)
+            _terrainCreateWaitingForHeightmap = false;
 
         _geometryEditor.Draw(assetService, sceneService, inputService);
 
@@ -666,6 +703,24 @@ public unsafe class EditorUI : IDisposable
             if (entity != null)
                 entity.Visible = isVisible;
 
+            // Terrain objects have a renderless root entity plus one render
+            // entity per chunk. Visibility must be propagated to the chunks;
+            // changing only the root leaves the terrain visible or prevents
+            // it from coming back after the scene is rebuilt.
+            if (candidate.IsTerrain)
+            {
+                foreach (var chunkEntity in scene.Entities)
+                {
+                    if (chunkEntity.TerrainLod != null &&
+                        chunkEntity.TerrainChunkGroupId.Equals(
+                            candidate.Id,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        chunkEntity.Visible = isVisible;
+                    }
+                }
+            }
+
             var light = scene.Lights.FirstOrDefault(l => l.Id == candidate.Id);
             if (light != null)
                 light.Enabled = isVisible;
@@ -772,6 +827,7 @@ public unsafe class EditorUI : IDisposable
     {
         Group,
         Brush,
+        Terrain,
         Model,
         Box,
         Sphere,
@@ -793,6 +849,7 @@ public unsafe class EditorUI : IDisposable
                 _ => HierarchyIconKind.PointLight
             };
         }
+        if (obj.IsTerrain) return HierarchyIconKind.Terrain;
         if ((obj.Body == null || obj.Body.Shape == MapShapeType.None) &&
             string.IsNullOrEmpty(obj.Mesh) && string.IsNullOrEmpty(obj.Model))
             return HierarchyIconKind.Group;
@@ -813,6 +870,7 @@ public unsafe class EditorUI : IDisposable
         {
             HierarchyIconKind.Group => "Group",
             HierarchyIconKind.Brush => "Brush",
+            HierarchyIconKind.Terrain => "Terrain",
             HierarchyIconKind.Model => "Model",
             HierarchyIconKind.Box => "Box",
             HierarchyIconKind.Sphere => "Sphere",
@@ -831,6 +889,7 @@ public unsafe class EditorUI : IDisposable
             HierarchyIconKind.PointLight or HierarchyIconKind.SpotLight or HierarchyIconKind.DirectionalLight
                 => new Vector4(1.0f, 0.78f, 0.22f, 1.0f),
             HierarchyIconKind.Group => new Vector4(0.46f, 0.70f, 0.95f, 1.0f),
+            HierarchyIconKind.Terrain => new Vector4(0.64f, 0.82f, 0.35f, 1.0f),
             HierarchyIconKind.Model => new Vector4(0.70f, 0.52f, 0.95f, 1.0f),
             HierarchyIconKind.Brush or HierarchyIconKind.Box => new Vector4(0.35f, 0.82f, 0.68f, 1.0f),
             HierarchyIconKind.Sphere or HierarchyIconKind.Capsule => new Vector4(0.32f, 0.72f, 0.95f, 1.0f),
@@ -1546,6 +1605,15 @@ public unsafe class EditorUI : IDisposable
         // Handle shortcuts only if we're not typing in text inputs
         if (io.WantTextInput || (io.WantCaptureKeyboard && ImGui.IsAnyItemActive())) return;
 
+        // Match the conventional 3D-editor shortcut: Ctrl+Alt+Q toggles the
+        // viewport layout without changing any camera state.
+        if (io.KeyCtrl && io.KeyAlt && ImGui.IsKeyPressed(ImGuiKey.Q))
+        {
+            _viewportLayout = _viewportLayout == ViewportLayout.Quad
+                ? ViewportLayout.PerspectiveOnly
+                : ViewportLayout.Quad;
+        }
+
         if (io.KeyCtrl)
         {
             if (ImGui.IsKeyPressed(ImGuiKey.Z)) history.Undo();
@@ -1697,9 +1765,9 @@ public unsafe class EditorUI : IDisposable
                 ImGui.MenuItem("Diagnostics", "", ref _showDiagnostics);
                 ImGui.MenuItem("Show hitboxes", "", ref _showHitBoxes);
                 ImGui.Separator();
-                if (ImGui.MenuItem("Quad View", "", _viewportLayout == ViewportLayout.Quad))
+                if (ImGui.MenuItem("Quad View", "Ctrl+Alt+Q", _viewportLayout == ViewportLayout.Quad))
                     _viewportLayout = ViewportLayout.Quad;
-                if (ImGui.MenuItem("3D View Only", "", _viewportLayout == ViewportLayout.PerspectiveOnly))
+                if (ImGui.MenuItem("3D View Only", "Ctrl+Alt+Q", _viewportLayout == ViewportLayout.PerspectiveOnly))
                     _viewportLayout = ViewportLayout.PerspectiveOnly;
                 ImGui.Separator();
                 if (ImGui.MenuItem("3D Viewport Shadows", "", viewport3D.ShadowsEnabled))
@@ -1746,12 +1814,24 @@ public unsafe class EditorUI : IDisposable
         ImGui.TextDisabled("MODE");
         ImGui.SameLine();
         if (DrawToolbarButton("Select", "Esc", _currentMode == EditorMode.Select))
+        {
+            EndTerrainSculpt(sceneService, assetService, history);
             _currentMode = EditorMode.Select;
+        }
         ImGui.SameLine(0, 4);
         if (DrawToolbarButton("Brush", "B", _currentMode == EditorMode.DrawBrush))
         {
+            EndTerrainSculpt(sceneService, assetService, history);
             EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
             _currentMode = EditorMode.DrawBrush;
+            ClearBrushComponentSelection();
+        }
+        ImGui.SameLine(0, 4);
+        if (DrawToolbarButton("Terrain", "G", _currentMode == EditorMode.TerrainSculpt))
+        {
+            EndFaceExtrudeDrag(sceneService, assetService, history);
+            EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+            _currentMode = EditorMode.TerrainSculpt;
             ClearBrushComponentSelection();
         }
 
@@ -2297,8 +2377,9 @@ public unsafe class EditorUI : IDisposable
                 {
                     EndFaceExtrudeDrag(sceneService, assetService, history);
                     EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
-                    if (_currentMode == EditorMode.DrawBrush)
+                    if (_currentMode is EditorMode.DrawBrush or EditorMode.TerrainSculpt)
                     {
+                        EndTerrainSculpt(sceneService, assetService, history);
                         _currentMode = EditorMode.Select;
                         _activeHandle = HandleType.None;
                         _previewManager.Reset();
@@ -2312,9 +2393,17 @@ public unsafe class EditorUI : IDisposable
                 }
                 if (ImGui.IsKeyPressed(ImGuiKey.B))
                 {
+                    EndTerrainSculpt(sceneService, assetService, history);
                     EndFaceExtrudeDrag(sceneService, assetService, history);
                     EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
                     _currentMode = EditorMode.DrawBrush;
+                    ClearBrushComponentSelection();
+                }
+                if (ImGui.IsKeyPressed(ImGuiKey.G))
+                {
+                    EndFaceExtrudeDrag(sceneService, assetService, history);
+                    EndEditorGizmoInteraction(sceneService, assetService, history, finalizeEditableBrush: true);
+                    _currentMode = EditorMode.TerrainSculpt;
                     ClearBrushComponentSelection();
                 }
                 if (ImGui.IsKeyPressed(ImGuiKey._1)) SetBrushComponentMode(BrushComponentMode.Object, sceneService, assetService, history);
@@ -2369,6 +2458,7 @@ public unsafe class EditorUI : IDisposable
         ImGui.BeginChild(title, size, ImGuiChildFlags.Borders, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         
         ImGui.Text(title);
+        DrawTerrainSculptViewportToolbar(title);
 
         var vpPos = ImGui.GetCursorScreenPos();
         var vpSize = ImGui.GetContentRegionAvail();
@@ -2386,7 +2476,7 @@ public unsafe class EditorUI : IDisposable
 
         // Editor-only overlays stay outside the OpenGL scene texture, so they
         // cannot affect picking or the scene depth buffer.
-        DrawViewportOverlays(viewport, vpPos, vpSize, assetService);
+        DrawViewportOverlays(viewport, vpPos, vpSize, sceneService, assetService);
 
         HandleAssetDropOnViewport(viewport, vpPos, vpSize, sceneService, assetService, history);
         bool isHovered = ImGui.IsItemHovered() && inputService.IsMapContext;
@@ -2557,7 +2647,8 @@ public unsafe class EditorUI : IDisposable
         if (_isFaceExtrudeDragging)
             HandleFaceExtrudeDrag(viewport, sceneService, assetService);
 
-        if (_selectedObject != null && _selectedObject.Body != null && sceneService.Document.Objects.Contains(_selectedObject) && !_isDraggingHandle && !suppressGizmoForBrushes)
+        if (_selectedObject != null && _selectedObject.Body != null && sceneService.Document.Objects.Contains(_selectedObject) &&
+            !_isDraggingHandle && !suppressGizmoForBrushes && _currentMode != EditorMode.TerrainSculpt)
         {
             var body = _selectedObject.Body;
             var view = viewport.Camera.ViewMatrix;
@@ -2698,6 +2789,9 @@ public unsafe class EditorUI : IDisposable
 
                         SyncLight(sceneService, obj);
                     }
+
+                    if (objectsToTransform.Any(obj => obj.IsTerrain))
+                        sceneService.PopulateScene(assetService);
                 }
 
                 bool isUsingNow = EditorGizmo.IsUsing();
@@ -2722,7 +2816,47 @@ public unsafe class EditorUI : IDisposable
 
         if (allowViewportInput)
         {
-            if (_currentMode == EditorMode.Select)
+            if (_currentMode == EditorMode.TerrainSculpt)
+            {
+                viewport.HandleInput(ImGui.GetIO(), ImGui.GetIO().DeltaTime, window.Glfw, window.Handle, vpPos, vpSize);
+
+                if (_selectedObject?.IsTerrain == true &&
+                    ImGui.IsMouseDown(ImGuiMouseButton.Left))
+                {
+                    BeginTerrainSculpt(sceneService, assetService);
+                    if (_terrainSculptActive)
+                    {
+                        EditorGizmo.GetMouseRay(
+                            ImGui.GetIO().MousePos,
+                            viewport.Camera.ViewMatrix,
+                            viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y),
+                            vpPos,
+                            vpSize,
+                            out Vector3 rayOrigin,
+                            out Vector3 rayDirection);
+
+                        float terrainBrushStrength = _terrainSculptTool == TerrainSculptTool.RaiseLower
+                            ? _terrainBrushStrength
+                            : _terrainBrushStrength * MathF.Max(0.001f, ImGui.GetIO().DeltaTime);
+                        bool terrainChanged = sceneService.ApplyTerrainToolAtRay(
+                            _selectedObject,
+                            assetService,
+                            rayOrigin,
+                            rayDirection,
+                            _terrainSculptTool,
+                            _terrainBrushRadius,
+                            terrainBrushStrength,
+                            _terrainSculptLower || ImGui.GetIO().KeyShift,
+                            _terrainSetHeight,
+                            _terrainNoiseScale,
+                            _terrainNoiseSeed,
+                            _terrainHeightmapBrush);
+                        if (terrainChanged)
+                            viewport.RequestRender();
+                    }
+                }
+            }
+            else if (_currentMode == EditorMode.Select)
             {
                 viewport.HandleInput(ImGui.GetIO(), ImGui.GetIO().DeltaTime, window.Glfw, window.Handle, vpPos, vpSize);
             }
@@ -3267,7 +3401,13 @@ public unsafe class EditorUI : IDisposable
             Vector3 localOrigin = Vector3.Transform(rayOrigin, modelInv);
             Vector3 localDir = Vector3.Normalize(Vector3.TransformNormal(rayDir, modelInv));
             
-            if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
+            if (obj.IsTerrain && !string.IsNullOrWhiteSpace(obj.TerrainAssetPath))
+            {
+                TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(obj, assetService);
+                hit = terrain != null &&
+                    terrain.Raycast(localOrigin, localDir, out dist, out _);
+            }
+            else if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
             {
                 hit = RaySphereIntersect(localOrigin, localDir, Vector3.Zero, obj.Body.Radius.Value, out dist);
             }
@@ -3722,7 +3862,15 @@ public unsafe class EditorUI : IDisposable
                 viewport3D.Camera.FieldOfView = cameraFov;
                 viewport3D.RequestRender();
             }
+            float cameraFarClipPlane = viewport3D.Camera.FarClipPlane;
             ImGui.TextDisabled("Affects only the perspective 3D viewport.");
+            if (ImGui.SliderFloat("3D Camera Far Clip Plane", ref cameraFarClipPlane, 20.0f, 10000.0f, "%.1f deg"))
+            {
+                viewport3D.Camera.FarClipPlane = cameraFarClipPlane;
+                viewport3D.RequestRender();
+            }
+            ImGui.TextDisabled("Far render distance");
+            
 
             ImGui.Spacing();
             ImGui.Separator();
@@ -3795,6 +3943,12 @@ public unsafe class EditorUI : IDisposable
             ImGui.PopStyleColor(3);
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Import a model from the project assets.");
+
+            ImGui.Spacing();
+            if (ImGui.Button("Terrain...", new Vector2(-1, 0)))
+                _showTerrainCreateDialog = true;
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Create a heightmap terrain asset and add it to the map.");
 
             ImGui.Spacing();
             ImGui.Separator();
@@ -3932,7 +4086,7 @@ public unsafe class EditorUI : IDisposable
         DrawHierarchyCategory("groups", "Groups", rootObjects.Where(o => GetHierarchyIconKind(o) == HierarchyIconKind.Group), doc,
             sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
             ref objectToDelete, ref objectToDuplicate);
-        DrawHierarchyCategory("geometry", "Geometry", rootObjects.Where(o => GetHierarchyIconKind(o) is HierarchyIconKind.Brush or HierarchyIconKind.Box or HierarchyIconKind.Sphere or HierarchyIconKind.Capsule), doc,
+        DrawHierarchyCategory("geometry", "Geometry", rootObjects.Where(o => GetHierarchyIconKind(o) is HierarchyIconKind.Brush or HierarchyIconKind.Terrain or HierarchyIconKind.Box or HierarchyIconKind.Sphere or HierarchyIconKind.Capsule), doc,
             sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide, _hierarchyFilter,
             ref objectToDelete, ref objectToDuplicate);
         DrawHierarchyCategory("models", "Models", rootObjects.Where(o => GetHierarchyIconKind(o) == HierarchyIconKind.Model), doc,
@@ -4271,8 +4425,16 @@ public unsafe class EditorUI : IDisposable
                     bool rChanged = ImGui.DragFloat3("Rotation##inspectRot", ref euler, 0.5f, -360f, 360f, "%.1f deg");
                     Undo.TrackItem(_frameBeginState);
 
-                    bool sChanged = ImGui.DragFloat3("Scale##inspectScale", ref currentScale, 0.05f);
-                    Undo.TrackItem(_frameBeginState);
+                    bool sChanged = false;
+                    if (obj.IsTerrain)
+                    {
+                        ImGui.TextDisabled("Scale is defined by the terrain asset.");
+                    }
+                    else
+                    {
+                        sChanged = ImGui.DragFloat3("Scale##inspectScale", ref currentScale, 0.05f);
+                        Undo.TrackItem(_frameBeginState);
+                    }
 
                     if (tChanged || rChanged || sChanged)
                     {
@@ -4323,14 +4485,93 @@ public unsafe class EditorUI : IDisposable
                                 entity.Transform.Scale = currentScale;
                         }
 
-                        if (sChanged && !obj.IsModel)
+                        if (sChanged && !obj.IsModel && !obj.IsTerrain)
                         {
                             assetService.InvalidateMesh(obj.Id);
                             if (entity != null) entity.Mesh = assetService.GetOrCreateMesh(obj);
                         }
+
+                        if (obj.IsTerrain && (tChanged || rChanged))
+                            sceneService.PopulateScene(assetService);
                     }
 
 
+                }
+
+                // Visuals & Material
+                if (obj.IsTerrain && ImGui.CollapsingHeader("Terrain", ImGuiTreeNodeFlags.DefaultOpen))
+                {
+                    TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(obj, assetService);
+                    if (terrain == null)
+                    {
+                        ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), "Terrain asset could not be loaded.");
+                    }
+                    else
+                    {
+                        terrain.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
+                        ImGui.TextUnformatted($"Asset: {obj.TerrainAssetPath}");
+                        ImGui.TextUnformatted($"Resolution: {terrain.Width} x {terrain.Depth}");
+                        ImGui.TextUnformatted($"Size: {(terrain.Width - 1) * terrain.CellSize:0.##} x {(terrain.Depth - 1) * terrain.CellSize:0.##}");
+                        ImGui.TextUnformatted($"Height: {terrainMin.Y:0.##} .. {terrainMax.Y:0.##}");
+                        int terrainChunkQuads = obj.TerrainChunkQuads;
+                        if (ImGui.DragInt("Chunk quads##terrainChunkQuads", ref terrainChunkQuads, 1.0f, 1, 256))
+                        {
+                            obj.TerrainChunkQuads = Math.Clamp(terrainChunkQuads, 1, 256);
+                            sceneService.PopulateScene(assetService);
+                        }
+                        Undo.TrackItem(_frameBeginState);
+
+                        float terrainPixelError = obj.TerrainPixelError;
+                        if (ImGui.DragFloat("Pixel error##terrainPixelError", ref terrainPixelError, 0.1f, 0.1f, 100.0f, "%.2f px"))
+                        {
+                            obj.TerrainPixelError = MathF.Max(0.1f, terrainPixelError);
+                            sceneService.PopulateScene(assetService);
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Maximum projected height error allowed before a lower terrain LOD is selected.");
+                        Undo.TrackItem(_frameBeginState);
+
+                        bool forceTerrainLod0 = sceneService.IsTerrainEditorForceLod0(obj.Id);
+                        if (ImGui.Checkbox(
+                                "Force LOD 0 in Blowtorch##terrainForceLod0",
+                                ref forceTerrainLod0))
+                        {
+                            sceneService.SetTerrainEditorForceLod0(
+                                obj.Id,
+                                forceTerrainLod0);
+                            sceneService.PopulateScene(assetService);
+                            viewport3D.RequestRender();
+                            viewportTop.RequestRender();
+                            viewportFront.RequestRender();
+                            viewportSide.RequestRender();
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip(
+                                "Editor-only preview override. Keeps every chunk of this terrain at render LOD 0, regardless of camera distance. It is not saved to the map and does not affect Fuse runtime.");
+
+                        int terrainCollisionLod = obj.TerrainCollisionLod;
+                        if (ImGui.DragInt(
+                                "Collision LOD##terrainCollisionLod",
+                                ref terrainCollisionLod,
+                                1.0f,
+                                0,
+                                TerrainMeshGenerator.MaxLodLevels - 1))
+                        {
+                            obj.TerrainCollisionLod = Math.Clamp(
+                                terrainCollisionLod,
+                                0,
+                                TerrainMeshGenerator.MaxLodLevels - 1);
+                            sceneService.PopulateScene(assetService);
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Square terrains use the native full-resolution heightfield. This value only affects the legacy fallback for rectangular terrain assets.");
+                        Undo.TrackItem(_frameBeginState);
+
+                        ImGui.SeparatorText("Sculpt brush");
+                        DrawTerrainHeightmapBrushSelector(assetService);
+                        DrawTerrainSculptInspectorControls(terrain);
+                        ImGui.TextDisabled("Activate Terrain mode, then click-drag in a viewport.");
+                    }
                 }
 
                 // Visuals & Material
@@ -4369,6 +4610,8 @@ public unsafe class EditorUI : IDisposable
                                 if (string.IsNullOrWhiteSpace(entity.MaterialPath) && !string.IsNullOrWhiteSpace(texture))
                                     entity.Material = assetService.AssetManager.GetLegacyMaterial(texture);
                             }
+                            if (obj.IsTerrain)
+                                sceneService.PopulateScene(assetService);
                         }
                         ImGui.TreePop();
                     }
@@ -4383,6 +4626,7 @@ public unsafe class EditorUI : IDisposable
                             obj.UvScale = uvScale;
                             var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                             if (entity != null) entity.UvScale = uvScale;
+                            if (obj.IsTerrain) sceneService.PopulateScene(assetService);
                         }
                         
 
@@ -4394,6 +4638,7 @@ public unsafe class EditorUI : IDisposable
                             obj.UvOffset = uvOffset;
                             var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                             if (entity != null) entity.UvOffset = uvOffset;
+                            if (obj.IsTerrain) sceneService.PopulateScene(assetService);
                         }
                         
 
@@ -4406,6 +4651,7 @@ public unsafe class EditorUI : IDisposable
                             obj.UvRotation = uvRot;
                             var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
                             if (entity != null) entity.UvRotation = uvRot;
+                            if (obj.IsTerrain) sceneService.PopulateScene(assetService);
                         }
                         
                     }
@@ -4812,6 +5058,444 @@ public unsafe class EditorUI : IDisposable
         DrawModelImportDialog(sceneService, assetService, history);
 
         ImGui.End();
+    }
+
+    private void DrawTerrainCreateDialog(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!_showTerrainCreateDialog)
+            return;
+
+        // The heightmap picker is drawn as a separate editor window. Keep the
+        // create dialog closed while it is open so its modal overlay cannot
+        // block interaction with the Asset Browser.
+        if (_terrainCreateWaitingForHeightmap)
+            return;
+
+        ImGui.OpenPopup("Create Terrain");
+        bool open = true;
+        if (ImGui.BeginPopupModal("Create Terrain", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextUnformatted("Create a flat heightmap terrain.");
+            ImGui.InputText("Name", ref _terrainName, 128);
+
+            int width = _terrainWidth;
+            int depth = _terrainDepth;
+            float cellSize = _terrainCellSize;
+            float heightScale = _terrainHeightScale;
+            int chunkQuads = _terrainChunkQuads;
+
+            ImGui.InputInt("Width samples", ref width);
+            ImGui.InputInt("Depth samples", ref depth);
+            ImGui.DragFloat("Cell size", ref cellSize, 0.05f, 0.01f, 100.0f, "%.2f");
+            ImGui.DragFloat("Height scale", ref heightScale, 0.1f, 0.01f, 10000.0f, "%.2f");
+            ImGui.InputInt("Chunk quads", ref chunkQuads);
+
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted("Heightmap");
+            ImGui.SameLine();
+            string heightmapLabel = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
+                ? "(Flat terrain)"
+                : _terrainHeightmapPath;
+            float clearButtonWidth = 62.0f;
+            float pickerWidth = MathF.Max(
+                120.0f,
+                ImGui.GetContentRegionAvail().X - clearButtonWidth - ImGui.GetStyle().ItemSpacing.X);
+            if (ImGui.Button(
+                    $"{heightmapLabel}##terrainHeightmapPicker",
+                    new Vector2(pickerWidth, 0.0f)))
+            {
+                OpenTerrainHeightmapPicker();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Clear##terrainHeightmapClear", new Vector2(clearButtonWidth, 0.0f)))
+                _terrainHeightmapPath = "";
+            ImGui.TextDisabled("Use a grayscale image. Its resolution becomes the terrain resolution.");
+
+            _terrainWidth = Math.Clamp(width, 2, 4096);
+            _terrainDepth = Math.Clamp(depth, 2, 4096);
+            _terrainCellSize = Math.Clamp(cellSize, 0.01f, 100.0f);
+            _terrainHeightScale = Math.Clamp(heightScale, 0.01f, 10000.0f);
+            _terrainChunkQuads = Math.Clamp(chunkQuads, 1, 256);
+
+            ImGui.Separator();
+            if (ImGui.Button("Create", new Vector2(120, 0)))
+            {
+                try
+                {
+                    string safeName = SanitizeAssetName(_terrainName);
+                    string relativePath = $"Terrains/{safeName}.terrain";
+                    string fullPath = assetService.ResolveEditorAssetPath(relativePath);
+                    int suffix = 1;
+                    while (File.Exists(fullPath))
+                    {
+                        relativePath = $"Terrains/{safeName}_{suffix++}.terrain";
+                        fullPath = assetService.ResolveEditorAssetPath(relativePath);
+                    }
+
+                    TerrainAsset terrain = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
+                        ? TerrainAsset.CreateFlat(
+                            _terrainWidth,
+                            _terrainDepth,
+                            _terrainCellSize,
+                            _terrainHeightScale)
+                        : TerrainAsset.FromHeightmap(
+                            assetService.ResolveEditorAssetPath(_terrainHeightmapPath),
+                            _terrainCellSize,
+                            _terrainHeightScale);
+                    terrain.Save(fullPath);
+
+                    string objectId = $"terrain_{safeName}";
+                    var obj = new MapObject
+                    {
+                        Id = objectId,
+                        Visible = true,
+                        TerrainAssetPath = relativePath,
+                        TerrainChunkQuads = _terrainChunkQuads,
+                        MaterialPath = DefaultMaterialPath,
+                        Body = new MapBody
+                        {
+                            Shape = MapShapeType.Trimesh,
+                            Position = Vector3.Zero,
+                            Rotation = Quaternion.Identity,
+                            Mass = 0.0f,
+                            Friction = 0.5f,
+                            Restitution = 0.0f
+                        }
+                    };
+
+                    string pre = sceneService.Document.Serialize();
+                    sceneService.Document.Objects.Add(obj);
+                    SceneNameManager.EnsureAllUnique(sceneService.Document);
+                    _selectedObject = obj;
+                    _selectedObjects.Clear();
+                    _selectedObjects.Add(obj);
+                    sceneService.PopulateScene(assetService);
+                    string post = sceneService.Document.Serialize();
+                    sceneService.MarkModified(post);
+                    history.PushCommand(new SnapshotCommand(sceneService, assetService, pre, post));
+
+                    _showTerrainCreateDialog = false;
+                    _terrainCreateWaitingForHeightmap = false;
+                    ImGui.CloseCurrentPopup();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Terrain creation failed: {ex.Message}");
+                    ShowDocumentError($"Terrain creation failed: {ex.Message}");
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(120, 0)))
+            {
+                _showTerrainCreateDialog = false;
+                _terrainCreateWaitingForHeightmap = false;
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.EndPopup();
+        }
+
+        if (!open)
+        {
+            _showTerrainCreateDialog = false;
+            _terrainCreateWaitingForHeightmap = false;
+        }
+    }
+
+    private void OpenTerrainHeightmapPicker()
+    {
+        _terrainCreateWaitingForHeightmap = true;
+        ImGui.CloseCurrentPopup();
+        _showAssetBrowser = true;
+        _assetBrowser.OpenTexturePicker(selectedPath =>
+        {
+            _terrainHeightmapPath = selectedPath;
+            _terrainCreateWaitingForHeightmap = false;
+        });
+    }
+
+    private void DrawTerrainSculptViewportToolbar(string title)
+    {
+        if (!string.Equals(title, "Camera 3D", StringComparison.Ordinal) ||
+            _currentMode != EditorMode.TerrainSculpt ||
+            _selectedObject?.IsTerrain != true)
+            return;
+
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6.0f, 2.0f));
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(5.0f, 3.0f));
+        if (ImGui.BeginChild(
+                "TerrainSculptViewportToolbar",
+                new Vector2(0.0f, 38.0f),
+                ImGuiChildFlags.Borders,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextDisabled("Terrain");
+            ImGui.SameLine();
+
+            ImGui.SetNextItemWidth(145.0f);
+            DrawTerrainSculptToolCombo("Tool##terrainSculptToolViewport");
+            ImGui.SameLine();
+
+            ImGui.SetNextItemWidth(175.0f);
+            ImGui.SliderFloat(
+                "Radius##terrainBrushRadiusViewport",
+                ref _terrainBrushRadius,
+                0.1f,
+                1000.0f,
+                "Radius %.2f");
+            ImGui.SameLine();
+
+            ImGui.SetNextItemWidth(175.0f);
+            ImGui.SliderFloat(
+                "Strength##terrainBrushStrengthViewport",
+                ref _terrainBrushStrength,
+                0.01f,
+                100.0f,
+                "Strength %.2f");
+        }
+
+        ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+    }
+
+    private void DrawTerrainSculptToolCombo(string label)
+    {
+        int selectedTool = Math.Clamp(
+            (int)_terrainSculptTool,
+            0,
+            TerrainSculptToolLabels.Length - 1);
+        if (ImGui.Combo(label, ref selectedTool, TerrainSculptToolLabels, TerrainSculptToolLabels.Length))
+        {
+            _terrainSculptTool = (TerrainSculptTool)selectedTool;
+        }
+    }
+
+    private void DrawTerrainSculptInspectorControls(TerrainAsset terrain)
+    {
+        DrawTerrainSculptToolCombo("Tool##terrainSculptToolInspector");
+
+        ImGui.SliderFloat(
+            "Radius##terrainBrushRadius",
+            ref _terrainBrushRadius,
+            0.1f,
+            1000.0f,
+            "%.2f");
+        ImGui.SliderFloat(
+            "Strength##terrainBrushStrength",
+            ref _terrainBrushStrength,
+            0.01f,
+            100.0f,
+            "%.2f");
+
+        if (_terrainSculptTool == TerrainSculptTool.SetHeight)
+        {
+            float minimumHeight = terrain.HeightOffset;
+            float maximumHeight = terrain.HeightOffset + MathF.Max(terrain.HeightScale, 0.001f);
+            _terrainSetHeight = Math.Clamp(_terrainSetHeight, minimumHeight, maximumHeight);
+            ImGui.SliderFloat(
+                "Target height##terrainSetHeight",
+                ref _terrainSetHeight,
+                minimumHeight,
+                maximumHeight,
+                "%.2f");
+        }
+        else if (_terrainSculptTool == TerrainSculptTool.Noise)
+        {
+            ImGui.SliderFloat(
+                "Noise scale##terrainNoiseScale",
+                ref _terrainNoiseScale,
+                0.01f,
+                2.0f,
+                "%.3f");
+            ImGui.DragInt(
+                "Noise seed##terrainNoiseSeed",
+                ref _terrainNoiseSeed,
+                1.0f,
+                -100000,
+                100000);
+        }
+
+        if (_terrainSculptTool is TerrainSculptTool.RaiseLower or
+            TerrainSculptTool.Stamp or
+            TerrainSculptTool.Noise)
+        {
+            ImGui.Checkbox("Lower terrain (Shift also lowers)", ref _terrainSculptLower);
+        }
+        else if (_terrainSculptTool == TerrainSculptTool.Smooth)
+        {
+            ImGui.TextDisabled("Smooth averages neighboring height samples.");
+        }
+        else
+        {
+            ImGui.TextDisabled("The brush moves the terrain toward the target height.");
+        }
+    }
+
+    private void DrawTerrainHeightmapBrushSelector(EditorAssetService assetService)
+    {
+        IReadOnlyList<string> brushPaths = assetService.EnumerateTerrainHeightmapBrushes();
+        if (brushPaths.Count == 0)
+        {
+            _terrainHeightmapBrushPath = "";
+            _terrainHeightmapBrushLoadedPath = "";
+            _terrainHeightmapBrush = null;
+            ImGui.TextDisabled("No heightmap brushes found in Textures/Terrain/heightmap_brushes.");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_terrainHeightmapBrushPath) &&
+            !brushPaths.Any(path => path.Equals(
+                _terrainHeightmapBrushPath,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            _terrainHeightmapBrushPath = "";
+            _terrainHeightmapBrushLoadedPath = "";
+            _terrainHeightmapBrush = null;
+        }
+
+        string[] labels = new string[brushPaths.Count + 1];
+        labels[0] = "Circular (default)";
+        for (int i = 0; i < brushPaths.Count; i++)
+            labels[i + 1] = Path.GetFileNameWithoutExtension(brushPaths[i]);
+
+        int selectedIndex = 0;
+        if (!string.IsNullOrWhiteSpace(_terrainHeightmapBrushPath))
+        {
+            for (int i = 0; i < brushPaths.Count; i++)
+            {
+                if (!brushPaths[i].Equals(
+                        _terrainHeightmapBrushPath,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                selectedIndex = i + 1;
+                break;
+            }
+        }
+
+        if (ImGui.Combo(
+                "Heightmap brush##terrainHeightmapBrush",
+                ref selectedIndex,
+                labels,
+                labels.Length))
+        {
+            _terrainHeightmapBrushPath = selectedIndex == 0
+                ? ""
+                : brushPaths[selectedIndex - 1];
+            _terrainHeightmapBrushLoadedPath = "";
+            _terrainHeightmapBrush = null;
+        }
+
+        if (!string.Equals(
+                _terrainHeightmapBrushLoadedPath,
+                _terrainHeightmapBrushPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _terrainHeightmapBrushLoadedPath = _terrainHeightmapBrushPath;
+            _terrainHeightmapBrush = string.IsNullOrWhiteSpace(_terrainHeightmapBrushPath)
+                ? null
+                : assetService.LoadTerrainHeightmapBrush(_terrainHeightmapBrushPath);
+        }
+
+        if (_terrainHeightmapBrush == null)
+        {
+            ImGui.TextDisabled("Circular falloff is active.");
+            return;
+        }
+
+        uint previewTexture = assetService.RequestTerrainHeightmapBrushPreview(_terrainHeightmapBrushPath);
+        if (previewTexture != 0)
+        {
+            float maxSize = MathF.Min(128.0f, ImGui.GetContentRegionAvail().X);
+            float aspect = _terrainHeightmapBrush.Width / (float)_terrainHeightmapBrush.Height;
+            Vector2 previewSize = aspect >= 1.0f
+                ? new Vector2(maxSize, maxSize / aspect)
+                : new Vector2(maxSize * aspect, maxSize);
+            ImGui.Image(
+                (IntPtr)previewTexture,
+                previewSize,
+                new Vector2(0.0f, 1.0f),
+                new Vector2(1.0f, 0.0f));
+        }
+
+        ImGui.TextDisabled($"{_terrainHeightmapBrush.Width} x {_terrainHeightmapBrush.Height} • white raises, black has no effect");
+    }
+
+    private void BeginTerrainSculpt(
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (_terrainSculptActive || _selectedObject?.IsTerrain != true)
+            return;
+
+        try
+        {
+            string path = assetService.ResolveEditorAssetPath(_selectedObject.TerrainAssetPath!);
+            TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(_selectedObject, assetService);
+            if (terrain == null)
+                throw new InvalidOperationException("The selected terrain asset could not be loaded.");
+
+            _terrainSculptAssetPath = path;
+            _terrainSculptAsset = terrain;
+            _terrainSculptBefore = (ushort[])terrain.Samples.Clone();
+            _terrainSculptActive = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not begin terrain sculpt: {ex.Message}");
+            _terrainSculptAssetPath = "";
+            _terrainSculptAsset = null;
+            _terrainSculptBefore = null;
+            _terrainSculptActive = false;
+        }
+    }
+
+    private void EndTerrainSculpt(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        if (!_terrainSculptActive)
+            return;
+
+        try
+        {
+            TerrainAsset? terrain = _terrainSculptAsset;
+            if (terrain == null)
+                throw new InvalidOperationException("The active terrain sculpt has no loaded terrain asset.");
+
+            ushort[] after = (ushort[])terrain.Samples.Clone();
+            if (_terrainSculptBefore != null &&
+                !_terrainSculptBefore.AsSpan().SequenceEqual(after))
+            {
+                if (!sceneService.SaveTerrainAsset(_terrainSculptAssetPath))
+                    throw new IOException("The terrain asset could not be saved.");
+
+                sceneService.MarkModified(sceneService.Document.Serialize());
+                history.PushCommand(new TerrainSnapshotCommand(
+                    sceneService,
+                    assetService,
+                    _terrainSculptAssetPath,
+                    _terrainSculptBefore,
+                    after));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Could not finish terrain sculpt: {ex.Message}");
+        }
+        finally
+        {
+            _terrainSculptActive = false;
+            _terrainSculptAssetPath = "";
+            _terrainSculptAsset = null;
+            _terrainSculptBefore = null;
+        }
     }
 
     private void AddNewObject(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history, MapShapeType shape)
@@ -5977,6 +6661,7 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewport,
         Vector2 vpPos,
         Vector2 vpSize,
+        EditorSceneService sceneService,
         EditorAssetService assetService)
     {
         if (vpSize.X < 8.0f || vpSize.Y < 8.0f)
@@ -5986,7 +6671,225 @@ public unsafe class EditorUI : IDisposable
         DrawWorldAxes(drawList, viewport, vpPos, vpSize);
         DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, assetService);
         DrawBrushComponentOverlay(drawList, viewport, vpPos, vpSize);
+        DrawTerrainBrushPreview(drawList, viewport, vpPos, vpSize, sceneService, assetService);
         DrawOrientationWidget(drawList, viewport, vpPos, vpSize);
+    }
+
+    private void DrawTerrainBrushPreview(
+        ImDrawListPtr drawList,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (_currentMode != EditorMode.TerrainSculpt ||
+            _selectedObject?.IsTerrain != true ||
+            !ImGui.IsMouseHoveringRect(vpPos, vpPos + vpSize))
+            return;
+
+        TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(_selectedObject, assetService);
+        if (terrain == null || _selectedObject.Body == null)
+            return;
+
+        EditorGizmo.GetMouseRay(
+            ImGui.GetMousePos(),
+            viewport.Camera.ViewMatrix,
+            viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y),
+            vpPos,
+            vpSize,
+            out Vector3 rayOrigin,
+            out Vector3 rayDirection);
+
+        Vector3 terrainPosition = _selectedObject.Body.Position;
+        Quaternion terrainRotation = _selectedObject.Body.Rotation;
+        Quaternion inverseRotation = Quaternion.Inverse(terrainRotation);
+        Vector3 localOrigin = Vector3.Transform(rayOrigin - terrainPosition, inverseRotation);
+        Vector3 localDirection = Vector3.Normalize(Vector3.Transform(rayDirection, inverseRotation));
+        if (!terrain.Raycast(localOrigin, localDirection, out _, out Vector3 localHit))
+            return;
+
+        if (_terrainHeightmapBrush != null &&
+            !string.IsNullOrWhiteSpace(_terrainHeightmapBrushPath))
+        {
+            uint previewTexture = assetService.RequestTerrainHeightmapBrushPreview(_terrainHeightmapBrushPath);
+            if (previewTexture != 0)
+            {
+                DrawTerrainHeightmapBrushProjection(
+                    drawList,
+                    viewport,
+                    vpPos,
+                    vpSize,
+                    terrain,
+                    terrainPosition,
+                    terrainRotation,
+                    localHit,
+                    previewTexture);
+            }
+        }
+
+        const int segments = 48;
+        Span<Vector2> points = stackalloc Vector2[segments];
+        Span<bool> visible = stackalloc bool[segments];
+        float radius = MathF.Max(0.01f, _terrainBrushRadius);
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = i / (float)segments * MathF.Tau;
+            float localX = localHit.X + MathF.Cos(angle) * radius;
+            float localZ = localHit.Z + MathF.Sin(angle) * radius;
+            Vector3 localPoint = new(
+                localX,
+                terrain.GetInterpolatedHeight(localX, localZ) + 0.025f,
+                localZ);
+            Vector3 worldPoint = terrainPosition + Vector3.Transform(localPoint, terrainRotation);
+            visible[i] = TryWorldToScreen(worldPoint, viewport, vpPos, vpSize, out points[i]);
+        }
+
+        uint outline = ImGui.GetColorU32(new Vector4(0.02f, 0.02f, 0.02f, 0.95f));
+        uint brushColor = ImGui.GetColorU32(_terrainSculptLower
+            ? new Vector4(0.95f, 0.32f, 0.20f, 0.95f)
+            : new Vector4(0.35f, 1.00f, 0.35f, 0.95f));
+        for (int i = 0; i < segments; i++)
+        {
+            int next = (i + 1) % segments;
+            if (!visible[i] || !visible[next])
+                continue;
+
+            drawList.AddLine(points[i], points[next], outline, 4.0f);
+            drawList.AddLine(points[i], points[next], brushColor, 2.0f);
+        }
+
+        Vector3 localCenter = new(
+            localHit.X,
+            terrain.GetInterpolatedHeight(localHit.X, localHit.Z) + 0.035f,
+            localHit.Z);
+        Vector3 worldCenter = terrainPosition + Vector3.Transform(localCenter, terrainRotation);
+        if (TryWorldToScreen(worldCenter, viewport, vpPos, vpSize, out Vector2 center))
+        {
+            drawList.AddCircleFilled(center, 3.0f, brushColor, 12);
+            drawList.AddCircle(center, 6.0f, outline, 16, 1.5f);
+        }
+    }
+
+    private void DrawTerrainHeightmapBrushProjection(
+        ImDrawListPtr drawList,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        TerrainAsset terrain,
+        Vector3 terrainPosition,
+        Quaternion terrainRotation,
+        Vector3 localHit,
+        uint previewTexture)
+    {
+        const int cells = 20;
+        float radius = MathF.Max(0.01f, _terrainBrushRadius);
+        uint tint = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 0.72f));
+        IntPtr textureId = (IntPtr)previewTexture;
+
+        for (int z = 0; z < cells; z++)
+        {
+            float v0 = z / (float)cells;
+            float v1 = (z + 1) / (float)cells;
+            for (int x = 0; x < cells; x++)
+            {
+                float u0 = x / (float)cells;
+                float u1 = (x + 1) / (float)cells;
+                float centerU = (u0 + u1) * 0.5f;
+                float centerV = (v0 + v1) * 0.5f;
+                float circleX = centerU * 2.0f - 1.0f;
+                float circleZ = centerV * 2.0f - 1.0f;
+                if (circleX * circleX + circleZ * circleZ > 1.0f)
+                    continue;
+
+                Vector3 localP00 = GetTerrainBrushSurfacePoint(
+                    terrain,
+                    localHit,
+                    radius,
+                    u0,
+                    v0);
+                Vector3 localP10 = GetTerrainBrushSurfacePoint(
+                    terrain,
+                    localHit,
+                    radius,
+                    u1,
+                    v0);
+                Vector3 localP11 = GetTerrainBrushSurfacePoint(
+                    terrain,
+                    localHit,
+                    radius,
+                    u1,
+                    v1);
+                Vector3 localP01 = GetTerrainBrushSurfacePoint(
+                    terrain,
+                    localHit,
+                    radius,
+                    u0,
+                    v1);
+
+                Vector2 p00 = Vector2.Zero;
+                Vector2 p10 = Vector2.Zero;
+                Vector2 p11 = Vector2.Zero;
+                Vector2 p01 = Vector2.Zero;
+                bool visible =
+                    TryWorldToScreen(
+                        terrainPosition + Vector3.Transform(localP00, terrainRotation),
+                        viewport,
+                        vpPos,
+                        vpSize,
+                        out p00) &&
+                    TryWorldToScreen(
+                        terrainPosition + Vector3.Transform(localP10, terrainRotation),
+                        viewport,
+                        vpPos,
+                        vpSize,
+                        out p10) &&
+                    TryWorldToScreen(
+                        terrainPosition + Vector3.Transform(localP11, terrainRotation),
+                        viewport,
+                        vpPos,
+                        vpSize,
+                        out p11) &&
+                    TryWorldToScreen(
+                        terrainPosition + Vector3.Transform(localP01, terrainRotation),
+                        viewport,
+                        vpPos,
+                        vpSize,
+                        out p01);
+                if (!visible)
+                    continue;
+
+                // The texture is uploaded in top-to-bottom image order, while
+                // OpenGL UVs are bottom-to-top. Reversing V keeps the sculpt
+                // result and the projected preview oriented identically.
+                drawList.AddImageQuad(
+                    textureId,
+                    p00,
+                    p10,
+                    p11,
+                    p01,
+                    new Vector2(u0, 1.0f - v0),
+                    new Vector2(u1, 1.0f - v0),
+                    new Vector2(u1, 1.0f - v1),
+                    new Vector2(u0, 1.0f - v1),
+                    tint);
+            }
+        }
+    }
+
+    private static Vector3 GetTerrainBrushSurfacePoint(
+        TerrainAsset terrain,
+        Vector3 localHit,
+        float radius,
+        float u,
+        float v)
+    {
+        float localX = localHit.X + (u * 2.0f - 1.0f) * radius;
+        float localZ = localHit.Z + (v * 2.0f - 1.0f) * radius;
+        return new Vector3(
+            localX,
+            terrain.GetInterpolatedHeight(localX, localZ) + 0.04f,
+            localZ);
     }
 
     private void DrawBrushComponentOverlay(ImDrawListPtr drawList, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)
@@ -6335,6 +7238,36 @@ public unsafe class EditorUI : IDisposable
             var body = selObj.Body;
             var rotMatrix = Matrix4x4.CreateFromQuaternion(body.Rotation);
 
+            if (selObj.IsTerrain && !string.IsNullOrWhiteSpace(selObj.TerrainAssetPath))
+            {
+                try
+                {
+                    string terrainPath = assetService.ResolveEditorAssetPath(selObj.TerrainAssetPath);
+                    if (File.Exists(terrainPath))
+                    {
+                        TerrainAsset terrain = TerrainAsset.Load(terrainPath);
+                        terrain.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
+                        for (int i = 0; i < 8; i++)
+                        {
+                            Vector3 local = new(
+                                (i & 1) == 0 ? terrainMin.X : terrainMax.X,
+                                (i & 2) == 0 ? terrainMin.Y : terrainMax.Y,
+                                (i & 4) == 0 ? terrainMin.Z : terrainMax.Z);
+                            Vector3 world = body.Position + Vector3.Transform(local, rotMatrix);
+                            totalMin = Vector3.Min(totalMin, world);
+                            totalMax = Vector3.Max(totalMax, world);
+                        }
+
+                        hasBounds = true;
+                        continue;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"Terrain bounds could not be read for '{selObj.Id}': {ex.Message}");
+                }
+            }
+
             if (body.Shape == MapShapeType.Trimesh && selObj.IsModel && selObj.Model != null)
             {
                 string modelPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(assetService.FuseResPath, selObj.Model));
@@ -6420,6 +7353,12 @@ public unsafe class EditorUI : IDisposable
         EditorAssetService assetService)
     {
         obj.MaterialPath = string.IsNullOrWhiteSpace(materialPath) ? null : materialPath;
+        if (obj.IsTerrain)
+        {
+            sceneService.PopulateScene(assetService);
+            return;
+        }
+
         var entity = sceneService.Scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
         if (entity == null)
             return;

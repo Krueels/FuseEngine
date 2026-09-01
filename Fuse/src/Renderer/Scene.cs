@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Fuse.Math;
 using Fuse.Physics;
+using Fuse.Scene.Terrain;
 using JoltPhysicsSharp;
 
 namespace Fuse.Renderer;
@@ -47,6 +48,16 @@ public class Entity
     public Vector2 UvOffset { get; set; } = Vector2.Zero;
     public float UvRotation { get; set; } = 0f;
     public Mesh? Mesh { get; set; }
+    public TerrainLodSet? TerrainLod { get; set; }
+    /// <summary>
+    /// Editor-only override used by Blowtorch to keep this terrain chunk at
+    /// the highest render LOD. Runtime maps leave it disabled.
+    /// </summary>
+    public bool ForceTerrainLod0 { get; set; }
+    public float TerrainPixelError { get; set; } = 5.0f;
+    public string TerrainChunkGroupId { get; set; } = "";
+    public int TerrainChunkX { get; set; } = -1;
+    public int TerrainChunkZ { get; set; } = -1;
     /// <summary>True se esta entidade é dona única da Mesh (pode dar Dispose). False = mesh compartilhada/cacheada pelo AssetManager.</summary>
     public bool MeshOwnedByEntity { get; set; }
     public Texture? Texture { get; set; }
@@ -101,7 +112,7 @@ public class Entity
             return bounds;
         }
 
-        return Mesh?.LocalBounds ?? bounds;
+        return TerrainLod?.LocalBounds ?? Mesh?.LocalBounds ?? bounds;
     }
 
     public AABB GetWorldRenderBounds()
@@ -168,9 +179,12 @@ public class Scene
         // — o skybox usa GetMesh("cube") todo frame e o próximo mapa reutiliza o cache.
         foreach (var entity in _entities)
         {
-            if (entity.MeshOwnedByEntity)
+            if (entity.TerrainLod != null)
+                entity.TerrainLod.Dispose();
+            else if (entity.MeshOwnedByEntity)
                 entity.Mesh?.Dispose();
             entity.Mesh = null;
+            entity.TerrainLod = null;
             entity.MeshOwnedByEntity = false;
             entity.Body = null;
             entity.SkinnedModel = null;
@@ -287,6 +301,178 @@ public class Scene
     {
         _bodyEntityMap.TryGetValue(bodyId, out var entity);
         return entity;
+    }
+
+    public int UpdateTerrainLod(
+        Vector3 cameraPosition,
+        float viewportHeight,
+        float fieldOfViewDegrees,
+        bool orthographic = false,
+        float orthographicSize = 10f,
+        float defaultPixelError = 5f)
+    {
+        viewportHeight = MathF.Max(viewportHeight, 1f);
+        defaultPixelError = MathF.Max(defaultPixelError, 0.1f);
+        float perspectiveScale = orthographic
+            ? viewportHeight / MathF.Max(orthographicSize, 0.001f)
+            : viewportHeight / (2f * MathF.Tan(float.DegreesToRadians(
+                float.Clamp(fieldOfViewDegrees, 1f, 170f)) * 0.5f));
+
+        var terrainEntities = new List<Entity>();
+        var desiredLevels = new Dictionary<Entity, int>();
+        var terrainGroups = new Dictionary<
+            string,
+            Dictionary<(int X, int Z), Entity>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Entity entity in _entities)
+        {
+            TerrainLodSet? lod = entity.TerrainLod;
+            if (lod == null || lod.Meshes.Length <= 1)
+                continue;
+
+            Fuse.Math.BoundingSphere worldSphere = entity.GetWorldBoundingSphere();
+            float distance = orthographic
+                ? 1f
+                : MathF.Max(
+                    Vector3.Distance(cameraPosition, worldSphere.Center) - worldSphere.Radius,
+                    0.01f);
+            float pixelsPerWorldUnit = orthographic
+                ? perspectiveScale
+                : perspectiveScale / distance;
+            float pixelError = entity.TerrainPixelError > 0f
+                ? entity.TerrainPixelError
+                : defaultPixelError;
+
+            int desiredLevel = 0;
+            if (!entity.ForceTerrainLod0)
+            {
+                for (int level = lod.Meshes.Length - 1; level >= 0; level--)
+                {
+                    float projectedError = lod.GeometricErrors[level] * pixelsPerWorldUnit;
+                    if (projectedError <= pixelError)
+                    {
+                        desiredLevel = level;
+                        break;
+                    }
+                }
+            }
+
+            terrainEntities.Add(entity);
+            desiredLevels[entity] = desiredLevel;
+
+            if (!string.IsNullOrWhiteSpace(entity.TerrainChunkGroupId) &&
+                entity.TerrainChunkX >= 0 && entity.TerrainChunkZ >= 0)
+            {
+                if (!terrainGroups.TryGetValue(entity.TerrainChunkGroupId, out var group))
+                {
+                    group = new Dictionary<(int X, int Z), Entity>();
+                    terrainGroups.Add(entity.TerrainChunkGroupId, group);
+                }
+
+                group[(entity.TerrainChunkX, entity.TerrainChunkZ)] = entity;
+            }
+        }
+
+        Entity? FindNeighbor(Entity entity, int offsetX, int offsetZ)
+        {
+            if (!terrainGroups.TryGetValue(entity.TerrainChunkGroupId, out var group))
+                return null;
+
+            group.TryGetValue(
+                (entity.TerrainChunkX + offsetX, entity.TerrainChunkZ + offsetZ),
+                out Entity? neighbor);
+            return neighbor;
+        }
+
+        // Keep adjacent chunks within one LOD level. This lets the finer edge
+        // be stitched to the coarser edge without needing a vertical skirt.
+        bool adjusted;
+        do
+        {
+            adjusted = false;
+            foreach (Entity entity in terrainEntities)
+            {
+                TerrainLodSet lod = entity.TerrainLod!;
+                int currentLevel = desiredLevels[entity];
+                Entity?[] neighbors =
+                [
+                    FindNeighbor(entity, 0, -1),
+                    FindNeighbor(entity, 0, 1),
+                    FindNeighbor(entity, -1, 0),
+                    FindNeighbor(entity, 1, 0)
+                ];
+
+                foreach (Entity? neighbor in neighbors)
+                {
+                    if (neighbor?.TerrainLod == null || !desiredLevels.TryGetValue(neighbor, out int neighborLevel))
+                        continue;
+
+                    if (currentLevel < neighborLevel - 1)
+                    {
+                        int refinedNeighbor = System.Math.Min(
+                            currentLevel + 1,
+                            neighbor.TerrainLod.Meshes.Length - 1);
+                        if (refinedNeighbor < neighborLevel)
+                        {
+                            desiredLevels[neighbor] = refinedNeighbor;
+                            adjusted = true;
+                        }
+                    }
+                    else if (neighborLevel < currentLevel - 1)
+                    {
+                        int refinedCurrent = System.Math.Min(
+                            neighborLevel + 1,
+                            lod.Meshes.Length - 1);
+                        if (refinedCurrent < currentLevel)
+                        {
+                            desiredLevels[entity] = refinedCurrent;
+                            currentLevel = refinedCurrent;
+                            adjusted = true;
+                        }
+                    }
+                }
+            }
+        }
+        while (adjusted);
+
+        TerrainEdgeFlags GetStitchEdges(Entity entity)
+        {
+            TerrainEdgeFlags edges = TerrainEdgeFlags.None;
+            int level = desiredLevels[entity];
+
+            Entity? top = FindNeighbor(entity, 0, -1);
+            if (top != null && desiredLevels.TryGetValue(top, out int topLevel) && topLevel == level + 1)
+                edges |= TerrainEdgeFlags.Top;
+
+            Entity? bottom = FindNeighbor(entity, 0, 1);
+            if (bottom != null && desiredLevels.TryGetValue(bottom, out int bottomLevel) && bottomLevel == level + 1)
+                edges |= TerrainEdgeFlags.Bottom;
+
+            Entity? left = FindNeighbor(entity, -1, 0);
+            if (left != null && desiredLevels.TryGetValue(left, out int leftLevel) && leftLevel == level + 1)
+                edges |= TerrainEdgeFlags.Left;
+
+            Entity? right = FindNeighbor(entity, 1, 0);
+            if (right != null && desiredLevels.TryGetValue(right, out int rightLevel) && rightLevel == level + 1)
+                edges |= TerrainEdgeFlags.Right;
+
+            return edges;
+        }
+
+        int changed = 0;
+        foreach (Entity entity in terrainEntities)
+        {
+            TerrainLodSet lod = entity.TerrainLod!;
+            int desiredLevel = desiredLevels[entity];
+            TerrainEdgeFlags stitchEdges = GetStitchEdges(entity);
+            if (lod.TrySetState(desiredLevel, stitchEdges))
+            {
+                entity.Mesh = lod.CurrentMesh;
+                changed++;
+            }
+        }
+
+        return changed;
     }
 
     public void UpdateTransforms(PhysicsWorld world)

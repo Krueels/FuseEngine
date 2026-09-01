@@ -28,6 +28,7 @@ public sealed class AssetBrowserWindow
     public void OpenTexturePicker(Action<string> onSelected)
     {
         _texturePickerCallback = onSelected;
+        _geometryPickerCallback = null;
         _filter = 3;
         _search = "";
         _currentFolder = "";

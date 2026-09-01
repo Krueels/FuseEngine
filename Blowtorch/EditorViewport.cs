@@ -175,6 +175,12 @@ public unsafe class EditorViewport : IDisposable
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
         var frustum = new ViewFrustum(view * proj);
+        scene.UpdateTerrainLod(
+            _camera.Position,
+            _height,
+            _camera.FieldOfView,
+            _camera.IsOrthographic,
+            _camera.OrthoSize);
         LastVisibleEntityCount = 0;
         LastCulledEntityCount = 0;
 

@@ -5,6 +5,7 @@ using System.Numerics;
 using Fuse.Scene.Model;
 using Fuse.Renderer;
 using Fuse.Core;
+using Fuse.Scene.Terrain;
 using Brush = Fuse.Scene.Model.Brush;
 
 namespace Blowtorch;
@@ -18,6 +19,8 @@ public class EditorSceneService
     private ulong _cachedSnapshotRevision = ulong.MaxValue;
     private ulong _revision;
     private bool _isDirty;
+    private readonly Dictionary<string, (TerrainAsset Asset, DateTime LastWriteUtc, long Length)> _terrainCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _terrainEditorForceLod0 = new(StringComparer.OrdinalIgnoreCase);
 
     public MapDocument Document => _doc;
     public Scene Scene => _scene;
@@ -35,6 +38,7 @@ public class EditorSceneService
             _doc = CreateEmptyDocument();
             _scene = new Scene();
             _mapPath = "";
+            _terrainEditorForceLod0.Clear();
             _revision++;
             _isDirty = false;
             InvalidateSnapshot();
@@ -53,6 +57,8 @@ public class EditorSceneService
 
         _doc = document;
         _scene = new Scene();
+        _terrainCache.Clear();
+        _terrainEditorForceLod0.Clear();
         _mapPath = Path.GetFullPath(path);
         _revision++;
         _isDirty = false;
@@ -69,6 +75,8 @@ public class EditorSceneService
     public void SetDocument(MapDocument doc, bool markClean = false)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _terrainCache.Clear();
+        _terrainEditorForceLod0.Clear();
         SceneNameManager.EnsureAllUnique(_doc);
         _doc.ValidationWarnings.AddRange(SceneNameManager.ValidateAndRepairHierarchy(_doc));
         _revision++;
@@ -114,6 +122,7 @@ public class EditorSceneService
 
     public void PopulateScene(EditorAssetService assetService)
     {
+        _scene?.Clear();
         _scene = new Scene();
 
         foreach (var mapObj in _doc.Objects)
@@ -141,6 +150,52 @@ public class EditorSceneService
                     Enabled = mapObj.IsGloballyVisible(_doc),
                 };
                 _scene.AddLight(light);
+                continue;
+            }
+
+            if (mapObj.IsTerrain)
+            {
+                TerrainAsset? terrain = TryLoadTerrainAsset(mapObj, assetService);
+                if (terrain == null)
+                    continue;
+
+                Vector3 terrainPosition = mapObj.Body?.Position ?? Vector3.Zero;
+                Quaternion terrainRotation = mapObj.Body?.Rotation ?? Quaternion.Identity;
+                float terrainFriction = mapObj.Body?.Friction ?? 0.5f;
+                float terrainRestitution = mapObj.Body?.Restitution ?? 0.0f;
+
+                // Keep a document-level entity for hierarchy/selection. The
+                // renderable chunks are children identified by generated IDs.
+                Entity rootEntity = _scene.Add(null, mapObj.Id);
+                rootEntity.ParentId = mapObj.ParentId ?? "";
+                rootEntity.MapData = MapDocument.SerializeObject(mapObj);
+                rootEntity.Visible = mapObj.IsGloballyVisible(_doc);
+                rootEntity.Transform.Position = terrainPosition;
+                rootEntity.Transform.Rotation = terrainRotation;
+
+                TerrainSceneBuilder.AddToScene(
+                    _scene,
+                    terrain,
+                    mapObj.Id,
+                    terrainPosition,
+                    terrainRotation,
+                    rootEntity.Visible,
+                    mapObj.TerrainChunkQuads,
+                    mapObj.MaterialPath ?? "",
+                    mapObj.MaterialSlots,
+                    mapObj.Texture ?? "",
+                    mapObj.UvScale,
+                    mapObj.UvOffset,
+                    mapObj.UvRotation,
+                    assetService.AssetManager,
+                    null,
+                    null,
+                    mapObj.ParentId ?? "",
+                    terrainFriction,
+                    terrainRestitution,
+                    mapObj.TerrainPixelError,
+                    mapObj.TerrainCollisionLod,
+                    IsTerrainEditorForceLod0(mapObj.Id));
                 continue;
             }
 
@@ -222,6 +277,156 @@ public class EditorSceneService
             entity.InitialRelativePosition = Vector3.Transform(globalOffset, inverseParentRotation);
             entity.InitialRelativeRotation = Quaternion.Normalize(inverseParentRotation * entity.Transform.Rotation);
         }
+    }
+
+    public TerrainAsset? TryLoadTerrainAsset(MapObject mapObj, EditorAssetService assetService)
+    {
+        if (!mapObj.IsTerrain)
+            return null;
+
+        try
+        {
+            string path = assetService.ResolveEditorAssetPath(mapObj.TerrainAssetPath!);
+            if (!File.Exists(path))
+            {
+                Logger.Warn($"Terrain asset not found: {path}");
+                return null;
+            }
+
+            FileInfo fileInfo = new(path);
+            DateTime lastWriteUtc = fileInfo.LastWriteTimeUtc;
+            long length = fileInfo.Length;
+            if (_terrainCache.TryGetValue(path, out var cached) &&
+                cached.LastWriteUtc == lastWriteUtc &&
+                cached.Length == length)
+            {
+                return cached.Asset;
+            }
+
+            TerrainAsset loaded = TerrainAsset.Load(path);
+            _terrainCache[path] = (loaded, lastWriteUtc, length);
+            return loaded;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Terrain asset could not be loaded for '{mapObj.Id}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public bool IsTerrainEditorForceLod0(string terrainId) =>
+        !string.IsNullOrWhiteSpace(terrainId) &&
+        _terrainEditorForceLod0.Contains(terrainId);
+
+    public bool SetTerrainEditorForceLod0(string terrainId, bool enabled)
+    {
+        if (string.IsNullOrWhiteSpace(terrainId))
+            return false;
+
+        return enabled
+            ? _terrainEditorForceLod0.Add(terrainId)
+            : _terrainEditorForceLod0.Remove(terrainId);
+    }
+
+    public bool SculptTerrainAtRay(
+        MapObject mapObj,
+        EditorAssetService assetService,
+        Vector3 rayOrigin,
+        Vector3 rayDirection,
+        float radius,
+        float strength,
+        bool lower,
+        TerrainHeightmapBrush? heightmapBrush = null)
+    {
+        return ApplyTerrainToolAtRay(
+            mapObj,
+            assetService,
+            rayOrigin,
+            rayDirection,
+            TerrainSculptTool.RaiseLower,
+            radius,
+            strength,
+            lower,
+            0.0f,
+            0.25f,
+            0,
+            heightmapBrush);
+    }
+
+    public bool ApplyTerrainToolAtRay(
+        MapObject mapObj,
+        EditorAssetService assetService,
+        Vector3 rayOrigin,
+        Vector3 rayDirection,
+        TerrainSculptTool tool,
+        float radius,
+        float strength,
+        bool lower,
+        float targetHeight,
+        float noiseScale,
+        int noiseSeed,
+        TerrainHeightmapBrush? heightmapBrush = null)
+    {
+        TerrainAsset? terrain = TryLoadTerrainAsset(mapObj, assetService);
+        if (terrain == null)
+            return false;
+
+        Vector3 terrainPosition = mapObj.Body?.Position ?? Vector3.Zero;
+        Quaternion terrainRotation = mapObj.Body?.Rotation ?? Quaternion.Identity;
+        Quaternion inverseRotation = Quaternion.Inverse(terrainRotation);
+        Vector3 localOrigin = Vector3.Transform(rayOrigin - terrainPosition, inverseRotation);
+        Vector3 localDirection = Vector3.Normalize(Vector3.Transform(rayDirection, inverseRotation));
+
+        if (!terrain.Raycast(localOrigin, localDirection, out _, out Vector3 localHit))
+            return false;
+
+        if (!terrain.ApplyBrush(
+                tool,
+                localHit,
+                radius,
+                strength,
+                lower,
+                targetHeight,
+                noiseScale,
+                noiseSeed,
+                heightmapBrush?.Samples,
+                heightmapBrush?.Width ?? 0,
+                heightmapBrush?.Height ?? 0))
+            return false;
+
+        TerrainSceneBuilder.RefreshTerrainGeometry(
+            _scene,
+            terrain,
+            mapObj.Id,
+            mapObj.TerrainChunkQuads,
+            localHit,
+            radius);
+        return true;
+    }
+
+    public bool SaveTerrainAsset(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (!_terrainCache.TryGetValue(fullPath, out var cached))
+            return false;
+
+        try
+        {
+            cached.Asset.Save(fullPath);
+            FileInfo fileInfo = new(fullPath);
+            _terrainCache[fullPath] = (cached.Asset, fileInfo.LastWriteTimeUtc, fileInfo.Length);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Terrain asset could not be saved: {ex.Message}");
+            return false;
+        }
+    }
+
+    public void InvalidateTerrainAsset(string path)
+    {
+        _terrainCache.Remove(Path.GetFullPath(path));
     }
 
     public bool SaveMap()

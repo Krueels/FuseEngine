@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Fuse.Scene.Model;
+using Fuse.Scene.Terrain;
 
 namespace Blowtorch;
 
@@ -43,6 +44,53 @@ public class SnapshotCommand : ICommand
             _assetService.ClearBrushMeshes();
             _sceneService.SetDocument(doc);
             _sceneService.PopulateScene(_assetService);
+        }
+    }
+}
+
+public sealed class TerrainSnapshotCommand : ICommand
+{
+    private readonly EditorSceneService _sceneService;
+    private readonly EditorAssetService _assetService;
+    private readonly string _assetPath;
+    private readonly ushort[] _before;
+    private readonly ushort[] _after;
+
+    public TerrainSnapshotCommand(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        string assetPath,
+        ushort[] before,
+        ushort[] after)
+    {
+        _sceneService = sceneService;
+        _assetService = assetService;
+        _assetPath = assetPath;
+        _before = (ushort[])before.Clone();
+        _after = (ushort[])after.Clone();
+    }
+
+    public void Execute() => Restore(_after);
+
+    public void Undo() => Restore(_before);
+
+    private void Restore(ushort[] samples)
+    {
+        try
+        {
+            TerrainAsset terrain = TerrainAsset.Load(_assetPath);
+            if (terrain.Samples.Length != samples.Length)
+                return;
+
+            Array.Copy(samples, terrain.Samples, samples.Length);
+            terrain.Save(_assetPath);
+            _sceneService.InvalidateTerrainAsset(_assetPath);
+            _sceneService.PopulateScene(_assetService);
+            _sceneService.MarkModified(_sceneService.Document.Serialize());
+        }
+        catch (Exception ex)
+        {
+            Fuse.Core.Logger.Warn($"Terrain undo/redo failed: {ex.Message}");
         }
     }
 }

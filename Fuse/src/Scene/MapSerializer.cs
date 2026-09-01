@@ -5,6 +5,7 @@ using Fuse.Core;
 using Fuse.Physics;
 using Fuse.Scene.Model;
 using Fuse.Scene.Geometry;
+using Fuse.Scene.Terrain;
 
 namespace Fuse.Scene;
 
@@ -31,6 +32,21 @@ public static class MapSerializer
 
     private static JsonArray Vec3ToJson(Vector3 v) => new(v.X, v.Y, v.Z);
     private static JsonArray QuatToJson(Quaternion q) => new(q.W, q.X, q.Y, q.Z);
+
+    private static string ResolveTerrainPath(string path, string? resPath)
+    {
+        string normalized = path.Trim().Replace('\\', '/');
+        if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+
+        if (Path.IsPathRooted(normalized))
+            return Path.GetFullPath(normalized);
+
+        string root = resPath ?? Fuse.ResPath.Path;
+        return Path.GetFullPath(Path.Combine(
+            root,
+            normalized.Replace('/', Path.DirectorySeparatorChar)));
+    }
 
     private static string ShapeTypeToString(RigidBody.ShapeType t) => t switch
     {
@@ -335,7 +351,132 @@ public static class MapSerializer
                 ? (string)idNode! : "unnamed";
 
             bool isModel = obj.TryGetPropertyValue("model", out var modelNode);
-            bool isBrush = obj.TryGetPropertyValue("type", out var typeNode) && (string)typeNode! == "brush";
+            bool isBrush = obj.TryGetPropertyValue("type", out var typeNode) && string.Equals((string?)typeNode, "brush", StringComparison.OrdinalIgnoreCase);
+            bool isTerrain = obj.TryGetPropertyValue("type", out var terrainTypeNode) && string.Equals((string?)terrainTypeNode, "terrain", StringComparison.OrdinalIgnoreCase);
+            string terrainAssetPath = obj.TryGetPropertyValue("terrain_asset", out var terrainAssetNode) ? (string?)terrainAssetNode ?? "" : "";
+            isTerrain |= !string.IsNullOrWhiteSpace(terrainAssetPath);
+
+            string terrainMaterialPath = obj.TryGetPropertyValue("material", out var terrainMaterialNode)
+                ? (string?)terrainMaterialNode ?? "" : "";
+            string terrainTexturePath = obj.TryGetPropertyValue("texture", out var terrainTextureNode)
+                ? (string?)terrainTextureNode ?? "" : "";
+
+            if (isTerrain)
+            {
+                if (string.IsNullOrWhiteSpace(terrainAssetPath))
+                {
+                    Logger.Warn($"Map load: terrain '{id}' has no terrain_asset path.");
+                    processedEntities++;
+                    onProgress?.Invoke((float)processedEntities / totalEntities, $"Skipping {id}...");
+                    continue;
+                }
+
+                string fullTerrainPath = ResolveTerrainPath(terrainAssetPath, resPath);
+                if (!File.Exists(fullTerrainPath))
+                {
+                    Logger.Warn($"Map load: terrain asset not found '{fullTerrainPath}' for '{id}'.");
+                    processedEntities++;
+                    onProgress?.Invoke((float)processedEntities / totalEntities, $"Skipping {id}...");
+                    continue;
+                }
+
+                try
+                {
+                    TerrainAsset terrain = TerrainAsset.Load(fullTerrainPath);
+                    Vector3 terrainPosition = Vector3.Zero;
+                    Quaternion terrainRotation = Quaternion.Identity;
+                    float terrainFriction = 0.5f;
+                    float terrainRestitution = 0.0f;
+
+                    if (obj.TryGetPropertyValue("body", out var terrainBodyNode) &&
+                        terrainBodyNode is JsonObject terrainBody)
+                    {
+                        if (terrainBody.TryGetPropertyValue("position", out var terrainPositionNode))
+                            terrainPosition = Vec3FromJson(terrainPositionNode!.AsArray());
+                        if (terrainBody.TryGetPropertyValue("rotation", out var terrainRotationNode))
+                            terrainRotation = QuatFromJson(terrainRotationNode!.AsArray());
+                        if (terrainBody.TryGetPropertyValue("friction", out var terrainFrictionNode))
+                            terrainFriction = (float)terrainFrictionNode!;
+                        if (terrainBody.TryGetPropertyValue("restitution", out var terrainRestitutionNode))
+                            terrainRestitution = (float)terrainRestitutionNode!;
+                    }
+
+                    int terrainChunkQuads = obj.TryGetPropertyValue("terrain_chunk_quads", out var terrainChunkNode)
+                        ? System.Math.Max(1, (int)terrainChunkNode!)
+                        : TerrainSceneBuilder.DefaultChunkQuads;
+                    Vector2 terrainUvScale = Vector2.One;
+                    Vector2 terrainUvOffset = Vector2.Zero;
+                    float terrainUvRotation = 0f;
+                    if (obj.TryGetPropertyValue("uv_scale", out var terrainUvNode) &&
+                        terrainUvNode is JsonArray terrainUvArray &&
+                        terrainUvArray.Count >= 2)
+                    {
+                        terrainUvScale = new Vector2(
+                            (float)terrainUvArray[0]!,
+                            (float)terrainUvArray[1]!);
+                    }
+                    if (obj.TryGetPropertyValue("uv_offset", out var terrainUvOffsetNode) &&
+                        terrainUvOffsetNode is JsonArray terrainUvOffsetArray &&
+                        terrainUvOffsetArray.Count >= 2)
+                    {
+                        terrainUvOffset = new Vector2(
+                            (float)terrainUvOffsetArray[0]!,
+                            (float)terrainUvOffsetArray[1]!);
+                    }
+                    if (obj.TryGetPropertyValue("uv_rotation", out var terrainUvRotationNode))
+                        terrainUvRotation = (float)terrainUvRotationNode!;
+                    var terrainMaterialPaths = new List<string>();
+                    if (obj.TryGetPropertyValue("material_slots", out var terrainMaterialSlotsNode) &&
+                        terrainMaterialSlotsNode is JsonArray terrainMaterialSlots)
+                    {
+                        foreach (JsonNode? slotNode in terrainMaterialSlots)
+                        {
+                            if (slotNode != null)
+                                terrainMaterialPaths.Add(slotNode.GetValue<string>());
+                        }
+                    }
+                    bool terrainVisible = IsGloballyVisible(id);
+
+                    int chunkCount = TerrainSceneBuilder.AddToScene(
+                        scene,
+                        terrain,
+                        id,
+                        terrainPosition,
+                        terrainRotation,
+                        terrainVisible,
+                        terrainChunkQuads,
+                        terrainMaterialPath,
+                        terrainMaterialPaths,
+                        terrainTexturePath,
+                        terrainUvScale,
+                        terrainUvOffset,
+                        terrainUvRotation,
+                        assets,
+                        physics,
+                        createdBodies,
+                        "",
+                        terrainFriction,
+                        terrainRestitution,
+                        obj.TryGetPropertyValue("terrain_pixel_error", out var terrainPixelErrorNode)
+                            ? MathF.Max(0.1f, (float)terrainPixelErrorNode!)
+                            : TerrainSceneBuilder.DefaultPixelError,
+                        obj.TryGetPropertyValue("terrain_collision_lod", out var terrainCollisionLodNode)
+                            ? System.Math.Max(0, (int)terrainCollisionLodNode!)
+                            : TerrainSceneBuilder.DefaultCollisionLod);
+
+                    if (chunkCount == 0)
+                        Logger.Warn($"Map load: terrain '{id}' generated no chunks.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Map load: terrain '{terrainAssetPath}' failed for '{id}': {ex.Message}");
+                }
+
+                processedEntities++;
+                onProgress?.Invoke((float)processedEntities / totalEntities, $"Processing {id}...");
+                continue;
+            }
+
             string meshKey = isModel
                 ? (string)modelNode!
                 : (obj.TryGetPropertyValue("mesh", out var meshNode)

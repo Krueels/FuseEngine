@@ -1,3 +1,5 @@
+using Fuse.Scene.Terrain;
+
 namespace Fuse.Scene.Model;
 
 public class MapObject
@@ -8,6 +10,11 @@ public class MapObject
 
     public string? Mesh { get; set; }
     public string? Model { get; set; }
+    public string? TerrainAssetPath { get; set; }
+    public int TerrainChunkQuads { get; set; } = 32;
+    public float TerrainPixelError { get; set; } = 5.0f;
+    public int TerrainCollisionLod { get; set; } = TerrainSceneBuilder.DefaultCollisionLod;
+
     /// <summary>Optional CPU geometry graph asset, stored relative to res/.</summary>
     public string? GeometryGraphPath { get; set; }
     public System.Numerics.Vector3 ModelScale { get; set; } = System.Numerics.Vector3.One;
@@ -38,6 +45,7 @@ public class MapObject
 
     public bool IsLight => !string.IsNullOrEmpty(LightType);
     public bool IsModel => !string.IsNullOrEmpty(Model);
+    public bool IsTerrain => !string.IsNullOrWhiteSpace(TerrainAssetPath);
 
     public bool IsGloballyVisible(MapDocument doc)
     {

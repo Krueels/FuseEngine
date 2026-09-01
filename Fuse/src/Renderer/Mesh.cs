@@ -26,6 +26,7 @@ public unsafe class Mesh : IDisposable
     private uint _ebo;
     private uint _lineEbo;
     private uint _indexCount;
+    private uint _vertexCount;
     private uint _lineIndexCount;
     private readonly MeshPart[] _parts;
 
@@ -34,8 +35,8 @@ public unsafe class Mesh : IDisposable
     public uint Ebo => _ebo;
     public uint IndexCount => _indexCount;
     public IReadOnlyList<MeshPart> Parts => _parts;
-    public AABB LocalBounds { get; }
-    public BoundingSphere LocalBoundingSphere { get; }
+    public AABB LocalBounds { get; private set; }
+    public BoundingSphere LocalBoundingSphere { get; private set; }
 
     public bool HasLineBuffer => _lineEbo != 0;
 
@@ -44,6 +45,7 @@ public unsafe class Mesh : IDisposable
         _gl = gl;
         Vertex[] preparedVertices = EnsureTangents(vertices, indices);
         _indexCount = (uint)indices.Length;
+        _vertexCount = (uint)preparedVertices.Length;
         _parts = parts is { Length: > 0 }
             ? parts
             : [new MeshPart(0, _indexCount, 0)];
@@ -166,6 +168,32 @@ public unsafe class Mesh : IDisposable
             vertices[i].Bitangent = bitangent;
         }
         return vertices;
+    }
+
+    public void UpdateVertices(Vertex[] vertices, uint[] indices)
+    {
+        if ((uint)vertices.Length != _vertexCount)
+            throw new ArgumentException("The updated mesh must contain the same vertex count.", nameof(vertices));
+
+        Vertex[] preparedVertices = EnsureTangents(vertices, indices);
+        Span<Vector3> positions = preparedVertices.Length <= 512
+            ? stackalloc Vector3[preparedVertices.Length]
+            : new Vector3[preparedVertices.Length];
+        for (int i = 0; i < preparedVertices.Length; i++)
+            positions[i] = preparedVertices[i].Position;
+        LocalBounds = AABB.FromPoints(positions);
+        LocalBoundingSphere = BoundingSphere.FromAABB(LocalBounds);
+
+        fixed (Vertex* vPtr = preparedVertices)
+        {
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+            _gl.BufferSubData(
+                BufferTargetARB.ArrayBuffer,
+                0,
+                (nuint)(preparedVertices.Length * sizeof(Vertex)),
+                vPtr);
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+        }
     }
 
     public void Dispose()
