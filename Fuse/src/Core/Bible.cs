@@ -33,6 +33,7 @@ public static class Bible
     // Textures - Environment
     public const string Skybox = "Skybox/skybox_1.png";
     public const string Crate = "dev_measurecrate01.bmp";
+    public const string OceanNormal = "ocean_normal.png";
 
     // Textures - Decals
     public const string DecalBulletHoleAlbedo = "decals/decal_bullet_hole.png";

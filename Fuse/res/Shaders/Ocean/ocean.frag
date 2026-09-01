@@ -34,6 +34,13 @@ uniform vec3 uFoamColor;
 uniform float uFoamStrength;
 uniform float uFoamDepth;
 uniform float uWaveAmplitude;
+uniform float uWaveTime;
+uniform vec2 uWaveDirection;
+uniform sampler2D uOceanNormalMap;
+uniform bool uUseOceanNormalMap;
+uniform float uOceanNormalMapStrength;
+uniform float uOceanNormalMapScale;
+uniform float uOceanNormalMapDistortion;
 uniform int uDebugView;
 uniform bool uSceneIsSrgb;
 uniform bool uOutputSrgb;
@@ -66,6 +73,78 @@ vec3 SampleSkyReflection(vec3 direction)
     return mix(uSkyHorizonColor, uSkyZenithColor, (height - 0.5) * 2.0);
 }
 
+vec3 DecodeOceanNormal(vec3 encoded)
+{
+    vec3 normal = encoded * 2.0 - 1.0;
+    normal.y = max(normal.y, 0.05);
+    return normalize(normal);
+}
+
+vec2 OceanNormalMapWarp(vec2 worldPosition)
+{
+    float distortion = max(uOceanNormalMapDistortion, 0.0);
+    vec2 safeDirection = length(uWaveDirection) > 0.001
+        ? normalize(uWaveDirection)
+        : vec2(1.0, 0.0);
+    vec2 baseCoordinates = worldPosition *
+        max(uOceanNormalMapScale, 0.001);
+    vec2 spectralWarp = vWaveDisplacement.xz *
+        max(uOceanNormalMapScale, 0.001) * distortion;
+    vec2 slopeWarp = vec2(vWaveSlope.y, -vWaveSlope.x) *
+        distortion * 0.08;
+    float phaseA = dot(baseCoordinates, vec2(1.31, -0.77)) +
+        uWaveTime * 0.43;
+    float phaseB = dot(baseCoordinates, vec2(-0.64, 1.17)) -
+        uWaveTime * 0.31;
+    vec2 domainWarp = vec2(sin(phaseA), cos(phaseB)) *
+        (0.028 * distortion);
+    vec2 flow = safeDirection * uWaveTime * 0.006;
+    return spectralWarp + slopeWarp + domainWarp + flow;
+}
+
+vec3 ApplyOceanNormalDetail(vec3 baseNormal)
+{
+    if (!uUseOceanNormalMap || uOceanNormalMapStrength <= 0.001)
+        return baseNormal;
+
+    float scale = max(uOceanNormalMapScale, 0.001);
+    vec2 worldPosition = vWorldPosition.xz;
+    vec2 baseUv = worldPosition * scale;
+    vec2 warp = OceanNormalMapWarp(worldPosition);
+    vec2 flow = length(uWaveDirection) > 0.001
+        ? normalize(uWaveDirection) * uWaveTime * 0.006
+        : vec2(uWaveTime * 0.006, 0.0);
+
+    // Two incommensurate samples break up the texture's own repetition. The
+    // warp follows the simulated displacement and a slow procedural field, so
+    // this adds fine surface detail without inventing a second macro wave.
+    vec3 normalA = DecodeOceanNormal(texture(
+        uOceanNormalMap,
+        baseUv + warp).rgb);
+    vec3 normalB = DecodeOceanNormal(texture(
+        uOceanNormalMap,
+        baseUv * 1.71 - flow * 0.63 + warp.yx * 0.72 +
+        vec2(0.37, -0.23)).rgb);
+    vec3 detailTangent = normalize(normalA + normalB);
+
+    vec3 tangentX = vec3(1.0, 0.0, 0.0) -
+        baseNormal * baseNormal.x;
+    if (length(tangentX) < 0.001)
+        tangentX = vec3(0.0, 0.0, 1.0) -
+            baseNormal * baseNormal.z;
+    tangentX = normalize(tangentX);
+    vec3 tangentZ = normalize(cross(tangentX, baseNormal));
+    vec3 detailWorld = normalize(
+        tangentX * detailTangent.x +
+        baseNormal * detailTangent.y +
+        tangentZ * detailTangent.z);
+
+    return normalize(mix(
+        baseNormal,
+        detailWorld,
+        clamp(uOceanNormalMapStrength, 0.0, 1.0)));
+}
+
 void main()
 {
     vec3 normal = normalize(vWorldNormal);
@@ -74,6 +153,7 @@ void main()
     // towards the camera for a stable Fresnel response on both sides.
     if (dot(normal, viewDirection) < 0.0)
         normal = -normal;
+    normal = ApplyOceanNormalDetail(normal);
 
     imageStore(
         uWaterSurfaceDataImage,

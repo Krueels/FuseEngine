@@ -24,6 +24,10 @@ public sealed class OceanSettings
     public float SmallWaveLength { get; set; } = 0.75f;
     public int SpectrumSeed { get; set; } = 1337;
     public int DebugView { get; set; }
+    public bool NormalMapEnabled { get; set; } = true;
+    public float NormalMapStrength { get; set; } = 0.32f;
+    public float NormalMapScale { get; set; } = 0.035f;
+    public float NormalMapDistortion { get; set; } = 0.75f;
 
     public Vector3 ShallowColor { get; set; } = new(0.035f, 0.28f, 0.30f);
     public Vector3 DeepColor { get; set; } = new(0.005f, 0.045f, 0.075f);
@@ -56,6 +60,10 @@ public sealed class OceanSettings
         SmallWaveLength = SmallWaveLength,
         SpectrumSeed = SpectrumSeed,
         DebugView = DebugView,
+        NormalMapEnabled = NormalMapEnabled,
+        NormalMapStrength = NormalMapStrength,
+        NormalMapScale = NormalMapScale,
+        NormalMapDistortion = NormalMapDistortion,
         ShallowColor = ShallowColor,
         DeepColor = DeepColor,
         FoamColor = FoamColor,
@@ -87,6 +95,10 @@ public sealed class OceanSettings
         ["small_wave_length"] = SmallWaveLength,
         ["spectrum_seed"] = SpectrumSeed,
         ["debug_view"] = DebugView,
+        ["normal_map_enabled"] = NormalMapEnabled,
+        ["normal_map_strength"] = NormalMapStrength,
+        ["normal_map_scale"] = NormalMapScale,
+        ["normal_map_distortion"] = NormalMapDistortion,
         ["shallow_color"] = Vec3ToJson(ShallowColor),
         ["deep_color"] = Vec3ToJson(DeepColor),
         ["foam_color"] = Vec3ToJson(FoamColor),
@@ -128,6 +140,14 @@ public sealed class OceanSettings
             ReadFloat(source, "small_wave_length", settings.SmallWaveLength), 0.05f, 20.0f);
         settings.SpectrumSeed = ReadInt(source, "spectrum_seed", settings.SpectrumSeed);
         settings.DebugView = System.Math.Clamp(ReadInt(source, "debug_view", settings.DebugView), 0, 3);
+        settings.NormalMapEnabled = ReadBool(
+            source, "normal_map_enabled", settings.NormalMapEnabled);
+        settings.NormalMapStrength = System.Math.Clamp(
+            ReadFloat(source, "normal_map_strength", settings.NormalMapStrength), 0.0f, 1.0f);
+        settings.NormalMapScale = System.Math.Clamp(
+            ReadFloat(source, "normal_map_scale", settings.NormalMapScale), 0.001f, 0.25f);
+        settings.NormalMapDistortion = System.Math.Clamp(
+            ReadFloat(source, "normal_map_distortion", settings.NormalMapDistortion), 0.0f, 2.0f);
 
         settings.ShallowColor = ReadVec3(source, "shallow_color", settings.ShallowColor);
         settings.DeepColor = ReadVec3(source, "deep_color", settings.DeepColor);

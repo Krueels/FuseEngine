@@ -4723,6 +4723,58 @@ public unsafe class EditorUI : IDisposable
                 Undo.TrackItem(_frameBeginState);
 
                 ImGui.SeparatorText("Surface");
+                ImGui.TextDisabled("Normal detail: Textures/ocean_normal.png");
+                bool normalMapEnabled = ocean.NormalMapEnabled;
+                if (ImGui.Checkbox("Normal map##oceanNormalMapEnabled", ref normalMapEnabled))
+                {
+                    ocean.NormalMapEnabled = normalMapEnabled;
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                if (ocean.NormalMapEnabled)
+                {
+                    float normalMapStrength = ocean.NormalMapStrength;
+                    if (ImGui.SliderFloat(
+                            "Normal strength##oceanNormalMapStrength",
+                            ref normalMapStrength,
+                            0.0f,
+                            1.0f,
+                            "%.2f"))
+                    {
+                        ocean.NormalMapStrength = Math.Clamp(normalMapStrength, 0.0f, 1.0f);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float normalMapScale = ocean.NormalMapScale;
+                    if (ImGui.DragFloat(
+                            "Normal scale##oceanNormalMapScale",
+                            ref normalMapScale,
+                            0.001f,
+                            0.001f,
+                            0.25f,
+                            "%.3f"))
+                    {
+                        ocean.NormalMapScale = Math.Clamp(normalMapScale, 0.001f, 0.25f);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+
+                    float normalMapDistortion = ocean.NormalMapDistortion;
+                    if (ImGui.SliderFloat(
+                            "Normal distortion##oceanNormalMapDistortion",
+                            ref normalMapDistortion,
+                            0.0f,
+                            2.0f,
+                            "%.2f"))
+                    {
+                        ocean.NormalMapDistortion = Math.Clamp(normalMapDistortion, 0.0f, 2.0f);
+                        oceanSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+                }
+
                 Vector3 shallowColor = ocean.ShallowColor;
                 if (ImGui.ColorEdit3("Shallow color##oceanShallowColor", ref shallowColor, ImGuiColorEditFlags.Float))
                 {

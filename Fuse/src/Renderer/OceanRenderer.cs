@@ -18,6 +18,7 @@ public sealed unsafe class OceanRenderer : IDisposable
     private const int WaveSimulationResolution = 128;
     private const int WaveSurfaceTextureUnit0 = 10;
     private const int WaveSlopeTextureUnit0 = 13;
+    private const int OceanNormalTextureUnit = 16;
     private const float TwoPi = 6.28318530718f;
     private const float Gravity = 9.81f;
 
@@ -35,6 +36,7 @@ public sealed unsafe class OceanRenderer : IDisposable
     private readonly ComputeShader _spectrumCompute;
     private readonly ComputeShader _fftCompute;
     private readonly ComputeShader _resolveCompute;
+    private readonly Texture _oceanNormalTexture;
     private readonly FullscreenQuad _quad;
     private readonly WaveCascade?[] _cascades = new WaveCascade?[CascadeCount];
     private Mesh? _mesh;
@@ -120,6 +122,10 @@ public sealed unsafe class OceanRenderer : IDisposable
         _resolveCompute = ComputeShader.FromFile(
             gl,
             Bible.Shader(Bible.OceanResolveCompute));
+        _oceanNormalTexture = new Texture(
+            gl,
+            Bible.Tex(Bible.OceanNormal),
+            TextureColorSpace.Data);
 
         EnsureMesh(128);
     }
@@ -311,6 +317,19 @@ public sealed unsafe class OceanRenderer : IDisposable
         _surfaceShader.SetVec3("uFoamColor", settings.FoamColor);
         _surfaceShader.SetFloat("uFoamStrength", settings.FoamStrength);
         _surfaceShader.SetFloat("uFoamDepth", settings.FoamDepth);
+        _surfaceShader.SetInt("uOceanNormalMap", OceanNormalTextureUnit);
+        _surfaceShader.SetBool(
+            "uUseOceanNormalMap",
+            settings.NormalMapEnabled && _oceanNormalTexture.ID != 0);
+        _surfaceShader.SetFloat(
+            "uOceanNormalMapStrength",
+            System.Math.Clamp(settings.NormalMapStrength, 0.0f, 1.0f));
+        _surfaceShader.SetFloat(
+            "uOceanNormalMapScale",
+            System.Math.Clamp(settings.NormalMapScale, 0.001f, 0.25f));
+        _surfaceShader.SetFloat(
+            "uOceanNormalMapDistortion",
+            System.Math.Clamp(settings.NormalMapDistortion, 0.0f, 2.0f));
         _surfaceShader.SetBool("uSceneIsSrgb", sceneIsSrgb);
         _surfaceShader.SetBool("uOutputSrgb", outputSrgb);
 
@@ -322,6 +341,9 @@ public sealed unsafe class OceanRenderer : IDisposable
         _gl.BindTexture(TextureTarget.Texture2D, _sceneCopyDepth);
 
         BindWaveSimulationTextures();
+        _gl.ActiveTexture(TextureUnit.Texture0 + OceanNormalTextureUnit);
+        _gl.BindTexture(TextureTarget.Texture2D, _oceanNormalTexture.ID);
+        _gl.ActiveTexture(TextureUnit.Texture0);
 
         // The fragment shader writes depth, coverage and the same normal that
         // it uses for shading into this sidecar image.
@@ -347,6 +369,9 @@ public sealed unsafe class OceanRenderer : IDisposable
             MemoryBarrierMask.ShaderImageAccessBarrierBit |
             MemoryBarrierMask.TextureFetchBarrierBit);
         _gl.BindImageTexture(0, 0, 0, false, 0, GLEnum.WriteOnly, GLEnum.Rgba16f);
+        _gl.ActiveTexture(TextureUnit.Texture0 + OceanNormalTextureUnit);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        _gl.ActiveTexture(TextureUnit.Texture0);
     }
 
     private void ClearSurfaceData(int width, int height)
@@ -1251,6 +1276,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         _spectrumCompute.Dispose();
         _fftCompute.Dispose();
         _resolveCompute.Dispose();
+        _oceanNormalTexture.Dispose();
         _quad.Dispose();
         _mesh = null;
     }

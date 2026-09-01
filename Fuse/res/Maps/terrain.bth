@@ -4494,7 +4494,7 @@
         0.9232987,
         0.3480392
       ],
-      "light_intensity": 1,
+      "light_intensity": 0,
       "light_radius": 15,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -4504,15 +4504,15 @@
       "body": {
         "shape": "none",
         "position": [
-          248,
+          346,
           111,
-          617
+          668
         ],
         "rotation": [
-          -0.7046807,
-          -0.38836852,
-          -0.3274079,
-          0.4953778
+          0.72150016,
+          0.3561496,
+          0.30470306,
+          -0.5096579
         ],
         "mass": 0,
         "friction": 0.5,
@@ -4590,14 +4590,14 @@
       0.045
     ],
     "night_zenith_color": [
-      0.002,
-      0.005,
-      0.02
+      0,
+      0,
+      0
     ],
     "night_horizon_color": [
-      0.01,
-      0.014,
-      0.035
+      0.0006007285,
+      0.0012889237,
+      0.0049019456
     ],
     "sun_color": [
       1,
@@ -4671,6 +4671,10 @@
     "small_wave_length": 0.36,
     "spectrum_seed": 1337,
     "debug_view": 0,
+    "normal_map_enabled": true,
+    "normal_map_strength": 0.31,
+    "normal_map_scale": 0.035,
+    "normal_map_distortion": 1.72,
     "shallow_color": [
       0.035,
       0.28,
@@ -4686,21 +4690,21 @@
       0.92,
       0.95
     ],
-    "reflection_strength": 0.91,
-    "refraction_strength": 0.075,
+    "reflection_strength": 2,
+    "refraction_strength": 0.088,
     "absorption_distance": 42,
-    "surface_roughness": 0.07,
-    "foam_strength": 1.64,
-    "foam_depth": 4.1,
+    "surface_roughness": 0.02,
+    "foam_strength": 2,
+    "foam_depth": 6.1,
     "underwater_enabled": true,
     "underwater_color": [
-      0.015,
-      0.12,
-      0.16
+      0.011678205,
+      0.099063374,
+      0.13235295
     ],
-    "underwater_fog_density": 0.035,
-    "underwater_distortion": 0.004,
-    "underwater_darkening": 0.18
+    "underwater_fog_density": 0.055,
+    "underwater_distortion": 0.031,
+    "underwater_darkening": 0.4
   },
   "player_spawn": {
     "position": [
