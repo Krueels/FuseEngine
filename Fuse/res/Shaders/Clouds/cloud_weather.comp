@@ -77,9 +77,13 @@ void main()
         Perlin2D(coordinate, 5, uSeed + 431) * 0.68 +
         Perlin2D(coordinate, 11, uSeed + 557) * 0.32;
 
+    // R = coverage, G = rain, B = cloud type, A = maximum cloud height.
+    float rain = clamp(variation * coverage * 1.25, 0.0, 1.0);
+    float maxHeight = clamp(0.78 + variation * 0.22, 0.0, 1.0);
+
     imageStore(uOutput, pixel, vec4(
         clamp(coverage, 0.0, 1.0),
+        rain,
         clamp(cloudType, 0.0, 1.0),
-        clamp(variation, 0.0, 1.0),
-        1.0));
+        maxHeight));
 }

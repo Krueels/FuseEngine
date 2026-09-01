@@ -4402,6 +4402,47 @@ public unsafe class EditorUI : IDisposable
                 }
                 Undo.TrackItem(_frameBeginState);
 
+                ImGui.SeparatorText("Cloud shape");
+                float shapeFactor = clouds.ShapeFactor;
+                if (ImGui.SliderFloat("Macro shape##cloudShapeFactor", ref shapeFactor, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.ShapeFactor = shapeFactor;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float erosionFactor = clouds.ErosionFactor;
+                if (ImGui.SliderFloat("Edge erosion##cloudErosionFactor", ref erosionFactor, 0.0f, 2.0f, "%.2f"))
+                {
+                    clouds.ErosionFactor = erosionFactor;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float erosionOcclusion = clouds.ErosionOcclusion;
+                if (ImGui.SliderFloat("Erosion ambient occlusion##cloudErosionOcclusion", ref erosionOcclusion, 0.0f, 2.0f, "%.2f"))
+                {
+                    clouds.ErosionOcclusion = erosionOcclusion;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float domainWarpStrength = clouds.DomainWarpStrength;
+                if (ImGui.SliderFloat("Domain warp##cloudDomainWarp", ref domainWarpStrength, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.DomainWarpStrength = domainWarpStrength;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float secondaryShapeStrength = clouds.SecondaryShapeStrength;
+                if (ImGui.SliderFloat("Secondary shape##cloudSecondaryShape", ref secondaryShapeStrength, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.SecondaryShapeStrength = secondaryShapeStrength;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
                 Vector2 windDirection = clouds.WindDirection;
                 if (ImGui.DragFloat2("Wind direction X/Z##cloudWindDirection", ref windDirection, 0.01f, -1.0f, 1.0f, "%.2f"))
                 {
@@ -4481,6 +4522,22 @@ public unsafe class EditorUI : IDisposable
                 if (ImGui.SliderFloat("Ambient light##cloudAmbient", ref ambientStrength, 0.0f, 2.0f, "%.2f"))
                 {
                     clouds.AmbientStrength = ambientStrength;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float powderEffect = clouds.PowderEffect;
+                if (ImGui.SliderFloat("Powder effect##cloudPowderEffect", ref powderEffect, 0.0f, 2.0f, "%.2f"))
+                {
+                    clouds.PowderEffect = powderEffect;
+                    cloudSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float multiScattering = clouds.MultiScattering;
+                if (ImGui.SliderFloat("Multi-scattering##cloudMultiScattering", ref multiScattering, 0.0f, 1.0f, "%.2f"))
+                {
+                    clouds.MultiScattering = multiScattering;
                     cloudSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);

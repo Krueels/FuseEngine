@@ -16,6 +16,10 @@ public readonly record struct CloudCompositeResult(uint Framebuffer, uint ColorT
 public sealed unsafe class VolumetricCloudRenderer : IDisposable
 {
     public const int CloudShadowTextureUnit = 18;
+    private const int CloudLutTextureUnit = 6;
+    private const int CloudDepthHistoryTextureUnit = 7;
+    private const int CloudLutWidth = 256;
+    private const int CloudLutHeight = 128;
 
     private readonly GL _gl;
     private readonly FullscreenQuad _quad;
@@ -29,8 +33,10 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     private uint _baseNoiseTexture;
     private uint _detailNoiseTexture;
     private uint _weatherTexture;
+    private uint _cloudLutTexture;
     private readonly uint[] _cloudFbos = new uint[2];
     private readonly uint[] _cloudTextures = new uint[2];
+    private readonly uint[] _cloudDepthTextures = new uint[2];
     private uint _compositeFbo;
     private uint _compositeTexture;
     private uint _shadowFbo;
@@ -47,6 +53,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     private bool _shadowValid;
     private Matrix4x4 _previousViewProjection = Matrix4x4.Identity;
     private Vector3 _previousCameraPosition;
+    private Vector3 _previousSunDirection = ProceduralSky.FallbackSunDirection;
     private float _previousCloudTime;
     private float _lastShadowTime = float.NegativeInfinity;
     private Vector2 _shadowCenter;
@@ -101,6 +108,12 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
             _detailNoiseTexture = CreateNoiseTexture(32, detail: true, seed: 0xC10D5);
             _weatherTexture = CreateWeatherTexture(1024, seed: 0x7EA7E2);
         }
+
+        // The LUT is small and deterministic, so it is generated once on the
+        // CPU and uploaded as linear half-float data. It is independent from
+        // the noise generation path and is available even without compute
+        // shader support.
+        _cloudLutTexture = CreateCloudLutTexture();
     }
 
     public void InvalidateHistory()
@@ -211,9 +224,13 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 inverseViewProjection))
             return default;
 
+        Vector3 normalizedSun = sunDirection.LengthSquared() > 1e-8f
+            ? Vector3.Normalize(sunDirection)
+            : ProceduralSky.FallbackSunDirection;
         if (_historyValid &&
             (Vector3.DistanceSquared(cameraPosition, _previousCameraPosition) > 40000.0f ||
-             time - _previousCloudTime > 0.5f))
+             time - _previousCloudTime > 0.5f ||
+             Vector3.Dot(normalizedSun, _previousSunDirection) < 0.996f))
         {
             _historyValid = false;
         }
@@ -228,13 +245,14 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         _gl.Clear(ClearBufferMask.ColorBufferBit);
 
-        Vector3 normalizedSun = sunDirection.LengthSquared() > 1e-8f
-            ? Vector3.Normalize(sunDirection)
-            : ProceduralSky.FallbackSunDirection;
         _cloudShader.Use();
         ApplyCommonParameters(_cloudShader, settings, time, cameraPosition);
         _cloudShader.SetInt("uSceneDepth", 0);
         _cloudShader.SetInt("uCloudHistory", 1);
+        _cloudShader.SetInt("uCloudDepthHistory", CloudDepthHistoryTextureUnit);
+        _cloudShader.SetVec2("uCloudHistoryTexelSize", new Vector2(
+            1.0f / _lowWidth,
+            1.0f / _lowHeight));
         _cloudShader.SetMat4("uInvViewProj", inverseViewProjection);
         _cloudShader.SetMat4("uPreviousViewProj", _previousViewProjection);
         _cloudShader.SetVec3("uCameraPosition", cameraPosition);
@@ -247,6 +265,10 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _cloudShader.SetFloat("uCloudAnisotropy", settings.Anisotropy);
         _cloudShader.SetFloat("uCloudAbsorption", settings.Absorption);
         _cloudShader.SetFloat("uCloudAmbientStrength", settings.AmbientStrength);
+        _cloudShader.SetFloat("uCloudPowderEffect", System.Math.Clamp(settings.PowderEffect, 0.0f, 2.0f));
+        _cloudShader.SetFloat("uCloudMultiScattering", System.Math.Clamp(settings.MultiScattering, 0.0f, 1.0f));
+        _cloudShader.SetFloat("uCloudDomainWarpStrength", System.Math.Clamp(settings.DomainWarpStrength, 0.0f, 1.0f));
+        _cloudShader.SetFloat("uCloudSecondaryShapeStrength", System.Math.Clamp(settings.SecondaryShapeStrength, 0.0f, 1.0f));
         _cloudShader.SetFloat("uPreviousCloudTime", _previousCloudTime);
         _cloudShader.SetBool("uHistoryValid", _historyValid);
         _cloudShader.SetInt("uCloudFrameIndex", _frameIndex);
@@ -255,6 +277,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _gl.BindTexture(TextureTarget.Texture2D, sceneDepthTexture);
         _gl.ActiveTexture(TextureUnit.Texture1);
         _gl.BindTexture(TextureTarget.Texture2D, _cloudTextures[_historyIndex]);
+        _gl.ActiveTexture((TextureUnit)((int)TextureUnit.Texture0 + CloudDepthHistoryTextureUnit));
+        _gl.BindTexture(TextureTarget.Texture2D, _cloudDepthTextures[_historyIndex]);
         BindNoiseTextures(_cloudShader);
         _quad.Draw();
 
@@ -284,6 +308,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
 
         _previousViewProjection = viewProjection;
         _previousCameraPosition = cameraPosition;
+        _previousSunDirection = normalizedSun;
         _previousCloudTime = time;
         _gl.DepthMask(true);
         RestoreTextureUnitZero();
@@ -302,6 +327,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         shader.SetInt("uCloudBaseNoise", 2);
         shader.SetInt("uCloudDetailNoise", 3);
         shader.SetInt("uCloudWeatherMap", 5);
+        shader.SetInt("uCloudLutTexture", CloudLutTextureUnit);
         shader.SetFloat("uCloudBaseHeight", settings.BaseHeight);
         shader.SetFloat("uCloudThickness", MathF.Max(1.0f, settings.Thickness));
         shader.SetFloat("uCloudCoverage", System.Math.Clamp(settings.Coverage, 0.0f, 1.0f));
@@ -309,6 +335,9 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         shader.SetFloat("uCloudScale", MathF.Max(0.00001f, settings.Scale));
         shader.SetFloat("uCloudDetailScale", MathF.Max(1.0f, settings.DetailScale));
         shader.SetFloat("uCloudDetailStrength", System.Math.Clamp(settings.DetailStrength, 0.0f, 1.0f));
+        shader.SetFloat("uCloudShapeFactor", System.Math.Clamp(settings.ShapeFactor, 0.0f, 1.0f));
+        shader.SetFloat("uCloudErosionFactor", System.Math.Clamp(settings.ErosionFactor, 0.0f, 2.0f));
+        shader.SetFloat("uCloudErosionOcclusion", System.Math.Clamp(settings.ErosionOcclusion, 0.0f, 2.0f));
         shader.SetInt("uCloudPreset", (int)settings.Preset);
         shader.SetVec2("uCloudWindDirection", windDirection);
         shader.SetFloat("uCloudWindSpeed", settings.WindSpeed);
@@ -340,12 +369,15 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         shader.SetInt("uCloudBaseNoise", 2);
         shader.SetInt("uCloudDetailNoise", 3);
         shader.SetInt("uCloudWeatherMap", 5);
+        shader.SetInt("uCloudLutTexture", CloudLutTextureUnit);
         _gl.ActiveTexture(TextureUnit.Texture2);
         _gl.BindTexture(TextureTarget.Texture3D, _baseNoiseTexture);
         _gl.ActiveTexture(TextureUnit.Texture3);
         _gl.BindTexture(TextureTarget.Texture3D, _detailNoiseTexture);
         _gl.ActiveTexture(TextureUnit.Texture5);
         _gl.BindTexture(TextureTarget.Texture2D, _weatherTexture);
+        _gl.ActiveTexture((TextureUnit)((int)TextureUnit.Texture0 + CloudLutTextureUnit));
+        _gl.BindTexture(TextureTarget.Texture2D, _cloudLutTexture);
     }
 
     private void EnsureFrameTargets(int width, int height, float resolutionScale)
@@ -367,11 +399,66 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _lowHeight = lowHeight;
 
         for (int i = 0; i < 2; i++)
-            CreateColorTarget(ref _cloudFbos[i], ref _cloudTextures[i], lowWidth, lowHeight, InternalFormat.Rgba16f, PixelFormat.Rgba);
+            CreateCloudHistoryTarget(
+                ref _cloudFbos[i],
+                ref _cloudTextures[i],
+                ref _cloudDepthTextures[i],
+                lowWidth,
+                lowHeight);
         CreateColorTarget(ref _compositeFbo, ref _compositeTexture, width, height, InternalFormat.Rgba16f, PixelFormat.Rgba);
 
         _historyIndex = 0;
         _historyValid = false;
+    }
+
+    private void CreateCloudHistoryTarget(
+        ref uint framebuffer,
+        ref uint colorTexture,
+        ref uint depthTexture,
+        int width,
+        int height)
+    {
+        CreateColorTarget(
+            ref framebuffer,
+            ref colorTexture,
+            width,
+            height,
+            InternalFormat.Rgba16f,
+            PixelFormat.Rgba);
+
+        depthTexture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, depthTexture);
+        _gl.TexImage2D(
+            TextureTarget.Texture2D,
+            0,
+            (int)InternalFormat.R16f,
+            (uint)width,
+            (uint)height,
+            0,
+            PixelFormat.Red,
+            PixelType.Float,
+            null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment1,
+            TextureTarget.Texture2D,
+            depthTexture,
+            0);
+        _gl.DrawBuffers(new[]
+        {
+            DrawBufferMode.ColorAttachment0,
+            DrawBufferMode.ColorAttachment1
+        });
+        GLEnum status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != GLEnum.FramebufferComplete)
+            throw new InvalidOperationException($"Volumetric cloud history framebuffer is incomplete: {status}");
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
     private void EnsureShadowTarget(int requestedResolution)
@@ -650,6 +737,84 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         return texture;
     }
 
+    private uint CreateCloudLutTexture()
+    {
+        float[] pixels = new float[CloudLutWidth * CloudLutHeight * 4];
+        int index = 0;
+
+        for (int y = 0; y < CloudLutHeight; y++)
+        {
+            float height = (y + 0.5f) / CloudLutHeight;
+            for (int x = 0; x < CloudLutWidth; x++)
+            {
+                float cloudType = (x + 0.5f) / CloudLutWidth;
+                float densityProfile = CloudHeightProfile(height, cloudType);
+
+                // Green controls how much shaping/erosion is allowed at this
+                // height. The cloud body is protected while the lower and
+                // upper boundaries remain detailed.
+                float edge = 1.0f - densityProfile;
+                float erosionResponse = System.Math.Clamp(0.22f + edge * 0.72f, 0.0f, 1.0f);
+
+                // Blue is consumed as an ambient-occlusion multiplier. Dense
+                // cores receive less ambient light than thin boundaries.
+                float ambientOcclusion = System.Math.Clamp(1.0f - densityProfile * 0.55f, 0.25f, 1.0f);
+
+                pixels[index++] = densityProfile;
+                pixels[index++] = erosionResponse;
+                pixels[index++] = ambientOcclusion;
+                pixels[index++] = 1.0f;
+            }
+        }
+
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        fixed (float* pixelPointer = pixels)
+        {
+            _gl.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                (int)InternalFormat.Rgba16f,
+                (uint)CloudLutWidth,
+                (uint)CloudLutHeight,
+                0,
+                PixelFormat.Rgba,
+                PixelType.Float,
+                pixelPointer);
+        }
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        return texture;
+    }
+
+    private static float CloudHeightProfile(float height, float cloudType)
+    {
+        float stratusFactor = 1.0f - System.Math.Clamp(cloudType * 2.0f, 0.0f, 1.0f);
+        float stratocumulusFactor = System.Math.Clamp(1.0f - MathF.Abs(cloudType - 0.5f) * 2.0f, 0.0f, 1.0f);
+        float cumulusFactor = System.Math.Clamp((cloudType - 0.5f) * 2.0f, 0.0f, 1.0f);
+
+        float stratus = HeightGradient(height, 0.00f, 0.10f, 0.20f, 0.30f);
+        float stratocumulus = HeightGradient(height, 0.02f, 0.20f, 0.48f, 0.625f);
+        float cumulus = HeightGradient(height, 0.00f, 0.1625f, 0.88f, 0.98f);
+
+        return System.Math.Clamp(
+            stratus * stratusFactor +
+            stratocumulus * stratocumulusFactor +
+            cumulus * cumulusFactor,
+            0.0f,
+            1.0f);
+    }
+
+    private static float HeightGradient(float height, float lowerStart, float lowerEnd, float upperStart, float upperEnd)
+    {
+        float lower = Smooth(System.Math.Clamp((height - lowerStart) / MathF.Max(lowerEnd - lowerStart, 0.0001f), 0.0f, 1.0f));
+        float upper = Smooth(System.Math.Clamp((height - upperStart) / MathF.Max(upperEnd - upperStart, 0.0001f), 0.0f, 1.0f));
+        return System.Math.Clamp(lower - upper, 0.0f, 1.0f);
+    }
+
     private static byte[] GenerateWeatherMap(int size, int seed)
     {
         byte[] result = new byte[size * size * 4];
@@ -671,11 +836,13 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
                 float variation =
                     PeriodicValueNoise(nx, 0.73f, ny, 5, seed + 431) * 0.68f +
                     PeriodicValueNoise(nx, 0.73f, ny, 11, seed + 557) * 0.32f;
+                float rain = System.Math.Clamp(variation * coverage * 1.25f, 0.0f, 1.0f);
+                float maxHeight = System.Math.Clamp(0.78f + variation * 0.22f, 0.0f, 1.0f);
 
                 result[index++] = ToByte(Smooth(coverage));
+                result[index++] = ToByte(rain);
                 result[index++] = ToByte(Smooth(cloudType));
-                result[index++] = ToByte(variation);
-                result[index++] = byte.MaxValue;
+                result[index++] = ToByte(maxHeight);
             }
         }
         return result;
@@ -802,6 +969,9 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         MixFloat(ref hash, settings.Scale);
         MixFloat(ref hash, settings.DetailScale);
         MixFloat(ref hash, settings.DetailStrength);
+        MixFloat(ref hash, settings.ShapeFactor);
+        MixFloat(ref hash, settings.ErosionFactor);
+        MixFloat(ref hash, settings.ErosionOcclusion);
         MixFloat(ref hash, settings.WindDirection.X);
         MixFloat(ref hash, settings.WindDirection.Y);
         MixFloat(ref hash, settings.WindSpeed);
@@ -813,6 +983,10 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         MixFloat(ref hash, settings.Anisotropy);
         MixFloat(ref hash, settings.Absorption);
         MixFloat(ref hash, settings.AmbientStrength);
+        MixFloat(ref hash, settings.PowderEffect);
+        MixFloat(ref hash, settings.MultiScattering);
+        MixFloat(ref hash, settings.DomainWarpStrength);
+        MixFloat(ref hash, settings.SecondaryShapeStrength);
         Mix(ref hash, settings.ShadowsEnabled ? 1u : 0u);
         MixFloat(ref hash, settings.ShadowStrength);
         MixFloat(ref hash, settings.ShadowExtent);
@@ -827,8 +1001,10 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         for (int i = 0; i < 2; i++)
         {
             if (_cloudTextures[i] != 0) _gl.DeleteTexture(_cloudTextures[i]);
+            if (_cloudDepthTextures[i] != 0) _gl.DeleteTexture(_cloudDepthTextures[i]);
             if (_cloudFbos[i] != 0) _gl.DeleteFramebuffer(_cloudFbos[i]);
             _cloudTextures[i] = 0;
+            _cloudDepthTextures[i] = 0;
             _cloudFbos[i] = 0;
         }
         if (_compositeTexture != 0) _gl.DeleteTexture(_compositeTexture);
@@ -848,6 +1024,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         if (_baseNoiseTexture != 0) _gl.DeleteTexture(_baseNoiseTexture);
         if (_detailNoiseTexture != 0) _gl.DeleteTexture(_detailNoiseTexture);
         if (_weatherTexture != 0) _gl.DeleteTexture(_weatherTexture);
+        if (_cloudLutTexture != 0) _gl.DeleteTexture(_cloudLutTexture);
         _cloudShader.Dispose();
         _compositeShader.Dispose();
         _shadowShader.Dispose();

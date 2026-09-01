@@ -3,9 +3,11 @@
 
 in vec2 vTexCoord;
 layout(location = 0) out vec4 fragColor;
+layout(location = 1) out float fragDepth;
 
 uniform sampler2D uSceneDepth;
 uniform sampler2D uCloudHistory;
+uniform sampler2D uCloudDepthHistory;
 uniform mat4 uInvViewProj;
 uniform mat4 uPreviousViewProj;
 uniform vec3 uCameraPosition;
@@ -19,6 +21,7 @@ uniform float uCloudAnisotropy;
 uniform float uCloudAbsorption;
 uniform float uCloudAmbientStrength;
 uniform float uPreviousCloudTime;
+uniform vec2 uCloudHistoryTexelSize;
 uniform bool uHistoryValid;
 uniform int uCloudFrameIndex;
 
@@ -42,27 +45,46 @@ vec2 ConeKernel(int index)
 float LightTransmittance(vec3 position)
 {
     int lightSteps = max(uCloudLightSteps, 1);
-    float lightDistance = uCloudThickness / max(abs(uSunDirection.y), 0.16);
+    float lightNear;
+    float lightFar;
+    if (!IntersectCloudLayer(position, normalize(uSunDirection), lightNear, lightFar))
+        return 1.0;
+
+    // The sun ray must stop at the actual outer shell. Using thickness divided
+    // by the sun elevation overestimates the distance for a spherical layer
+    // and samples the same cloud again after it has already exited the volume.
+    float lightDistance = max(lightFar, 0.0);
+    if (lightDistance <= 0.001)
+        return 1.0;
+
     float lightStep = lightDistance / float(lightSteps);
     float opticalDepth = 0.0;
 
-    vec3 tangent = normalize(abs(uSunDirection.y) < 0.98
-        ? cross(uSunDirection, vec3(0.0, 1.0, 0.0))
-        : cross(uSunDirection, vec3(1.0, 0.0, 0.0)));
-    vec3 bitangent = normalize(cross(uSunDirection, tangent));
+    vec3 sunDirection = normalize(uSunDirection);
+    vec3 tangent = normalize(abs(sunDirection.y) < 0.98
+        ? cross(sunDirection, vec3(0.0, 1.0, 0.0))
+        : cross(sunDirection, vec3(1.0, 0.0, 0.0)));
+    vec3 bitangent = normalize(cross(sunDirection, tangent));
 
     for (int i = 0; i < 24; ++i)
     {
         if (i >= lightSteps)
             break;
 
-        float travel = (float(i) + 0.65) * lightStep;
+        float travel = (float(i) + 0.5) * lightStep;
         float coneRadius = travel * 0.055;
         vec2 coneOffset = ConeKernel(i % 7) * coneRadius;
-        vec3 samplePosition = position + uSunDirection * travel +
+        vec3 samplePosition = position + sunDirection * travel +
             tangent * coneOffset.x + bitangent * coneOffset.y;
-        opticalDepth += CloudOpticalDepth(
-            SampleCloudDensity(samplePosition), lightStep, uCloudAbsorption);
+        float sampleLength = min(
+            lightStep,
+            max(lightDistance - travel + 0.5 * lightStep, 0.0));
+        if (sampleLength <= 0.0)
+            break;
+
+        CloudProperties lightProperties = EvaluateCloudProperties(samplePosition, false);
+        opticalDepth += CloudOpticalDepthForProperties(
+            lightProperties, sampleLength, uCloudAbsorption);
         if (opticalDepth > 8.0)
             break;
     }
@@ -83,6 +105,33 @@ vec3 CompressedSunRadiance()
     return tint * min(maximumChannel, 2.5);
 }
 
+void SampleHistoryNeighborhood(
+    vec2 uv,
+    out vec4 minimumValue,
+    out vec4 maximumValue,
+    out float minimumDepth,
+    out float maximumDepth)
+{
+    minimumValue = vec4(1000000.0);
+    maximumValue = vec4(-1000000.0);
+    minimumDepth = 1000000.0;
+    maximumDepth = -1000000.0;
+    for (int y = -1; y <= 1; ++y)
+    for (int x = -1; x <= 1; ++x)
+    {
+        vec2 sampleUv = clamp(
+            uv + vec2(float(x), float(y)) * uCloudHistoryTexelSize,
+            uCloudHistoryTexelSize * 0.5,
+            vec2(1.0) - uCloudHistoryTexelSize * 0.5);
+        vec4 sampleValue = texture(uCloudHistory, sampleUv);
+        float sampleDepth = texture(uCloudDepthHistory, sampleUv).r;
+        minimumValue = min(minimumValue, sampleValue);
+        maximumValue = max(maximumValue, sampleValue);
+        minimumDepth = min(minimumDepth, sampleDepth);
+        maximumDepth = max(maximumDepth, sampleDepth);
+    }
+}
+
 void main()
 {
     float sceneDepth = texture(uSceneDepth, vTexCoord).r;
@@ -101,6 +150,7 @@ void main()
     if (!IntersectCloudLayer(uCameraPosition, rayDirection, layerNear, layerFar))
     {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        fragDepth = 1.0;
         return;
     }
 
@@ -109,43 +159,71 @@ void main()
     if (endDistance <= startDistance)
     {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        fragDepth = 1.0;
         return;
     }
 
     int stepCount = clamp(uCloudPrimarySteps, 8, 128);
-    float stepLength = (endDistance - startDistance) / float(stepCount);
+    float baseStepLength = (endDistance - startDistance) / float(stepCount);
     float rayJitter = InterleavedGradientNoise(gl_FragCoord.xy, uCloudFrameIndex);
     float transmittance = 1.0;
     vec3 cloudRadiance = vec3(0.0);
     float weightedDistance = 0.0;
     float weightTotal = 0.0;
     float cachedLightVisibility = 1.0;
+    float distanceAlongRay = startDistance;
+    int emptySteps = 0;
+    bool coarseMode = false;
 
     float sunHeight = smoothstep(-0.08, 0.12, uSunDirection.y);
     float cosineTheta = dot(rayDirection, uSunDirection);
     float forwardPhase = HenyeyGreenstein(cosineTheta, uCloudAnisotropy);
     float backwardPhase = HenyeyGreenstein(cosineTheta, -0.22);
-    float phase = mix(backwardPhase, forwardPhase, 0.78);
+    float primaryPhase = mix(backwardPhase, forwardPhase, 0.78);
+    float secondaryPhase = mix(
+        HenyeyGreenstein(cosineTheta, uCloudAnisotropy * 0.35),
+        HenyeyGreenstein(cosineTheta, -0.15),
+        0.35);
+    float multiScattering = CloudSaturate(uCloudMultiScattering);
+    float phase = mix(primaryPhase, secondaryPhase, multiScattering * 0.65);
     vec3 sunRadiance = CompressedSunRadiance();
 
     for (int i = 0; i < 128; ++i)
     {
-        if (i >= stepCount || transmittance < 0.008)
+        if (i >= stepCount || transmittance < 0.008 ||
+            distanceAlongRay >= endDistance)
             break;
 
-        // A different low-discrepancy offset inside every segment removes the
-        // coherent horizontal slices produced by one shared offset per ray.
+        // After several empty samples, use a cheap density evaluation and a
+        // longer step. When it finds the cloud again, the same segment is
+        // revisited at the normal step size so thin edges are not skipped.
+        float currentStepLength = coarseMode
+            ? baseStepLength * 2.25
+            : baseStepLength;
         float segmentJitter = fract(rayJitter + float(i) * 0.61803398875);
-        float distanceAlongRay = startDistance +
-            (float(i) + segmentJitter) * stepLength;
-        vec3 samplePosition = uCameraPosition + rayDirection * distanceAlongRay;
+        float sampleDistance = min(
+            distanceAlongRay + segmentJitter * currentStepLength,
+            endDistance - 0.001);
+        float sampleLength = min(
+            currentStepLength,
+            max(endDistance - distanceAlongRay, 0.001));
+        vec3 samplePosition = uCameraPosition + rayDirection * sampleDistance;
         float distanceFade = 1.0 - smoothstep(
-            uCloudMaxDistance * 0.80, uCloudMaxDistance, distanceAlongRay);
-        float density = SampleCloudDensity(samplePosition) * distanceFade;
+            uCloudMaxDistance * 0.80, uCloudMaxDistance, sampleDistance);
+        CloudProperties cloud = EvaluateCloudProperties(samplePosition, !coarseMode);
+        float density = cloud.density * distanceFade;
         if (density > 0.001)
         {
-            float sampleExtinction = CloudOpticalDepth(
-                density, stepLength, uCloudAbsorption);
+            if (coarseMode)
+            {
+                coarseMode = false;
+                emptySteps = 0;
+                continue;
+            }
+
+            cloud.density = density;
+            float sampleExtinction = CloudOpticalDepthForProperties(
+                cloud, sampleLength, uCloudAbsorption);
             float sampleAlpha = 1.0 - exp(-sampleExtinction);
 
             // Cone lighting changes more slowly than density, so one result can
@@ -162,26 +240,50 @@ void main()
             vec3 ambientBottom = mix(nightAmbientBottom, dayAmbientBottom, sunHeight);
             vec3 ambientTop = mix(nightAmbientTop, dayAmbientTop, sunHeight);
             vec3 ambientLight = mix(ambientBottom, ambientTop, heightFraction) *
-                uCloudAmbientStrength;
+                uCloudAmbientStrength * cloud.ambientOcclusion *
+                mix(1.0, 0.72, cloud.rain);
 
-            float powder = 1.0 - exp(-sampleExtinction * 2.0);
-            float silverLining = 0.14 + phase * 1.65;
+            float powder = CloudPowderFactor(
+                density,
+                cosineTheta,
+                lightVisibility,
+                uCloudPowderEffect);
             vec3 directLight = sunRadiance * sunHeight * lightVisibility *
-                silverLining * mix(0.72, 1.08, powder);
-            vec3 sampleLight = ambientLight + directLight;
+                phase * 3.25 * powder;
+            vec3 multiScatterLight = sunRadiance * sunHeight *
+                (1.0 - lightVisibility) * secondaryPhase *
+                (2.2 * multiScattering) *
+                mix(0.45, 1.0, CloudSaturate(powder - 1.0));
+            vec3 sampleLight = ambientLight + directLight + multiScatterLight;
 
             float contribution = transmittance * sampleAlpha;
             cloudRadiance += sampleLight * contribution;
-            weightedDistance += distanceAlongRay * contribution;
+            weightedDistance += sampleDistance * contribution;
             weightTotal += contribution;
             transmittance *= 1.0 - sampleAlpha;
+            distanceAlongRay += currentStepLength;
+            emptySteps = 0;
+        }
+        else
+        {
+            distanceAlongRay += currentStepLength;
+            if (!coarseMode)
+            {
+                emptySteps++;
+                if (emptySteps >= 3)
+                    coarseMode = true;
+            }
         }
     }
 
     vec4 currentCloud = vec4(cloudRadiance, transmittance);
+    float representativeDistance = weightTotal > 0.0001
+        ? weightedDistance / weightTotal
+        : uCloudMaxDistance;
+    float currentCloudDepth = CloudSaturate(
+        representativeDistance / max(uCloudMaxDistance, 1.0));
     if (uHistoryValid && weightTotal > 0.0001)
     {
-        float representativeDistance = weightedDistance / weightTotal;
         vec3 representativeWorld = uCameraPosition + rayDirection * representativeDistance;
         vec2 wind = uCloudWindDirection * uCloudWindSpeed *
             (uCloudTime - uPreviousCloudTime);
@@ -193,22 +295,45 @@ void main()
             all(lessThanEqual(previousUv, vec2(0.999))))
         {
             vec4 history = texture(uCloudHistory, previousUv);
-            float transmittanceDifference = abs(history.a - currentCloud.a);
-            float historyConfidence = exp(-transmittanceDifference * 13.0);
+            float historyDepth = texture(uCloudDepthHistory, previousUv).r;
+            float depthDifference = abs(historyDepth - currentCloudDepth);
 
-            // A small neighborhood clamp prevents stale bright layers from
-            // accumulating when the camera or the clouds move.
-            vec3 colorRadius = vec3(0.075) + abs(currentCloud.rgb) * 0.40;
-            history.rgb = clamp(
-                history.rgb,
-                currentCloud.rgb - colorRadius,
-                currentCloud.rgb + colorRadius);
-            history.a = clamp(history.a, currentCloud.a - 0.10, currentCloud.a + 0.10);
+            // Neighborhood clipping removes isolated stale samples before
+            // they can become persistent ghost trails. The separate depth
+            // history rejects a reprojection that landed on another cloud.
+            vec4 historyMinimum;
+            vec4 historyMaximum;
+            float depthMinimum;
+            float depthMaximum;
+            SampleHistoryNeighborhood(
+                previousUv,
+                historyMinimum,
+                historyMaximum,
+                depthMinimum,
+                depthMaximum);
+            vec4 historyMargin = vec4(0.025, 0.025, 0.025, 0.035) +
+                abs(currentCloud) * 0.22;
+            history = clamp(
+                history,
+                historyMinimum - historyMargin,
+                historyMaximum + historyMargin);
 
-            float blend = uCloudTemporalBlend * historyConfidence;
-            currentCloud = mix(currentCloud, history, blend);
+            float depthMargin = 0.045 + currentCloudDepth * 0.16;
+            bool depthValid = historyDepth < 0.999 &&
+                depthDifference <= depthMargin &&
+                historyDepth >= depthMinimum - depthMargin &&
+                historyDepth <= depthMaximum + depthMargin;
+            if (depthValid)
+            {
+                float transmittanceDifference = abs(history.a - currentCloud.a);
+                float historyConfidence = exp(-transmittanceDifference * 16.0);
+                float depthConfidence = exp(-depthDifference * 42.0);
+                float blend = uCloudTemporalBlend * historyConfidence * depthConfidence;
+                currentCloud = mix(currentCloud, history, blend);
+            }
         }
     }
 
     fragColor = currentCloud;
+    fragDepth = currentCloudDepth;
 }

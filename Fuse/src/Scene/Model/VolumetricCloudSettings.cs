@@ -26,6 +26,11 @@ public sealed class VolumetricCloudSettings
     public float Scale { get; set; } = 0.0035f;
     public float DetailScale { get; set; } = 4.0f;
     public float DetailStrength { get; set; } = 0.35f;
+    public float ShapeFactor { get; set; } = 0.75f;
+    public float ErosionFactor { get; set; } = 0.85f;
+    public float ErosionOcclusion { get; set; } = 0.60f;
+    public float DomainWarpStrength { get; set; } = 0.20f;
+    public float SecondaryShapeStrength { get; set; } = 0.28f;
     public Vector2 WindDirection { get; set; } = Vector2.Normalize(new Vector2(1.0f, 0.3f));
     public float WindSpeed { get; set; } = 3.0f;
     public float MaxDistance { get; set; } = 3000.0f;
@@ -36,6 +41,8 @@ public sealed class VolumetricCloudSettings
     public float Anisotropy { get; set; } = 0.55f;
     public float Absorption { get; set; } = 1.0f;
     public float AmbientStrength { get; set; } = 0.22f;
+    public float PowderEffect { get; set; } = 0.65f;
+    public float MultiScattering { get; set; } = 0.55f;
     public bool ShadowsEnabled { get; set; } = true;
     public float ShadowStrength { get; set; } = 0.55f;
     public float ShadowExtent { get; set; } = 2200.0f;
@@ -63,6 +70,10 @@ public sealed class VolumetricCloudSettings
                 Anisotropy = 0.35f;
                 Absorption = 0.75f;
                 AmbientStrength = 0.28f;
+                PowderEffect = 0.35f;
+                MultiScattering = 0.35f;
+                DomainWarpStrength = 0.12f;
+                SecondaryShapeStrength = 0.16f;
                 break;
 
             case VolumetricCloudPreset.Stratocumulus:
@@ -75,6 +86,10 @@ public sealed class VolumetricCloudSettings
                 Anisotropy = 0.48f;
                 Absorption = 1.0f;
                 AmbientStrength = 0.24f;
+                PowderEffect = 0.55f;
+                MultiScattering = 0.50f;
+                DomainWarpStrength = 0.20f;
+                SecondaryShapeStrength = 0.28f;
                 break;
 
             case VolumetricCloudPreset.Cumulus:
@@ -87,6 +102,10 @@ public sealed class VolumetricCloudSettings
                 Anisotropy = 0.60f;
                 Absorption = 1.25f;
                 AmbientStrength = 0.22f;
+                PowderEffect = 0.72f;
+                MultiScattering = 0.68f;
+                DomainWarpStrength = 0.28f;
+                SecondaryShapeStrength = 0.36f;
                 break;
 
             case VolumetricCloudPreset.WeatherMix:
@@ -106,6 +125,9 @@ public sealed class VolumetricCloudSettings
         Scale = Scale,
         DetailScale = DetailScale,
         DetailStrength = DetailStrength,
+        ShapeFactor = ShapeFactor,
+        ErosionFactor = ErosionFactor,
+        ErosionOcclusion = ErosionOcclusion,
         WindDirection = WindDirection,
         WindSpeed = WindSpeed,
         MaxDistance = MaxDistance,
@@ -116,6 +138,10 @@ public sealed class VolumetricCloudSettings
         Anisotropy = Anisotropy,
         Absorption = Absorption,
         AmbientStrength = AmbientStrength,
+        PowderEffect = PowderEffect,
+        MultiScattering = MultiScattering,
+        DomainWarpStrength = DomainWarpStrength,
+        SecondaryShapeStrength = SecondaryShapeStrength,
         ShadowsEnabled = ShadowsEnabled,
         ShadowStrength = ShadowStrength,
         ShadowExtent = ShadowExtent,
@@ -134,6 +160,9 @@ public sealed class VolumetricCloudSettings
         ["scale"] = Scale,
         ["detail_scale"] = DetailScale,
         ["detail_strength"] = DetailStrength,
+        ["shape_factor"] = ShapeFactor,
+        ["erosion_factor"] = ErosionFactor,
+        ["erosion_occlusion"] = ErosionOcclusion,
         ["wind_direction"] = new JsonArray(WindDirection.X, WindDirection.Y),
         ["wind_speed"] = WindSpeed,
         ["max_distance"] = MaxDistance,
@@ -144,6 +173,10 @@ public sealed class VolumetricCloudSettings
         ["anisotropy"] = Anisotropy,
         ["absorption"] = Absorption,
         ["ambient_strength"] = AmbientStrength,
+        ["powder_effect"] = PowderEffect,
+        ["multi_scattering"] = MultiScattering,
+        ["domain_warp_strength"] = DomainWarpStrength,
+        ["secondary_shape_strength"] = SecondaryShapeStrength,
         ["shadows_enabled"] = ShadowsEnabled,
         ["shadow_strength"] = ShadowStrength,
         ["shadow_extent"] = ShadowExtent,
@@ -166,6 +199,9 @@ public sealed class VolumetricCloudSettings
         settings.Scale = System.Math.Clamp(ReadFloat(source, "scale", settings.Scale), 0.00001f, 1.0f);
         settings.DetailScale = System.Math.Clamp(ReadFloat(source, "detail_scale", settings.DetailScale), 1.0f, 16.0f);
         settings.DetailStrength = System.Math.Clamp(ReadFloat(source, "detail_strength", settings.DetailStrength), 0.0f, 1.0f);
+        settings.ShapeFactor = System.Math.Clamp(ReadFloat(source, "shape_factor", settings.ShapeFactor), 0.0f, 1.0f);
+        settings.ErosionFactor = System.Math.Clamp(ReadFloat(source, "erosion_factor", settings.ErosionFactor), 0.0f, 2.0f);
+        settings.ErosionOcclusion = System.Math.Clamp(ReadFloat(source, "erosion_occlusion", settings.ErosionOcclusion), 0.0f, 2.0f);
         settings.WindDirection = ReadVec2(source, "wind_direction", settings.WindDirection);
         if (settings.WindDirection.LengthSquared() > 1e-8f)
             settings.WindDirection = Vector2.Normalize(settings.WindDirection);
@@ -180,6 +216,10 @@ public sealed class VolumetricCloudSettings
         settings.Anisotropy = System.Math.Clamp(ReadFloat(source, "anisotropy", settings.Anisotropy), -0.8f, 0.9f);
         settings.Absorption = System.Math.Clamp(ReadFloat(source, "absorption", settings.Absorption), 0.05f, 8.0f);
         settings.AmbientStrength = System.Math.Clamp(ReadFloat(source, "ambient_strength", settings.AmbientStrength), 0.0f, 2.0f);
+        settings.PowderEffect = System.Math.Clamp(ReadFloat(source, "powder_effect", settings.PowderEffect), 0.0f, 2.0f);
+        settings.MultiScattering = System.Math.Clamp(ReadFloat(source, "multi_scattering", settings.MultiScattering), 0.0f, 1.0f);
+        settings.DomainWarpStrength = System.Math.Clamp(ReadFloat(source, "domain_warp_strength", settings.DomainWarpStrength), 0.0f, 1.0f);
+        settings.SecondaryShapeStrength = System.Math.Clamp(ReadFloat(source, "secondary_shape_strength", settings.SecondaryShapeStrength), 0.0f, 1.0f);
         settings.ShadowsEnabled = ReadBool(source, "shadows_enabled", settings.ShadowsEnabled);
         settings.ShadowStrength = System.Math.Clamp(ReadFloat(source, "shadow_strength", settings.ShadowStrength), 0.0f, 1.0f);
         settings.ShadowExtent = System.Math.Clamp(ReadFloat(source, "shadow_extent", settings.ShadowExtent), 50.0f, 20000.0f);
