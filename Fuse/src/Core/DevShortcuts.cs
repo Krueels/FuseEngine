@@ -62,7 +62,7 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.F9))
         {
             debugDrawer.Toggle();
-            GameNotify.Info($"Debug drawer {(debugDrawer.Enabled ? "ON" : "OFF")} — terrain LOD wireframe: green 0, yellow 1, orange 2, red 3, magenta 4+");
+            GameNotify.Info($"Debug drawer {(debugDrawer.Enabled ? "ON" : "OFF")}");
         }
 
         // Post-processing toggle

@@ -83,6 +83,11 @@ public static class MapSerializer
         bj["friction"] = e.Body.Friction;
         bj["restitution"] = e.Body.Restitution;
         bj["is_trigger"] = e.Body.IsTrigger;
+        if (e.Body.BuoyancyVolumeOverride > 0.0001f &&
+            float.IsFinite(e.Body.BuoyancyVolumeOverride))
+        {
+            bj["buoyancy_volume"] = e.Body.BuoyancyVolumeOverride;
+        }
 
         switch (e.Body.Type)
         {
@@ -921,6 +926,8 @@ public static class MapSerializer
             body.SetRotation(QuatFromJson(rotToken!.AsArray()));
         if (bj.TryGetPropertyValue("mass", out var massToken))
             body.SetMass((float)massToken!);
+        if (bj.TryGetPropertyValue("buoyancy_volume", out var buoyancyVolumeToken))
+            body.SetBuoyancyVolumeOverride((float)buoyancyVolumeToken!);
         if (bj.TryGetPropertyValue("friction", out var frictionToken))
             body.SetFriction((float)frictionToken!);
         if (bj.TryGetPropertyValue("restitution", out var restToken))

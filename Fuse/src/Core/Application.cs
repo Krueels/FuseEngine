@@ -30,6 +30,7 @@ public unsafe class Application : IDisposable
     private Audio.ImpactSoundSystem _impactSound = null!;
     private MasterRenderer _renderer = null!;
     private Scene.SceneManager _sceneManager = null!;
+    private OceanPhysicsSystem _oceanPhysics = null!;
     private Interaction.PlayerInteraction _interaction = null!;
 
     // Player & Gameplay
@@ -135,6 +136,10 @@ public unsafe class Application : IDisposable
 
         // Systems Initialization
         _renderer.Init(_assets, _scrWidth, _scrHeight);
+        _oceanPhysics = new OceanPhysicsSystem(
+            _physics,
+            _sceneManager.ActiveScene,
+            _renderer);
         _interaction = new Interaction.PlayerInteraction(_sceneManager, _player, _hud.CrosshairNode,
             _assets.GetTexture(Bible.Tex(Bible.Crosshair)),
             _assets.GetTexture(Bible.Tex(Bible.CrosshairInteract)));
@@ -282,10 +287,10 @@ public unsafe class Application : IDisposable
                 double now = _window.GlfwApi.GetTime();
                 float dt = float.Clamp((float)(now - _lastTime), 0.0f, 0.25f);
                 _lastTime = now;
-                // Rendering continues while paused, but simulation time must
-                // stop so animated render-only systems (such as the ocean)
-                // do not keep moving under a paused game.
-                Engine.Tick(dt, !_paused);
+                // Tick records render timing/FPS only. Simulation time advances
+                // once per fixed step below, keeping the rendered ocean and the
+                // rigid-body state on the same clock even after a slow frame.
+                Engine.Tick(dt, advanceSimulation: false);
 
                 Input.Input.Update();
                 var gl = _window.GL;
@@ -314,6 +319,7 @@ public unsafe class Application : IDisposable
                     int physicsSteps = 0;
                     while (_physicsAccumulator >= FixedPhysicsDelta && physicsSteps < MaxPhysicsStepsPerFrame)
                     {
+                        Engine.AdvanceSimulation(FixedPhysicsDelta);
                         UpdateFixedSimulation(FixedPhysicsDelta);
                         _physicsAccumulator -= FixedPhysicsDelta;
                         physicsSteps++;
@@ -402,11 +408,20 @@ public unsafe class Application : IDisposable
         using (var physicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))
         {
             _pickup.PhysicsUpdate(fixedDt);
+            _oceanPhysics.DebugEnabled = _debugDrawer.Enabled;
+            _oceanPhysics.ApplyBuoyancy(fixedDt, Engine.Time);
             _physics.Step(fixedDt);
         }
 
         using (var playerPhysicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))
-            _player.Update(fixedDt);
+        {
+            OceanPlayerWaterState waterState = _oceanPhysics.SamplePlayerWater(
+                _player.Position,
+                _player.WaterCapsuleRadius,
+                _player.WaterCapsuleCylinderHeight,
+                Engine.Time);
+            _player.Update(fixedDt, waterState, _renderer.Ocean);
+        }
 
         _impactSound.Update(fixedDt);
         _sceneManager.Update(fixedDt);
@@ -580,6 +595,7 @@ public unsafe class Application : IDisposable
         }
 
         _debugDrawer.DrawPlayerDebug(_player);
+        _oceanPhysics.DrawDebug(_debugDrawer);
         _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect, renderViewOverride);
 
         // Skinned model skeleton debug

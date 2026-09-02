@@ -12,7 +12,7 @@ public static class Engine
     {
         s_dt = dt;
         if (advanceSimulation)
-            s_time += dt;
+            AdvanceSimulation(dt);
         s_fpsAccum += dt;
         s_fpsCount++;
         if (s_fpsAccum >= 0.5f)
@@ -21,6 +21,17 @@ public static class Engine
             s_fpsAccum = 0.0f;
             s_fpsCount = 0;
         }
+    }
+
+    /// <summary>
+    /// Advances the authoritative simulation clock. Fixed-step systems and
+    /// renderers that visualize them share this time so a slow render frame
+    /// cannot evaluate several physics steps against one frozen ocean wave.
+    /// </summary>
+    public static void AdvanceSimulation(float fixedDeltaTime)
+    {
+        if (float.IsFinite(fixedDeltaTime) && fixedDeltaTime > 0.0f)
+            s_time += fixedDeltaTime;
     }
 
     public static int FPS => s_fps;

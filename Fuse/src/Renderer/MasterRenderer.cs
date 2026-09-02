@@ -172,6 +172,41 @@ public unsafe class MasterRenderer
     }
 
     /// <summary>
+    /// Prepares the ocean spectrum before the fixed physics step. This keeps
+    /// the CPU queries used by buoyancy on the same simulation time as the
+    /// visible ocean rendered later in the frame.
+    /// </summary>
+    public void PrepareOceanSimulation(float simulationTimeSeconds)
+    {
+        if (_oceanRenderer == null || !_oceanSettings.Enabled)
+            return;
+
+        _oceanRenderer.PrepareSimulation(
+            _oceanSettings,
+            simulationTimeSeconds);
+    }
+
+    public bool TrySampleOceanSurface(
+        Vector2 worldPosition,
+        float simulationTimeSeconds,
+        bool physicsQuality,
+        out OceanSurfaceSample sample)
+    {
+        if (_oceanRenderer == null || !_oceanSettings.Enabled)
+        {
+            sample = default;
+            return false;
+        }
+
+        return _oceanRenderer.TrySampleSurface(
+            worldPosition,
+            simulationTimeSeconds,
+            _oceanSettings,
+            physicsQuality,
+            out sample);
+    }
+
+    /// <summary>
     /// Changes only the runtime copy of the current map settings. The map
     /// document is not modified, so a map reload restores its saved value.
     /// </summary>

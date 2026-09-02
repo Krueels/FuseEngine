@@ -299,6 +299,13 @@ public class MapDocument
             IsTrigger = bj.TryGetPropertyValue("is_trigger", out var TrigNode) ? (bool)TrigNode! : false,
         };
 
+        if (bj.TryGetPropertyValue("buoyancy_volume", out var buoyancyVolumeNode))
+        {
+            float buoyancyVolume = (float)buoyancyVolumeNode!;
+            if (float.IsFinite(buoyancyVolume) && buoyancyVolume > 0.0001f)
+                body.BuoyancyVolume = buoyancyVolume;
+        }
+
         if (bj.TryGetPropertyValue("position", out var posNode))
             body.Position = Vec3FromJson(posNode!.AsArray());
         if (bj.TryGetPropertyValue("rotation", out var rotNode))
@@ -462,6 +469,13 @@ public class MapDocument
             ["restitution"] = body.Restitution,
             ["is_trigger"] = body.IsTrigger,
         };
+
+        if (body.BuoyancyVolume.HasValue &&
+            float.IsFinite(body.BuoyancyVolume.Value) &&
+            body.BuoyancyVolume.Value > 0.0001f)
+        {
+            bj["buoyancy_volume"] = body.BuoyancyVolume.Value;
+        }
 
         switch (body.Shape)
         {

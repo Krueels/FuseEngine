@@ -7,6 +7,7 @@ using Fuse.Core;
 using Fuse.Input;
 using Fuse.Physics;
 using Fuse.Renderer;
+using Fuse.Scene.Model;
 using JoltPhysicsSharp;
 
 namespace Fuse.Player;
@@ -186,7 +187,10 @@ public class Player : IDisposable
         _character.OnContactPersisted -= OnContactPersisted;
         _character.Dispose();
     }
-    public void Update(float dt)
+    public void Update(
+        float dt,
+        OceanPlayerWaterState waterState = default,
+        OceanSettings? waterSettings = null)
     {
         // Respawn Timer
         if (_isDead)
@@ -210,7 +214,7 @@ public class Player : IDisposable
         _imguiWantedKeyboardPrev = imguiWantsKeyboard;
 
         if (!imguiWantsKeyboard)
-            ProcessInput(dt);
+            ProcessInput(dt, in waterState, waterSettings);
 
         _camera.UpdateRecoil(dt);
 
@@ -276,12 +280,15 @@ public class Player : IDisposable
         SyncFlashlight();
         PushDynamicBodies();
     }
-    private void ProcessInput(float dt)
+    private void ProcessInput(
+        float dt,
+        in OceanPlayerWaterState waterState,
+        OceanSettings? waterSettings)
     {
         HandleSprint();
         if (_noclip) { UpdateNoclip(dt); SyncCamera(); return; }
         HandleCrouch();
-        ApplyMovement(dt);
+        ApplyMovement(dt, in waterState, waterSettings);
     }
 
     /// <summary>
@@ -309,8 +316,17 @@ public class Player : IDisposable
         }
     }
 
-    private void ApplyMovement(float dt)
+    private void ApplyMovement(
+        float dt,
+        in OceanPlayerWaterState waterState,
+        OceanSettings? waterSettings)
     {
+        if (waterState.IsInWater && waterSettings != null)
+        {
+            ApplyWaterMovement(dt, in waterState, waterSettings);
+            return;
+        }
+
         Vector3 velocity = _character.LinearVelocity;
         bool onGround = _character.GroundState == GroundState.OnGround;
         bool onSteepGround = _character.GroundState == GroundState.OnSteepGround;
@@ -454,6 +470,84 @@ public class Player : IDisposable
         _character.LinearVelocity = velocity;
     }
 
+    private void ApplyWaterMovement(
+        float dt,
+        in OceanPlayerWaterState waterState,
+        OceanSettings settings)
+    {
+        Vector3 velocity = _character.LinearVelocity;
+        Vector2 wishDir = BuildWishDir();
+
+        // Water movement is deliberately horizontal. Space is reserved for
+        // the explicit float/swim-up action so the player naturally sinks
+        // when no buoyancy input is held.
+        Vector2 horizontal = new(velocity.X, velocity.Z);
+        horizontal = Accelerate(
+            horizontal,
+            wishDir,
+            MathF.Max(settings.PlayerWaterMoveSpeed, 0.0f),
+            MathF.Max(_airAccel * 0.25f, 1.0f),
+            dt);
+
+        float submerged = System.Math.Clamp(waterState.Submersion, 0.0f, 1.0f);
+        float dragFactor = MathF.Exp(-MathF.Max(settings.PlayerWaterDrag, 0.0f) *
+                                     MathF.Max(submerged, 0.15f) * dt);
+        horizontal *= dragFactor;
+
+        // The horizontal component of the same spectral displacement
+        // derivative that drives dynamic-body drag gently carries the player
+        // with the moving surface.
+        Vector2 current = new(waterState.SurfaceVelocity.X, waterState.SurfaceVelocity.Z);
+        if (current.LengthSquared() > 0.0001f)
+        {
+            float currentLimit = MathF.Max(settings.PlayerWaterMoveSpeed, 0.0f) * 2.0f;
+            if (currentLimit > 0.0f && current.Length() > currentLimit)
+                current = Vector2.Normalize(current) * currentLimit;
+            horizontal += current * (submerged * 0.15f);
+        }
+
+        velocity.X = horizontal.X;
+        velocity.Z = horizontal.Y;
+        velocity += _world.Gravity * MathF.Max(settings.PlayerGravityScale, 0.0f) * dt;
+
+        bool floatHeld = Input.Input.KeyDown(Input.KeyCodes.Space);
+        _jumpWasPressed = floatHeld;
+
+        float centerY = (float)_character.Position.Y;
+        float desiredCenterY = waterState.SurfaceHeight - 0.45f;
+        float surfaceError = desiredCenterY - centerY;
+        if (floatHeld)
+        {
+            float desiredVerticalSpeed = System.Math.Clamp(
+                surfaceError * MathF.Max(settings.PlayerSurfaceFloatStrength, 0.0f),
+                -MathF.Max(settings.PlayerSinkAcceleration, 0.0f),
+                MathF.Max(settings.PlayerSwimUpSpeed, 0.0f));
+            velocity.Y = MoveTowards(
+                velocity.Y,
+                desiredVerticalSpeed,
+                MathF.Max(settings.PlayerSwimUpAcceleration, 0.0f) * dt);
+        }
+        else
+        {
+            float sinkTarget = -MathF.Max(settings.PlayerSinkAcceleration, 0.0f) *
+                               MathF.Max(submerged, 0.25f);
+            float sinkRate = MathF.Max(
+                MathF.Abs(_world.Gravity.Y) * MathF.Max(settings.PlayerGravityScale, 0.0f),
+                0.1f);
+            velocity.Y = MoveTowards(velocity.Y, sinkTarget, sinkRate * dt);
+        }
+
+        float verticalDrag = MathF.Exp(-MathF.Max(settings.PlayerWaterDrag, 0.0f) *
+                                       MathF.Max(submerged, 0.15f) * dt);
+        velocity.Y *= verticalDrag;
+        velocity.Y = System.Math.Clamp(
+            velocity.Y,
+            -MathF.Max(settings.PlayerSinkAcceleration * 4.0f, 4.0f),
+            MathF.Max(settings.PlayerSwimUpSpeed, 0.0f));
+
+        _character.LinearVelocity = velocity;
+    }
+
     private Vector2 BuildWishDir()
     {
         if (!Input.Input.IsCursorDisabled())
@@ -503,6 +597,15 @@ public class Player : IDisposable
         return velocity + wishDir * accelSpeed;
     }
 
+    private static float MoveTowards(float current, float target, float maxDelta)
+    {
+        if (maxDelta <= 0.0f)
+            return current;
+        if (MathF.Abs(target - current) <= maxDelta)
+            return target;
+        return current + MathF.Sign(target - current) * maxDelta;
+    }
+
     private Vector3 ClipVelocity(Vector3 inputVel, Vector3 normal, float overbounce = 1.0f)
     {
         float backoff = Vector3.Dot(inputVel, normal);
@@ -542,6 +645,8 @@ public class Player : IDisposable
     public Vector3 EyePosition => new((float)_character.Position.X, (float)_character.Position.Y + _currentEyeHeight, (float)_character.Position.Z);
     public CharacterVirtual NativeCharacter => _character;
     public Vector3 LinearVelocity => new((float)_character.LinearVelocity.X, (float)_character.LinearVelocity.Y, (float)_character.LinearVelocity.Z);
+    public float WaterCapsuleRadius => _capsuleRadius;
+    public float WaterCapsuleCylinderHeight => _isCrouching ? _crouchCapsuleH : _standCapsuleH;
     public bool IsOnGround => _character.GroundState == GroundState.OnGround;
     public bool IsCrouching => _isCrouching;
     public bool IsSprinting => _isSprinting;

@@ -19,16 +19,6 @@ public sealed unsafe class OceanRenderer : IDisposable
     private const int WaveSurfaceTextureUnit0 = 10;
     private const int WaveSlopeTextureUnit0 = 13;
     private const int OceanNormalTextureUnit = 16;
-    private const float TwoPi = 6.28318530718f;
-    private const float Gravity = 9.81f;
-
-    private static readonly float[] CascadeWeights = [1.0f, 0.45f, 0.20f];
-    private static readonly Vector2[] CascadeOffsetFactors =
-    [
-        new(0.173f, 0.371f),
-        new(0.617f, 0.233f),
-        new(0.291f, 0.719f)
-    ];
 
     private readonly GL _gl;
     private readonly Shader _surfaceShader;
@@ -38,6 +28,7 @@ public sealed unsafe class OceanRenderer : IDisposable
     private readonly ComputeShader _resolveCompute;
     private readonly Texture _oceanNormalTexture;
     private readonly FullscreenQuad _quad;
+    private readonly OceanSurfaceSampler _surfaceSampler = new();
     private readonly WaveCascade?[] _cascades = new WaveCascade?[CascadeCount];
     private Mesh? _mesh;
 
@@ -142,6 +133,44 @@ public sealed unsafe class OceanRenderer : IDisposable
     }
 
     /// <summary>
+    /// Prepares the shared CPU/GPU wave state without requiring a render target.
+    /// Physics calls this before Jolt advances so the force sample and the
+    /// later surface pass use the same spectrum and simulation time.
+    /// </summary>
+    public void PrepareSimulation(
+        OceanSettings settings,
+        float simulationTimeSeconds)
+    {
+        if (_disposed || !settings.Enabled)
+            return;
+
+        EnsureWaveSimulationResources(settings);
+        UpdateWaveSimulation(simulationTimeSeconds, settings);
+    }
+
+    public bool TrySampleSurface(
+        Vector2 worldPosition,
+        float simulationTimeSeconds,
+        OceanSettings settings,
+        bool physicsQuality,
+        out OceanSurfaceSample sample)
+    {
+        if (_disposed || !settings.Enabled)
+        {
+            sample = default;
+            return false;
+        }
+
+        _surfaceSampler.Configure(settings);
+        sample = _surfaceSampler.Sample(
+            worldPosition,
+            simulationTimeSeconds,
+            settings,
+            physicsQuality);
+        return _surfaceSampler.IsConfigured;
+    }
+
+    /// <summary>
     /// Renders the ocean into attachment 0 of <paramref name="targetFbo"/>.
     /// The target already contains the opaque scene and its depth buffer.
     /// </summary>
@@ -173,13 +202,12 @@ public sealed unsafe class OceanRenderer : IDisposable
             return false;
 
         EnsureMesh(settings.GridResolution);
-        EnsureWaveSimulationResources(settings);
         EnsureTargets(width, height);
 
         // The game supplies Engine.Time, which stops while the game is
         // paused. Blowtorch omits it and keeps its editor preview animated.
         float animationTime = simulationTimeSeconds ?? CurrentTimeSeconds();
-        UpdateWaveSimulation(animationTime, settings);
+        PrepareSimulation(settings, animationTime);
         CopyScene(targetFbo, width, height);
 
         // The CPU query uses the same initial spectrum and dispersion relation
@@ -457,8 +485,9 @@ public sealed unsafe class OceanRenderer : IDisposable
         for (int band = 0; band < CascadeCount; band++)
         {
             WaveCascade? cascade = _cascades[band];
-            float patchSize = cascade?.PatchSize ?? ComputeWavePatchWorldSize(settings, band);
-            Vector2 offset = GetCascadeOffset(band, patchSize);
+            float patchSize = cascade?.PatchSize ??
+                              OceanSurfaceSampler.ComputePatchWorldSize(settings, band);
+            Vector2 offset = OceanSurfaceSampler.GetCascadeOffset(band, patchSize);
             shader.SetInt($"uWaveSurface{band}", WaveSurfaceTextureUnit0 + band);
             shader.SetInt($"uWaveSlope{band}", WaveSlopeTextureUnit0 + band);
             shader.SetFloat($"uWavePatchSize{band}", patchSize);
@@ -612,10 +641,11 @@ public sealed unsafe class OceanRenderer : IDisposable
             return;
 
         DeleteWaveSimulationResources();
+        _surfaceSampler.Configure(settings);
         for (int band = 0; band < CascadeCount; band++)
         {
-            float patchSize = ComputeWavePatchWorldSize(settings, band);
-            Vector2[] h0Cpu = BuildInitialSpectrum(settings, band, patchSize);
+            float patchSize = OceanSurfaceSampler.ComputePatchWorldSize(settings, band);
+            Vector2[] h0Cpu = _surfaceSampler.GetInitialSpectrum(band);
             WaveCascade cascade = new()
             {
                 PatchSize = patchSize,
@@ -636,7 +666,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         _spectrumWaveLength = settings.WaveLength;
         _spectrumWindSpeed = settings.WindSpeed;
         _spectrumSmallWaveLength = settings.SmallWaveLength;
-        _spectrumDirection = NormalizeWaveDirection(settings.WaveDirection);
+        _spectrumDirection = OceanSurfaceSampler.NormalizeWaveDirection(settings.WaveDirection);
         _spectrumSeed = settings.SpectrumSeed;
         _waveResourcesInitialized = true;
         _simulationStateValid = false;
@@ -648,7 +678,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         if (!_waveResourcesInitialized)
             return false;
 
-        Vector2 direction = NormalizeWaveDirection(settings.WaveDirection);
+        Vector2 direction = OceanSurfaceSampler.NormalizeWaveDirection(settings.WaveDirection);
         return NearlyEqual(_spectrumWaveLength, settings.WaveLength) &&
                NearlyEqual(_spectrumWindSpeed, settings.WindSpeed) &&
                NearlyEqual(_spectrumSmallWaveLength, settings.SmallWaveLength) &&
@@ -682,7 +712,9 @@ public sealed unsafe class OceanRenderer : IDisposable
             _spectrumCompute.SetFloat("uTime", phaseTime);
             _spectrumCompute.SetFloat("uAmplitude", settings.WaveAmplitude);
             _spectrumCompute.SetFloat("uChoppiness", settings.WaveChoppiness);
-            _spectrumCompute.SetFloat("uCascadeWeight", CascadeWeights[band]);
+            _spectrumCompute.SetFloat(
+                "uCascadeWeight",
+                OceanSurfaceSampler.GetCascadeWeight(band));
             BindImage(0, cascade.H0, GLEnum.ReadOnly, (GLEnum)0x8230);
             BindImage(1, cascade.SpectrumA, GLEnum.WriteOnly, GLEnum.Rgba32f);
             BindImage(2, cascade.SpectrumB, GLEnum.WriteOnly, GLEnum.Rgba32f);
@@ -855,6 +887,39 @@ public sealed unsafe class OceanRenderer : IDisposable
             (int)wrapMode);
     }
 
+    private static bool NearlyEqual(float left, float right) =>
+        float.IsFinite(left) && float.IsFinite(right) &&
+        MathF.Abs(left - right) <= 0.00001f;
+
+    private float EvaluateCameraWaterHeight(
+        Vector3 cameraPosition,
+        float animationTime,
+        OceanSettings settings)
+    {
+        Vector2 targetWorldPosition = new(cameraPosition.X, cameraPosition.Z);
+        OceanSurfaceSample sample = _surfaceSampler.Sample(
+            targetWorldPosition,
+            animationTime,
+            settings);
+
+        // Match the displaced surface rather than only its height. The GPU
+        // vertex shader performs the same horizontal choppiness displacement;
+        // this single correction keeps the camera waterline on that surface.
+        if (WaveSimulationValid)
+        {
+            targetWorldPosition -= new Vector2(
+                sample.Displacement.X,
+                sample.Displacement.Z);
+            sample = _surfaceSampler.Sample(
+                targetWorldPosition,
+                animationTime,
+                settings);
+        }
+
+        return sample.Height;
+    }
+
+#if false
     private Vector2[] BuildInitialSpectrum(
         OceanSettings settings,
         int band,
@@ -1115,6 +1180,14 @@ public sealed unsafe class OceanRenderer : IDisposable
         float sign = centered < 0.0f ? -1.0f : 1.0f;
         return sign * MathF.Pow(MathF.Abs(centered), 1.65f);
     }
+#endif
+
+    private static float AdaptiveCoordinate(float normalized)
+    {
+        float centered = normalized * 2.0f - 1.0f;
+        float sign = centered < 0.0f ? -1.0f : 1.0f;
+        return sign * MathF.Pow(MathF.Abs(centered), 1.65f);
+    }
 
     private void EnsureTargets(int width, int height)
     {
@@ -1289,6 +1362,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         _waveResourcesInitialized = false;
         _simulationStateValid = false;
         _lastSimulationTime = float.NaN;
+        _surfaceSampler.Reset();
     }
 
     private void CheckFramebuffer(string name)

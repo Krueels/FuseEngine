@@ -4,9 +4,9 @@ using System.Text.Json.Nodes;
 namespace Fuse.Scene.Model;
 
 /// <summary>
-/// Map-persistent visual settings for the global ocean surface. The ocean is
-/// intentionally render-only; no physics body or player interaction is
-/// created from this data.
+/// Map-persistent settings for the global ocean surface and its optional water
+/// interaction. The ocean surface remains a render pass; physics uses these
+/// values to sample it and apply forces to existing bodies.
 /// </summary>
 public sealed class OceanSettings
 {
@@ -24,6 +24,25 @@ public sealed class OceanSettings
     public float SmallWaveLength { get; set; } = 0.75f;
     public int SpectrumSeed { get; set; } = 1337;
     public int DebugView { get; set; }
+
+    // Physics. These values are map-persistent so a map can opt out without
+    // changing the global physics world or the player controller.
+    public bool PhysicsEnabled { get; set; } = true;
+    public float WaterDensity { get; set; } = 1000.0f;
+    public float BuoyancyStrength { get; set; } = 1.0f;
+    // Legacy property/JSON name retained for map compatibility. The runtime
+    // interprets it as the dimensionless quadratic drag coefficient (Cd).
+    public float WaterLinearDrag { get; set; } = 1.05f;
+    public float WaterAngularDrag { get; set; } = 1.0f;
+    public int BuoyancyProbeCount { get; set; } = 8;
+    public float PlayerGravityScale { get; set; } = 0.55f;
+    public float PlayerSinkAcceleration { get; set; } = 3.5f;
+    public float PlayerSwimUpAcceleration { get; set; } = 16.0f;
+    public float PlayerSwimUpSpeed { get; set; } = 4.0f;
+    public float PlayerWaterMoveSpeed { get; set; } = 2.5f;
+    public float PlayerWaterDrag { get; set; } = 3.0f;
+    public float PlayerSurfaceFloatStrength { get; set; } = 4.0f;
+
     public bool NormalMapEnabled { get; set; } = true;
     public float NormalMapStrength { get; set; } = 0.32f;
     public float NormalMapScale { get; set; } = 0.035f;
@@ -60,6 +79,19 @@ public sealed class OceanSettings
         SmallWaveLength = SmallWaveLength,
         SpectrumSeed = SpectrumSeed,
         DebugView = DebugView,
+        PhysicsEnabled = PhysicsEnabled,
+        WaterDensity = WaterDensity,
+        BuoyancyStrength = BuoyancyStrength,
+        WaterLinearDrag = WaterLinearDrag,
+        WaterAngularDrag = WaterAngularDrag,
+        BuoyancyProbeCount = BuoyancyProbeCount,
+        PlayerGravityScale = PlayerGravityScale,
+        PlayerSinkAcceleration = PlayerSinkAcceleration,
+        PlayerSwimUpAcceleration = PlayerSwimUpAcceleration,
+        PlayerSwimUpSpeed = PlayerSwimUpSpeed,
+        PlayerWaterMoveSpeed = PlayerWaterMoveSpeed,
+        PlayerWaterDrag = PlayerWaterDrag,
+        PlayerSurfaceFloatStrength = PlayerSurfaceFloatStrength,
         NormalMapEnabled = NormalMapEnabled,
         NormalMapStrength = NormalMapStrength,
         NormalMapScale = NormalMapScale,
@@ -95,6 +127,19 @@ public sealed class OceanSettings
         ["small_wave_length"] = SmallWaveLength,
         ["spectrum_seed"] = SpectrumSeed,
         ["debug_view"] = DebugView,
+        ["physics_enabled"] = PhysicsEnabled,
+        ["water_density"] = WaterDensity,
+        ["buoyancy_strength"] = BuoyancyStrength,
+        ["water_linear_drag"] = WaterLinearDrag,
+        ["water_angular_drag"] = WaterAngularDrag,
+        ["buoyancy_probe_count"] = BuoyancyProbeCount,
+        ["player_gravity_scale"] = PlayerGravityScale,
+        ["player_sink_acceleration"] = PlayerSinkAcceleration,
+        ["player_swim_up_acceleration"] = PlayerSwimUpAcceleration,
+        ["player_swim_up_speed"] = PlayerSwimUpSpeed,
+        ["player_water_move_speed"] = PlayerWaterMoveSpeed,
+        ["player_water_drag"] = PlayerWaterDrag,
+        ["player_surface_float_strength"] = PlayerSurfaceFloatStrength,
         ["normal_map_enabled"] = NormalMapEnabled,
         ["normal_map_strength"] = NormalMapStrength,
         ["normal_map_scale"] = NormalMapScale,
@@ -140,6 +185,31 @@ public sealed class OceanSettings
             ReadFloat(source, "small_wave_length", settings.SmallWaveLength), 0.05f, 20.0f);
         settings.SpectrumSeed = ReadInt(source, "spectrum_seed", settings.SpectrumSeed);
         settings.DebugView = System.Math.Clamp(ReadInt(source, "debug_view", settings.DebugView), 0, 3);
+        settings.PhysicsEnabled = ReadBool(source, "physics_enabled", settings.PhysicsEnabled);
+        settings.WaterDensity = System.Math.Clamp(
+            ReadFloat(source, "water_density", settings.WaterDensity), 100.0f, 3000.0f);
+        settings.BuoyancyStrength = System.Math.Clamp(
+            ReadFloat(source, "buoyancy_strength", settings.BuoyancyStrength), 0.0f, 4.0f);
+        settings.WaterLinearDrag = System.Math.Clamp(
+            ReadFloat(source, "water_linear_drag", settings.WaterLinearDrag), 0.0f, 30.0f);
+        settings.WaterAngularDrag = System.Math.Clamp(
+            ReadFloat(source, "water_angular_drag", settings.WaterAngularDrag), 0.0f, 30.0f);
+        settings.BuoyancyProbeCount = System.Math.Clamp(
+            ReadInt(source, "buoyancy_probe_count", settings.BuoyancyProbeCount), 4, 16);
+        settings.PlayerGravityScale = System.Math.Clamp(
+            ReadFloat(source, "player_gravity_scale", settings.PlayerGravityScale), 0.0f, 2.0f);
+        settings.PlayerSinkAcceleration = System.Math.Clamp(
+            ReadFloat(source, "player_sink_acceleration", settings.PlayerSinkAcceleration), 0.0f, 50.0f);
+        settings.PlayerSwimUpAcceleration = System.Math.Clamp(
+            ReadFloat(source, "player_swim_up_acceleration", settings.PlayerSwimUpAcceleration), 0.0f, 100.0f);
+        settings.PlayerSwimUpSpeed = System.Math.Clamp(
+            ReadFloat(source, "player_swim_up_speed", settings.PlayerSwimUpSpeed), 0.0f, 30.0f);
+        settings.PlayerWaterMoveSpeed = System.Math.Clamp(
+            ReadFloat(source, "player_water_move_speed", settings.PlayerWaterMoveSpeed), 0.0f, 20.0f);
+        settings.PlayerWaterDrag = System.Math.Clamp(
+            ReadFloat(source, "player_water_drag", settings.PlayerWaterDrag), 0.0f, 30.0f);
+        settings.PlayerSurfaceFloatStrength = System.Math.Clamp(
+            ReadFloat(source, "player_surface_float_strength", settings.PlayerSurfaceFloatStrength), 0.0f, 20.0f);
         settings.NormalMapEnabled = ReadBool(
             source, "normal_map_enabled", settings.NormalMapEnabled);
         settings.NormalMapStrength = System.Math.Clamp(

@@ -4821,7 +4821,7 @@ public unsafe class EditorUI : IDisposable
             }
             Undo.TrackItem(_frameBeginState);
             ImGui.SameLine();
-            ImGui.TextDisabled("Visual only; no player physics.");
+            ImGui.TextDisabled("Visual ocean with optional water physics.");
 
             if (ocean.Enabled && ImGui.TreeNodeEx(
                     "Ocean settings##oceanSettings",
@@ -4848,10 +4848,107 @@ public unsafe class EditorUI : IDisposable
                 {
                     ocean.GridResolution = Math.Clamp(gridResolution, 32, 256);
                     oceanSettingsChanged = true;
+            }
+            Undo.TrackItem(_frameBeginState);
+
+            ImGui.SeparatorText("Physics");
+            bool oceanPhysicsEnabled = ocean.PhysicsEnabled;
+            if (ImGui.Checkbox("Enable water physics##oceanPhysicsEnabled", ref oceanPhysicsEnabled))
+            {
+                ocean.PhysicsEnabled = oceanPhysicsEnabled;
+                oceanSettingsChanged = true;
+            }
+            Undo.TrackItem(_frameBeginState);
+            ImGui.SameLine();
+            ImGui.TextDisabled("Dynamic bodies float by mass/volume; hold Space to float.");
+
+            if (ocean.PhysicsEnabled)
+            {
+                float waterDensity = ocean.WaterDensity;
+                if (ImGui.DragFloat("Water density##oceanWaterDensity", ref waterDensity, 10.0f, 100.0f, 3000.0f, "%.0f"))
+                {
+                    ocean.WaterDensity = Math.Clamp(waterDensity, 100.0f, 3000.0f);
+                    oceanSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);
 
-                ImGui.SeparatorText("Waves");
+                ImGui.TextDisabled("Buoyancy is fixed by density, gravity and displaced volume.");
+
+                float waterLinearDrag = ocean.WaterLinearDrag;
+                if (ImGui.SliderFloat("Linear drag Cd##oceanWaterLinearDrag", ref waterLinearDrag, 0.0f, 5.0f, "%.2f"))
+                {
+                    ocean.WaterLinearDrag = Math.Clamp(waterLinearDrag, 0.0f, 5.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float waterAngularDrag = ocean.WaterAngularDrag;
+                if (ImGui.SliderFloat("Rotational drag Cd##oceanWaterAngularDrag", ref waterAngularDrag, 0.0f, 5.0f, "%.2f"))
+                {
+                    ocean.WaterAngularDrag = Math.Clamp(waterAngularDrag, 0.0f, 5.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Player in water");
+                float playerGravityScale = ocean.PlayerGravityScale;
+                if (ImGui.SliderFloat("Gravity scale##oceanPlayerGravity", ref playerGravityScale, 0.0f, 2.0f, "%.2f"))
+                {
+                    ocean.PlayerGravityScale = Math.Clamp(playerGravityScale, 0.0f, 2.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerSinkAcceleration = ocean.PlayerSinkAcceleration;
+                if (ImGui.SliderFloat("Sink acceleration##oceanPlayerSink", ref playerSinkAcceleration, 0.0f, 50.0f, "%.1f"))
+                {
+                    ocean.PlayerSinkAcceleration = Math.Clamp(playerSinkAcceleration, 0.0f, 50.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerSwimUpAcceleration = ocean.PlayerSwimUpAcceleration;
+                if (ImGui.SliderFloat("Swim acceleration##oceanPlayerSwimAcceleration", ref playerSwimUpAcceleration, 0.0f, 100.0f, "%.1f"))
+                {
+                    ocean.PlayerSwimUpAcceleration = Math.Clamp(playerSwimUpAcceleration, 0.0f, 100.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerSwimUpSpeed = ocean.PlayerSwimUpSpeed;
+                if (ImGui.SliderFloat("Float speed##oceanPlayerSwimSpeed", ref playerSwimUpSpeed, 0.0f, 30.0f, "%.1f"))
+                {
+                    ocean.PlayerSwimUpSpeed = Math.Clamp(playerSwimUpSpeed, 0.0f, 30.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerWaterMoveSpeed = ocean.PlayerWaterMoveSpeed;
+                if (ImGui.SliderFloat("Water move speed##oceanPlayerMoveSpeed", ref playerWaterMoveSpeed, 0.0f, 20.0f, "%.1f"))
+                {
+                    ocean.PlayerWaterMoveSpeed = Math.Clamp(playerWaterMoveSpeed, 0.0f, 20.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerWaterDrag = ocean.PlayerWaterDrag;
+                if (ImGui.SliderFloat("Player water drag##oceanPlayerWaterDrag", ref playerWaterDrag, 0.0f, 30.0f, "%.2f"))
+                {
+                    ocean.PlayerWaterDrag = Math.Clamp(playerWaterDrag, 0.0f, 30.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float playerSurfaceFloatStrength = ocean.PlayerSurfaceFloatStrength;
+                if (ImGui.SliderFloat("Surface float strength##oceanPlayerFloatStrength", ref playerSurfaceFloatStrength, 0.0f, 20.0f, "%.1f"))
+                {
+                    ocean.PlayerSurfaceFloatStrength = Math.Clamp(playerSurfaceFloatStrength, 0.0f, 20.0f);
+                    oceanSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+            }
+
+            ImGui.SeparatorText("Waves");
                 float waveAmplitude = ocean.WaveAmplitude;
                 if (ImGui.DragFloat("Amplitude##oceanWaveAmplitude", ref waveAmplitude, 0.05f, 0.0f, 100.0f, "%.2f"))
                 {
@@ -6082,6 +6179,46 @@ public unsafe class EditorUI : IDisposable
                             bool massChanged = ImGui.DragFloat("Mass##inspectMass", ref mass, 0.1f, 0.0f, 100000.0f, "%.3f");
                             Undo.TrackItem(_frameBeginState);
                             if (massChanged) body.Mass = mass;
+
+                            float buoyancyVolume = body.BuoyancyVolume ?? 0.0f;
+                            bool buoyancyVolumeChanged = ImGui.DragFloat(
+                                "Buoyancy volume (m³)##inspectBuoyancyVolume",
+                                ref buoyancyVolume,
+                                0.05f,
+                                0.0f,
+                                100000.0f,
+                                "%.3f");
+                            Undo.TrackItem(_frameBeginState);
+                            if (buoyancyVolumeChanged)
+                            {
+                                body.BuoyancyVolume = buoyancyVolume > 0.0001f
+                                    ? buoyancyVolume
+                                    : null;
+                            }
+                            ImGui.SameLine();
+                            ImGui.TextDisabled("0 = collider volume");
+
+                            float authoredVolume = CalculateAuthoredBuoyancyVolume(body);
+                            if (body.Mass > 0.0f && authoredVolume > 0.0001f)
+                            {
+                                float objectDensity = body.Mass / authoredVolume;
+                                float waterDensity = MathF.Max(doc.Ocean.WaterDensity, 0.0001f);
+                                float equilibriumFraction = objectDensity / waterDensity;
+                                ImGui.TextDisabled(
+                                    $"Volume {authoredVolume:F3} m³ | density {objectDensity:F1} kg/m³ | equilibrium {equilibriumFraction:P1}");
+                                if (equilibriumFraction < 0.05f)
+                                {
+                                    ImGui.TextColored(
+                                        new Vector4(1.0f, 0.65f, 0.2f, 1.0f),
+                                        "Very low density: the physical waterline is shallow and stiff.");
+                                }
+                                else if (equilibriumFraction > 1.0f)
+                                {
+                                    ImGui.TextColored(
+                                        new Vector4(0.45f, 0.7f, 1.0f, 1.0f),
+                                        "Density exceeds the water density: this body will sink.");
+                                }
+                            }
                             
 
                             float friction = body.Friction;
@@ -9215,6 +9352,34 @@ public unsafe class EditorUI : IDisposable
         char[] invalid = Path.GetInvalidFileNameChars();
         string safe = new(name.Trim().Select(character => invalid.Contains(character) || char.IsWhiteSpace(character) ? '_' : character).ToArray());
         return string.IsNullOrWhiteSpace(safe) ? "Material" : safe;
+    }
+
+    private static float CalculateAuthoredBuoyancyVolume(MapBody body)
+    {
+        if (body.BuoyancyVolume is float explicitVolume &&
+            explicitVolume > 0.0001f &&
+            float.IsFinite(explicitVolume))
+        {
+            return explicitVolume;
+        }
+
+        return body.Shape switch
+        {
+            MapShapeType.Box when body.HalfExtents.HasValue =>
+                8.0f * MathF.Abs(
+                    body.HalfExtents.Value.X *
+                    body.HalfExtents.Value.Y *
+                    body.HalfExtents.Value.Z),
+            MapShapeType.Sphere when body.Radius.HasValue =>
+                4.0f / 3.0f * MathF.PI *
+                MathF.Pow(MathF.Abs(body.Radius.Value), 3.0f),
+            MapShapeType.Capsule when body.Radius.HasValue && body.Height.HasValue =>
+                MathF.PI * MathF.Pow(MathF.Abs(body.Radius.Value), 2.0f) *
+                MathF.Abs(body.Height.Value) +
+                4.0f / 3.0f * MathF.PI *
+                MathF.Pow(MathF.Abs(body.Radius.Value), 3.0f),
+            _ => 0.0f
+        };
     }
 
     public void DrawPreviewDebug(Fuse.Debug.DebugDrawer drawer, EditorAssetService assetService)

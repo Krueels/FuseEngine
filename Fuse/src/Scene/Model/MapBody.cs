@@ -23,6 +23,12 @@ public class MapBody
     public float Restitution { get; set; }
     public bool IsTrigger { get; set; }
 
+    /// <summary>
+    /// Optional displaced volume used by ocean physics, in cubic world units.
+    /// A missing value makes the runtime derive the volume from the collider.
+    /// </summary>
+    public float? BuoyancyVolume { get; set; }
+
     public Vector3? HalfExtents { get; set; }
     public float? Radius { get; set; }
     public float? Height { get; set; }
