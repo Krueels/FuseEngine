@@ -164,7 +164,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         _fogShader.SetFloat("uFogSkyHeightFalloff", MathF.Max(settings.SkyHeightFalloff, 0.1f));
         _fogShader.SetFloat("uFogMaxDistance", MathF.Max(settings.MaxDistance, 10.0f));
         _fogShader.SetFloat("uFogNoiseScale", MathF.Max(settings.NoiseScale, 0.00001f));
-        _fogShader.SetFloat("uFogNoiseStrength", System.Math.Clamp(settings.NoiseStrength, 0.0f, 1.0f));
+        _fogShader.SetFloat("uFogNoiseStrength", System.Math.Clamp(settings.NoiseStrength, 0.0f, 3.0f));
+        _fogShader.SetFloat("uFogNoiseContrast", System.Math.Clamp(settings.NoiseContrast, 0.25f, 4.0f));
         Vector2 windDirection = settings.WindDirection.LengthSquared() > 1e-8f
             ? Vector2.Normalize(settings.WindDirection)
             : Vector2.UnitX;
@@ -271,6 +272,7 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         MixFloat(ref hash, settings.MaxDistance);
         MixFloat(ref hash, settings.NoiseScale);
         MixFloat(ref hash, settings.NoiseStrength);
+        MixFloat(ref hash, settings.NoiseContrast);
         MixFloat(ref hash, settings.WindDirection.X);
         MixFloat(ref hash, settings.WindDirection.Y);
         MixFloat(ref hash, settings.WindSpeed);

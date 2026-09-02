@@ -140,7 +140,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     public void UpdateShadow(
         Vector3 cameraPosition,
         Vector3 sunDirection,
-        VolumetricCloudSettings settings)
+        VolumetricCloudSettings settings,
+        float? simulationTimeSeconds = null)
     {
         EnsureSettingsCurrent(settings);
         if (!settings.Enabled || !settings.ShadowsEnabled || !IsValid)
@@ -150,7 +151,9 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         }
 
         EnsureShadowTarget(settings.ShadowResolution);
-        float time = CurrentTimeSeconds();
+        // The game supplies its paused simulation clock. Blowtorch leaves this
+        // null so the editor preview can continue animating independently.
+        float time = simulationTimeSeconds ?? CurrentTimeSeconds();
         float updateInterval = MathF.Max(0.0f, settings.ShadowUpdateInterval);
         if (_shadowValid && time - _lastShadowTime < updateInterval)
             return;
@@ -223,7 +226,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         Vector3 sunColor,
         VolumetricCloudSettings settings,
         bool sceneIsSrgb = false,
-        bool outputSrgb = false)
+        bool outputSrgb = false,
+        float? simulationTimeSeconds = null)
     {
         EnsureSettingsCurrent(settings);
         if (!settings.Enabled || sceneColorTexture == 0 || sceneDepthTexture == 0 ||
@@ -233,7 +237,9 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         }
 
         EnsureFrameTargets(width, height, settings.ResolutionScale);
-        float time = CurrentTimeSeconds();
+        // Use simulation time in-game so pausing freezes cloud advection,
+        // temporal reprojection inputs and all time-dependent noise together.
+        float time = simulationTimeSeconds ?? CurrentTimeSeconds();
         Matrix4x4 viewProjection = view * projection;
         if (!Matrix4x4.Invert(viewProjection, out Matrix4x4 inverseViewProjection))
             return default;

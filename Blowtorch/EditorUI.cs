@@ -4689,9 +4689,17 @@ public unsafe class EditorUI : IDisposable
                 Undo.TrackItem(_frameBeginState);
 
                 float fogNoiseStrength = fog.NoiseStrength;
-                if (ImGui.SliderFloat("Noise strength##fogNoiseStrength", ref fogNoiseStrength, 0.0f, 1.0f, "%.2f"))
+                if (ImGui.SliderFloat("Noise strength##fogNoiseStrength", ref fogNoiseStrength, 0.0f, 3.0f, "%.2f"))
                 {
-                    fog.NoiseStrength = Math.Clamp(fogNoiseStrength, 0.0f, 1.0f);
+                    fog.NoiseStrength = Math.Clamp(fogNoiseStrength, 0.0f, 3.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogNoiseContrast = fog.NoiseContrast;
+                if (ImGui.SliderFloat("Noise contrast##fogNoiseContrast", ref fogNoiseContrast, 0.25f, 4.0f, "%.2f"))
+                {
+                    fog.NoiseContrast = Math.Clamp(fogNoiseContrast, 0.25f, 4.0f);
                     fogSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);

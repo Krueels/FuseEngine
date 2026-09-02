@@ -51,6 +51,7 @@ uniform float uFogSkyHeightFalloff;
 uniform float uFogMaxDistance;
 uniform float uFogNoiseScale;
 uniform float uFogNoiseStrength;
+uniform float uFogNoiseContrast;
 uniform vec2 uFogWindDirection;
 uniform float uFogWindSpeed;
 uniform float uFogAnisotropy;
@@ -131,7 +132,26 @@ float SkyAtmosphereDensity(vec3 worldPosition)
 float FogDensityAt(vec3 worldPosition, float time)
 {
     float noise = FogNoise(worldPosition, time);
-    float noiseFactor = mix(1.0, mix(0.55, 1.25, noise), clamp(uFogNoiseStrength, 0.0, 1.0));
+    // Keep the original response through strength 1.0. Above that point the
+    // low/high bounds open gradually, allowing nearly empty pockets and
+    // denser local volumes without changing the ray-march cost.
+    float strength = clamp(uFogNoiseStrength, 0.0, 3.0);
+    float extraStrength = max(strength - 1.0, 0.0);
+    float lowDensity = max(0.08, 0.55 - extraStrength * 0.235);
+    float highDensity = 1.25 + extraStrength * 0.375;
+
+    // Contrast changes the distribution around the midpoint instead of
+    // scaling the whole fog density. At the default value (1.0), the old
+    // noise distribution is preserved.
+    float contrast = max(uFogNoiseContrast, 0.01);
+    float shapedNoise = clamp(
+        (noise - 0.5) * contrast + 0.5,
+        0.0,
+        1.0);
+    float noiseFactor = mix(
+        1.0,
+        mix(lowDensity, highDensity, shapedNoise),
+        min(strength, 1.0));
     float groundFog = max(uFogDensity, 0.0) * HeightDensity(worldPosition) * noiseFactor;
     // The atmospheric layer is intentionally independent from the dense
     // ground layer. It keeps participating media present along sky rays

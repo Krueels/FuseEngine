@@ -5043,7 +5043,166 @@
       }
     }
   ],
-  "skybox": "Textures/Skybox/night.jpg",
+  "skybox_settings": {
+    "mode": "procedural",
+    "zenith_color": [
+      0.08,
+      0.2,
+      0.55
+    ],
+    "horizon_color": [
+      0.65,
+      0.24,
+      0.1
+    ],
+    "ground_color": [
+      0.025,
+      0.03,
+      0.045
+    ],
+    "night_zenith_color": [
+      0.002,
+      0.005,
+      0.02
+    ],
+    "night_horizon_color": [
+      0.01,
+      0.014,
+      0.035
+    ],
+    "sun_color": [
+      1,
+      1,
+      1
+    ],
+    "star_color": [
+      0.7,
+      0.82,
+      1
+    ],
+    "sun_intensity": 4,
+    "sun_angular_radius_degrees": 0.27,
+    "atmosphere_strength": 1,
+    "rayleigh_strength": 1,
+    "mie_strength": 1,
+    "star_intensity": 2.5,
+    "star_density": 1,
+    "exposure": 1
+  },
+  "volumetric_clouds": {
+    "enabled": false,
+    "preset": "weathermix",
+    "base_height": -547,
+    "thickness": 5000,
+    "coverage": 0.04,
+    "density": 3.35,
+    "scale": 0.15,
+    "detail_scale": 4,
+    "detail_strength": 0.35,
+    "shape_factor": 0.67,
+    "erosion_factor": 0,
+    "erosion_occlusion": 0.63,
+    "wind_direction": [
+      0.95782626,
+      0.28734788
+    ],
+    "wind_speed": 3,
+    "max_distance": 8360,
+    "primary_steps": 64,
+    "light_steps": 6,
+    "resolution_scale": 0.41,
+    "temporal_blend": 0.98,
+    "anisotropy": 0.55,
+    "absorption": 1,
+    "ambient_strength": 0.22,
+    "powder_effect": 0.65,
+    "multi_scattering": 0.55,
+    "domain_warp_strength": 0.61,
+    "secondary_shape_strength": 1,
+    "shadows_enabled": true,
+    "shadow_strength": 0.55,
+    "shadow_extent": 2200,
+    "shadow_resolution": 256,
+    "shadow_update_interval": 0.12
+  },
+  "volumetric_fog": {
+    "enabled": false,
+    "density": 0,
+    "base_height": 0,
+    "height_falloff": 180,
+    "sky_density": 0.00014,
+    "sky_height_falloff": 1200,
+    "max_distance": 4000,
+    "noise_scale": 0.004,
+    "noise_strength": 0.35,
+    "noise_contrast": 1,
+    "wind_direction": [
+      0.97014254,
+      0.24253564
+    ],
+    "wind_speed": 2,
+    "anisotropy": 0.15,
+    "absorption": 1,
+    "ambient_strength": 0.65,
+    "sun_scattering": 1,
+    "light_shafts_enabled": true,
+    "light_shaft_strength": 1,
+    "ray_steps": 24,
+    "resolution_scale": 0.5,
+    "temporal_blend": 0.88
+  },
+  "ocean": {
+    "enabled": false,
+    "water_level": 0,
+    "ocean_size": 4096,
+    "grid_resolution": 128,
+    "wave_amplitude": 0.75,
+    "wave_length": 38,
+    "wave_speed": 1.25,
+    "wave_choppiness": 0.65,
+    "wave_direction": [
+      0.97014254,
+      0.24253564
+    ],
+    "wind_speed": 18,
+    "small_wave_length": 0.75,
+    "spectrum_seed": 1337,
+    "debug_view": 0,
+    "normal_map_enabled": true,
+    "normal_map_strength": 0.32,
+    "normal_map_scale": 0.035,
+    "normal_map_distortion": 0.75,
+    "shallow_color": [
+      0.035,
+      0.28,
+      0.3
+    ],
+    "deep_color": [
+      0.005,
+      0.045,
+      0.075
+    ],
+    "foam_color": [
+      0.75,
+      0.92,
+      0.95
+    ],
+    "reflection_strength": 0.78,
+    "refraction_strength": 0.035,
+    "absorption_distance": 42,
+    "surface_roughness": 0.16,
+    "foam_strength": 0.18,
+    "foam_depth": 1.5,
+    "underwater_enabled": true,
+    "underwater_color": [
+      0.015,
+      0.12,
+      0.16
+    ],
+    "underwater_fog_density": 0.035,
+    "underwater_distortion": 0.004,
+    "underwater_darkening": 0.18
+  },
   "player_spawn": {
     "position": [
       2,

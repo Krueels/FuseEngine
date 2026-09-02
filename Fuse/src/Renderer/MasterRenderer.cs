@@ -787,7 +787,11 @@ public unsafe class MasterRenderer
                 lightDir);
         }
         EnsureProceduralSkyboxIbl(lightDir, skyDirectionalLightColor);
-        _cloudRenderer?.UpdateShadow(camera.Position, lightDir, _cloudSettings);
+        _cloudRenderer?.UpdateShadow(
+            camera.Position,
+            lightDir,
+            _cloudSettings,
+            simulationTimeSeconds: Engine.Time);
         bool fogNeedsDirectionalShadows = _fogSettings.Enabled &&
                                           _fogSettings.LightShaftsEnabled;
         bool renderDirShadows = dirLight != null && dirLight.CastShadows &&
@@ -1002,7 +1006,8 @@ public unsafe class MasterRenderer
                 skyDirectionalLightColor,
                 _cloudSettings,
                 sceneIsSrgb: !_postPipeline.Settings.Enabled,
-                outputSrgb: !_postPipeline.Settings.Enabled);
+                outputSrgb: !_postPipeline.Settings.Enabled,
+                simulationTimeSeconds: Engine.Time);
             if (clouds.Framebuffer != 0)
             {
                 _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, clouds.Framebuffer);

@@ -19,6 +19,7 @@ public sealed class VolumetricFogSettings
     public float MaxDistance { get; set; } = 4000.0f;
     public float NoiseScale { get; set; } = 0.004f;
     public float NoiseStrength { get; set; } = 0.35f;
+    public float NoiseContrast { get; set; } = 1.0f;
     public Vector2 WindDirection { get; set; } = Vector2.Normalize(new Vector2(1.0f, 0.25f));
     public float WindSpeed { get; set; } = 2.0f;
     public float Anisotropy { get; set; } = 0.15f;
@@ -42,6 +43,7 @@ public sealed class VolumetricFogSettings
         MaxDistance = MaxDistance,
         NoiseScale = NoiseScale,
         NoiseStrength = NoiseStrength,
+        NoiseContrast = NoiseContrast,
         WindDirection = WindDirection,
         WindSpeed = WindSpeed,
         Anisotropy = Anisotropy,
@@ -66,6 +68,7 @@ public sealed class VolumetricFogSettings
         ["max_distance"] = MaxDistance,
         ["noise_scale"] = NoiseScale,
         ["noise_strength"] = NoiseStrength,
+        ["noise_contrast"] = NoiseContrast,
         ["wind_direction"] = new JsonArray(WindDirection.X, WindDirection.Y),
         ["wind_speed"] = WindSpeed,
         ["anisotropy"] = Anisotropy,
@@ -94,7 +97,9 @@ public sealed class VolumetricFogSettings
             ReadFloat(source, "sky_height_falloff", settings.SkyHeightFalloff), 0.1f, 10000.0f);
         settings.MaxDistance = System.Math.Clamp(ReadFloat(source, "max_distance", settings.MaxDistance), 10.0f, 50000.0f);
         settings.NoiseScale = System.Math.Clamp(ReadFloat(source, "noise_scale", settings.NoiseScale), 0.00001f, 1.0f);
-        settings.NoiseStrength = System.Math.Clamp(ReadFloat(source, "noise_strength", settings.NoiseStrength), 0.0f, 1.0f);
+        settings.NoiseStrength = System.Math.Clamp(ReadFloat(source, "noise_strength", settings.NoiseStrength), 0.0f, 3.0f);
+        settings.NoiseContrast = System.Math.Clamp(
+            ReadFloat(source, "noise_contrast", settings.NoiseContrast), 0.25f, 4.0f);
         settings.WindDirection = ReadVec2(source, "wind_direction", settings.WindDirection);
         if (settings.WindDirection.LengthSquared() > 1e-8f)
             settings.WindDirection = Vector2.Normalize(settings.WindDirection);
