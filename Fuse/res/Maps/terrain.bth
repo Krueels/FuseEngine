@@ -4509,10 +4509,10 @@
           1109.3257
         ],
         "rotation": [
-          -0.668401,
-          -0.36420026,
-          -0.29875746,
-          0.57562345
+          -0.66610634,
+          -0.36538562,
+          -0.29730657,
+          0.5782773
         ],
         "mass": 0,
         "friction": 0.5,
@@ -4655,7 +4655,7 @@
     "exposure": 1
   },
   "volumetric_clouds": {
-    "enabled": true,
+    "enabled": false,
     "preset": "weathermix",
     "base_height": -451,
     "thickness": 5000,
@@ -4691,7 +4691,7 @@
     "shadow_update_interval": 0.12
   },
   "volumetric_fog": {
-    "enabled": true,
+    "enabled": false,
     "density": 0.0006,
     "base_height": 0,
     "height_falloff": 118,
@@ -4721,8 +4721,8 @@
     "water_level": 20,
     "ocean_size": 11672,
     "grid_resolution": 256,
-    "wave_amplitude": 0.75,
-    "wave_length": 0.5,
+    "wave_amplitude": 0.3,
+    "wave_length": 175.5,
     "wave_speed": 2,
     "wave_choppiness": 0.69,
     "wave_direction": [
@@ -4733,10 +4733,23 @@
     "small_wave_length": 0.36,
     "spectrum_seed": 1337,
     "debug_view": 0,
+    "physics_enabled": true,
+    "water_density": 1000,
+    "buoyancy_strength": 1,
+    "water_linear_drag": 1.05,
+    "water_angular_drag": 1,
+    "buoyancy_probe_count": 8,
+    "player_gravity_scale": 0.55,
+    "player_sink_acceleration": 3.5,
+    "player_swim_up_acceleration": 16,
+    "player_swim_up_speed": 4,
+    "player_water_move_speed": 2.5,
+    "player_water_drag": 3,
+    "player_surface_float_strength": 4,
     "normal_map_enabled": true,
-    "normal_map_strength": 0.31,
-    "normal_map_scale": 0.035,
-    "normal_map_distortion": 1.72,
+    "normal_map_strength": 0.5,
+    "normal_map_scale": 0.018,
+    "normal_map_distortion": 2,
     "shallow_color": [
       0.035,
       0.28,
@@ -4753,11 +4766,11 @@
       0.95
     ],
     "reflection_strength": 2,
-    "refraction_strength": 0.088,
+    "refraction_strength": 0.087,
     "absorption_distance": 42,
     "surface_roughness": 0.02,
-    "foam_strength": 2,
-    "foam_depth": 6.1,
+    "foam_strength": 1.01,
+    "foam_depth": 3.6,
     "underwater_enabled": true,
     "underwater_color": [
       0.011678205,

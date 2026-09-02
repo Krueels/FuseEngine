@@ -18,7 +18,9 @@ public sealed unsafe class OceanRenderer : IDisposable
     private const int WaveSimulationResolution = 128;
     private const int WaveSurfaceTextureUnit0 = 10;
     private const int WaveSlopeTextureUnit0 = 13;
-    private const int OceanNormalTextureUnit = 16;
+    // Units 15-17 belong to IBL, 18 belongs to cloud shadows, and 9 belongs
+    // to fog history. Unit 8 is free and keeps the detail map independent.
+    private const int OceanNormalTextureUnit = 8;
 
     private readonly GL _gl;
     private readonly Shader _surfaceShader;

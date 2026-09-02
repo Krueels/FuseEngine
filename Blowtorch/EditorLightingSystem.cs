@@ -237,6 +237,23 @@ public sealed class EditorLightingSystem : IDisposable
             _pointShadowMaps[i].BindForReading(TextureUnit.Texture3 + i);
     }
 
+    /// <summary>
+    /// Rebinds the editor shadow textures for passes that do not use the
+    /// regular material shader. The ocean reserves unit 1 for its copied
+    /// scene depth, so it reads the directional shadow array from unit 7.
+    /// Local shadow maps keep the same units used by the lighting block.
+    /// </summary>
+    public void BindOceanShadowMaps()
+    {
+        if (!_supportsShadows)
+            return;
+
+        _directionalShadowMap?.BindForReading(TextureUnit.Texture7);
+        _spotShadowMap?.BindForReading(TextureUnit.Texture2);
+        for (int i = 0; i < _pointShadowMaps.Length; i++)
+            _pointShadowMaps[i].BindForReading(TextureUnit.Texture3 + i);
+    }
+
     public void BindImageBasedLighting(Shader shader)
     {
         if (_imageBasedLighting != null)

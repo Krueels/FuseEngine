@@ -28,7 +28,13 @@ void main()
     float displacementZ = spectrumC.r;
 
     float slopeMagnitude = length(vec2(slopeX, slopeZ));
-    float foam = smoothstep(0.20, 1.20, slopeMagnitude * max(uFoamScale, 0.01));
+    float spectralCrest = smoothstep(
+        0.08, 0.55, slopeMagnitude * max(uFoamScale, 0.01));
+    float displacedCrest = smoothstep(
+        0.18, 0.90,
+        length(vec2(displacementX, displacementZ)) *
+            max(uFoamScale, 0.01) * 0.55);
+    float foam = max(spectralCrest, displacedCrest * 0.35);
 
     imageStore(
         uSurface,

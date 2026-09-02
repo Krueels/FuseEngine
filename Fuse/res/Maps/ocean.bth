@@ -1523,7 +1523,7 @@
         1,
         1
       ],
-      "light_intensity": 0.5,
+      "light_intensity": 1,
       "light_radius": 15,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -1538,10 +1538,10 @@
           0
         ],
         "rotation": [
-          0.7933533,
-          0,
-          0,
-          -0.6087615
+          0.8357584,
+          0.050028186,
+          -0.055677045,
+          -0.54397166
         ],
         "mass": 0,
         "friction": 0.5,
@@ -1610,8 +1610,8 @@
     "erosion_factor": 0.85,
     "erosion_occlusion": 0.6,
     "wind_direction": [
-      0.95782626,
-      0.28734788
+      0.9578263,
+      0.2873479
     ],
     "wind_speed": 3,
     "max_distance": 3000,
@@ -1634,7 +1634,7 @@
   },
   "volumetric_fog": {
     "enabled": false,
-    "density": 0.018,
+    "density": 0.0005,
     "base_height": 0,
     "height_falloff": 180,
     "sky_density": 0.00025,
@@ -1662,10 +1662,10 @@
     "enabled": true,
     "water_level": -3.7,
     "ocean_size": 4096,
-    "grid_resolution": 128,
+    "grid_resolution": 256,
     "wave_amplitude": 0.75,
-    "wave_length": 38,
-    "wave_speed": 1.25,
+    "wave_length": 85.5,
+    "wave_speed": 2,
     "wave_choppiness": 0.65,
     "wave_direction": [
       0.97014254,
@@ -1689,9 +1689,9 @@
     "player_water_drag": 3,
     "player_surface_float_strength": 4,
     "normal_map_enabled": true,
-    "normal_map_strength": 0.32,
-    "normal_map_scale": 0.035,
-    "normal_map_distortion": 0.75,
+    "normal_map_strength": 0.6,
+    "normal_map_scale": 0.038,
+    "normal_map_distortion": 1.17,
     "shallow_color": [
       0.035,
       0.28,
@@ -1707,10 +1707,10 @@
       0.92,
       0.95
     ],
-    "reflection_strength": 0.78,
+    "reflection_strength": 0.91,
     "refraction_strength": 0.035,
     "absorption_distance": 42,
-    "surface_roughness": 0.16,
+    "surface_roughness": 0.09,
     "foam_strength": 0.18,
     "foam_depth": 1.5,
     "underwater_enabled": true,

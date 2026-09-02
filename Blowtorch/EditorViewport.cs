@@ -416,6 +416,13 @@ public unsafe class EditorViewport : IDisposable
                     assetService.SkyboxSettings,
                     cloudSunDirection)
                 : Vector3.One;
+
+            // OceanRenderer uses unit 1 for the copied scene depth. Rebind
+            // the editor's shadow resources immediately before the ocean pass
+            // so its directional and local-light shadow samplers do not see
+            // the depth texture (the game renderer performs the same mirror
+            // through MasterRenderer.SetupWorldUniforms).
+            _lightingSystem.BindOceanShadowMaps();
             assetService.OceanRenderer.Render(
                 _fbo,
                 _width,

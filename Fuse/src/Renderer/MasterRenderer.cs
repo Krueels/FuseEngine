@@ -1665,6 +1665,9 @@ public unsafe class MasterRenderer
         shader.SetInt("uPointShadowMap2", 5);
         shader.SetInt("uPointShadowMap3", 6);
         _shadowMap.BindForReading(TextureUnit.Texture1);
+        // The ocean uses unit 1 for the copied scene depth. Mirror the
+        // directional shadow texture on a dedicated unit for its surface pass.
+        _shadowMap.BindForReading(TextureUnit.Texture7);
         _spotShadowMap.BindForReading(TextureUnit.Texture2);
         _pointShadowMaps[0].BindForReading(TextureUnit.Texture3);
         _pointShadowMaps[1].BindForReading(TextureUnit.Texture4);
