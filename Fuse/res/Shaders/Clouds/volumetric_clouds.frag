@@ -198,7 +198,7 @@ void main()
         // longer step. When it finds the cloud again, the same segment is
         // revisited at the normal step size so thin edges are not skipped.
         float currentStepLength = coarseMode
-            ? baseStepLength * 2.25
+            ? baseStepLength * 1.50
             : baseStepLength;
         float segmentJitter = fract(rayJitter + float(i) * 0.61803398875);
         float sampleDistance = min(
@@ -270,7 +270,7 @@ void main()
             if (!coarseMode)
             {
                 emptySteps++;
-                if (emptySteps >= 3)
+                if (emptySteps >= 4)
                     coarseMode = true;
             }
         }
@@ -318,7 +318,7 @@ void main()
                 historyMinimum - historyMargin,
                 historyMaximum + historyMargin);
 
-            float depthMargin = 0.045 + currentCloudDepth * 0.16;
+            float depthMargin = 0.065 + currentCloudDepth * 0.20;
             bool depthValid = historyDepth < 0.999 &&
                 depthDifference <= depthMargin &&
                 historyDepth >= depthMinimum - depthMargin &&
@@ -326,9 +326,16 @@ void main()
             if (depthValid)
             {
                 float transmittanceDifference = abs(history.a - currentCloud.a);
-                float historyConfidence = exp(-transmittanceDifference * 16.0);
-                float depthConfidence = exp(-depthDifference * 42.0);
-                float blend = uCloudTemporalBlend * historyConfidence * depthConfidence;
+                // The ray jitter changes the integrated alpha slightly even
+                // when the reprojected ray still hits the same cloud. The old
+                // confidence curve rejected those valid samples too quickly,
+                // leaving the low-resolution pass permanently stippled.
+                float historyConfidence = exp(-transmittanceDifference * 6.0);
+                float depthConfidence = exp(-depthDifference * 18.0);
+                float blend = clamp(
+                    uCloudTemporalBlend * historyConfidence * depthConfidence,
+                    0.0,
+                    0.95);
                 currentCloud = mix(currentCloud, history, blend);
             }
         }

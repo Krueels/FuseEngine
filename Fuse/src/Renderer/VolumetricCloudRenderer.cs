@@ -293,6 +293,7 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _compositeShader.Use();
         _compositeShader.SetInt("uSceneColor", 0);
         _compositeShader.SetInt("uCloudColor", 1);
+        _compositeShader.SetInt("uCloudDepth", 2);
         _compositeShader.SetInt("uSceneDepth", 4);
         _compositeShader.SetVec2("uCloudTexelSize", new Vector2(1.0f / _lowWidth, 1.0f / _lowHeight));
         _compositeShader.SetBool("uDepthAwareUpsample", _lowWidth != _fullWidth || _lowHeight != _fullHeight);
@@ -302,6 +303,8 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
         _gl.BindTexture(TextureTarget.Texture2D, sceneColorTexture);
         _gl.ActiveTexture(TextureUnit.Texture1);
         _gl.BindTexture(TextureTarget.Texture2D, _cloudTextures[_historyIndex]);
+        _gl.ActiveTexture(TextureUnit.Texture2);
+        _gl.BindTexture(TextureTarget.Texture2D, _cloudDepthTextures[_historyIndex]);
         _gl.ActiveTexture(TextureUnit.Texture4);
         _gl.BindTexture(TextureTarget.Texture2D, sceneDepthTexture);
         _quad.Draw();
