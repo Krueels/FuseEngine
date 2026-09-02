@@ -66,6 +66,9 @@ public sealed unsafe class OceanRenderer : IDisposable
     private float _lastSimulationAmplitude = float.NaN;
     private float _lastSimulationSpeed = float.NaN;
     private float _lastSimulationChoppiness = float.NaN;
+    private float _underwaterCameraSubmersion;
+    private float _underwaterAnimationTime;
+    private bool _underwaterPassPending;
 
     public bool IsValid => !_disposed &&
         _surfaceShader.IsValid && _underwaterShader.IsValid;
@@ -100,6 +103,14 @@ public sealed unsafe class OceanRenderer : IDisposable
     }
 
     public bool LastFrameUnderwater { get; private set; }
+
+    /// <summary>
+    /// Indicates that the surface pass found a camera close enough to the
+    /// waterline that the fullscreen underwater pass must still be applied.
+    /// The pass is intentionally deferred until after clouds and atmospheric
+    /// fog have been composited.
+    /// </summary>
+    public bool UnderwaterPassPending => _underwaterPassPending;
 
     public OceanRenderer(GL gl)
     {
@@ -153,6 +164,7 @@ public sealed unsafe class OceanRenderer : IDisposable
         float? simulationTimeSeconds = null)
     {
         LastFrameUnderwater = false;
+        _underwaterPassPending = false;
         if (_disposed || targetFbo == 0 || width <= 0 || height <= 0 ||
             !settings.Enabled || !IsValid)
             return false;
@@ -191,6 +203,10 @@ public sealed unsafe class OceanRenderer : IDisposable
         bool cameraBelowWater = settings.UnderwaterEnabled &&
                                  cameraSubmersion > 0.0f;
 
+        _underwaterCameraSubmersion = cameraSubmersion;
+        _underwaterAnimationTime = animationTime;
+        _underwaterPassPending = renderUnderwater;
+
         ClearSurfaceData(width, height);
 
         RenderSurface(
@@ -214,28 +230,60 @@ public sealed unsafe class OceanRenderer : IDisposable
             oceanSize,
             doubleSided: renderUnderwater);
 
-        if (renderUnderwater)
+        LastFrameUnderwater = cameraBelowWater;
+        RestoreTargetState(targetFbo, width, height, targetHasMrt);
+        return true;
+    }
+
+    /// <summary>
+    /// Applies the deferred fullscreen underwater treatment to the current
+    /// scene color. Call this after all atmospheric passes, especially
+    /// volumetric fog, so the underwater view does not get overwritten by a
+    /// later compositor.
+    /// </summary>
+    public bool ApplyUnderwater(
+        uint targetFbo,
+        int width,
+        int height,
+        Matrix4x4 view,
+        Matrix4x4 projection,
+        Vector3 cameraPosition,
+        Vector3 sunDirection,
+        Vector3 sunColor,
+        OceanSettings settings,
+        bool sceneIsSrgb = false,
+        bool outputSrgb = false,
+        bool targetHasMrt = true)
+    {
+        if (!_underwaterPassPending)
+            return false;
+
+        _underwaterPassPending = false;
+        if (_disposed || targetFbo == 0 || width <= 0 || height <= 0 ||
+            !settings.Enabled || !settings.UnderwaterEnabled || !IsValid ||
+            !Matrix4x4.Invert(view * projection, out Matrix4x4 inverseViewProjection))
         {
-            // The underwater pass includes the already rendered surface and
-            // reads the exact rasterized surface metadata for its waterline.
-            CopyScene(targetFbo, width, height);
-            RenderUnderwater(
-                targetFbo,
-                width,
-                height,
-                inverseViewProjection,
-                cameraPosition,
-                animationTime,
-                sunDirection,
-                sunColor,
-                settings,
-                cameraSubmersion,
-                sceneIsSrgb,
-                outputSrgb,
-                targetHasMrt);
+            return false;
         }
 
-        LastFrameUnderwater = cameraBelowWater;
+        // Capture the color after fog/cloud composition, while retaining the
+        // exact depth written by the opaque scene and ocean surface. The
+        // surface sidecar remains the authoritative per-pixel waterline.
+        CopyScene(targetFbo, width, height);
+        RenderUnderwater(
+            targetFbo,
+            width,
+            height,
+            inverseViewProjection,
+            cameraPosition,
+            _underwaterAnimationTime,
+            sunDirection,
+            sunColor,
+            settings,
+            _underwaterCameraSubmersion,
+            sceneIsSrgb,
+            outputSrgb,
+            targetHasMrt);
         RestoreTargetState(targetFbo, width, height, targetHasMrt);
         return true;
     }

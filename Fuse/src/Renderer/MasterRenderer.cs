@@ -957,10 +957,11 @@ public unsafe class MasterRenderer
             RenderDecals(view, proj, targetFbo);
         }
 
-        // The ocean is rendered after opaque geometry and decals. It copies
-        // attachment 0 plus depth before sampling them, so reflection and
-        // refraction never read from the color attachment currently being
-        // written. Underwater is a fullscreen pass at the same stage.
+        // The ocean surface is rendered after opaque geometry and decals. It
+        // copies attachment 0 plus depth before sampling them, so reflection
+        // and refraction never read from the color attachment currently being
+        // written. The underwater fullscreen pass is deferred until after
+        // clouds and atmospheric fog.
         bool underwater = false;
         if (_oceanRenderer != null && _oceanSettings.Enabled)
         {
@@ -1031,9 +1032,9 @@ public unsafe class MasterRenderer
         }
 
         // Fog is composited after clouds so the already visible cloud layer is
-        // attenuated by the same aerial volume as opaque geometry. It remains
-        // independent from the ocean's underwater pass; a submerged camera
-        // must not disable the atmospheric volume altogether.
+        // attenuated by the same aerial volume as opaque geometry. It runs
+        // before the deferred underwater pass, allowing both effects to be
+        // visible in the same frame.
         if (_fogRenderer != null && _fogSettings.Enabled)
         {
             FogCompositeResult fog = _fogRenderer.Render(
@@ -1077,6 +1078,28 @@ public unsafe class MasterRenderer
                 _gl.DepthFunc(DepthFunction.Less);
                 _gl.DepthMask(true);
             }
+        }
+
+        // Fog is a fullscreen compositor. Applying it after the underwater
+        // pass would overwrite the water tint and distortion that the ocean
+        // produced, so finish the ocean effect after all atmospheric passes.
+        if (_oceanRenderer != null &&
+            _oceanSettings.Enabled &&
+            _oceanRenderer.UnderwaterPassPending)
+        {
+            _oceanRenderer.ApplyUnderwater(
+                targetFbo,
+                _scrWidth,
+                _scrHeight,
+                view,
+                proj,
+                camera.Position,
+                lightDir,
+                skyDirectionalLightColor,
+                _oceanSettings,
+                sceneIsSrgb: !_postPipeline.Settings.Enabled,
+                outputSrgb: !_postPipeline.Settings.Enabled,
+                targetHasMrt: true);
         }
 
 

@@ -476,8 +476,7 @@ public unsafe class EditorViewport : IDisposable
 
         // Apply fog after the cloud composite so both the opaque scene and
         // the visible cloud layer share the same aerial attenuation. The
-        // atmospheric pass remains independent from the ocean's underwater
-        // pass: being below the waterline must not silently disable fog.
+        // underwater fullscreen pass is applied after this compositor below.
         if (!_camera.IsOrthographic &&
             sceneService.Document.Fog.Enabled &&
             assetService.FogRenderer != null)
@@ -521,6 +520,29 @@ public unsafe class EditorViewport : IDisposable
                 _gl.DepthFunc(DepthFunction.Less);
                 _gl.DepthMask(true);
             }
+        }
+
+        // Fog is a fullscreen compositor. Applying it after the underwater
+        // pass would overwrite the water tint and distortion that the ocean
+        // produced, so finish the ocean effect after all atmospheric passes.
+        if (!_camera.IsOrthographic &&
+            sceneService.Document.Ocean.Enabled &&
+            assetService.OceanRenderer != null &&
+            assetService.OceanRenderer.UnderwaterPassPending)
+        {
+            assetService.OceanRenderer.ApplyUnderwater(
+                _fbo,
+                _width,
+                _height,
+                view,
+                proj,
+                _camera.Position,
+                cloudSunDirection,
+                cloudSunColor,
+                sceneService.Document.Ocean,
+                sceneIsSrgb: true,
+                outputSrgb: true,
+                targetHasMrt: false);
         }
 
         // Draw the grid after opaque scene geometry. This lets the ground
