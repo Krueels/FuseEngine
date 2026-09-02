@@ -170,6 +170,41 @@ public unsafe class MasterRenderer
         ArgumentNullException.ThrowIfNull(settings);
         _oceanSettings = settings.Clone();
     }
+
+    /// <summary>
+    /// Changes only the runtime copy of the current map settings. The map
+    /// document is not modified, so a map reload restores its saved value.
+    /// </summary>
+    public void SetVolumetricCloudsDebugEnabled(bool enabled)
+    {
+        if (_cloudSettings.Enabled == enabled)
+            return;
+
+        _cloudSettings.Enabled = enabled;
+        _cloudRenderer?.InvalidateHistory();
+    }
+
+    /// <summary>
+    /// Changes only the runtime copy of the current map settings. The map
+    /// document is not modified, so a map reload restores its saved value.
+    /// </summary>
+    public void SetVolumetricFogDebugEnabled(bool enabled)
+    {
+        if (_fogSettings.Enabled == enabled)
+            return;
+
+        _fogSettings.Enabled = enabled;
+        _fogRenderer?.InvalidateHistory();
+    }
+
+    /// <summary>
+    /// Changes only the runtime copy of the current map settings. The map
+    /// document is not modified, so a map reload restores its saved value.
+    /// </summary>
+    public void SetOceanDebugEnabled(bool enabled)
+    {
+        _oceanSettings.Enabled = enabled;
+    }
     private readonly EngineProfiler _profiler = new();
     public EngineProfiler Profiler => _profiler;
     private Matrix4x4 _prevViewProj = Matrix4x4.Identity;

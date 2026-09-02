@@ -64,6 +64,24 @@ public unsafe class ImGuiBackEnd : IDisposable
         if (ImGui.Checkbox("Bhop Mode", ref bhopMode))
             player.EnableBhop = bhopMode;
 
+        if (ImGui.CollapsingHeader("Map feature visibility (debug)", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ImGui.TextDisabled("Runtime-only overrides; the current map is not modified.");
+            ImGui.TextDisabled("Reload the map to restore its saved values.");
+
+            bool cloudsEnabled = renderer.VolumetricClouds.Enabled;
+            if (ImGui.Checkbox("Volumetric clouds##debugClouds", ref cloudsEnabled))
+                renderer.SetVolumetricCloudsDebugEnabled(cloudsEnabled);
+
+            bool fogEnabled = renderer.VolumetricFog.Enabled;
+            if (ImGui.Checkbox("Volumetric fog##debugFog", ref fogEnabled))
+                renderer.SetVolumetricFogDebugEnabled(fogEnabled);
+
+            bool oceanEnabled = renderer.Ocean.Enabled;
+            if (ImGui.Checkbox("Ocean##debugOcean", ref oceanEnabled))
+                renderer.SetOceanDebugEnabled(oceanEnabled);
+        }
+
         DrawProfiler(renderer);
 
         if (ImGuiNET.ImGui.CollapsingHeader("Post-Process"))

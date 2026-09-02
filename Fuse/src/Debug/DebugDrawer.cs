@@ -23,6 +23,15 @@ public unsafe class DebugDrawer : IDisposable
 
     private readonly List<Line> _lines = [];
 
+    private struct TerrainWireframe
+    {
+        public Mesh Mesh;
+        public Matrix4x4 Model;
+        public Vector3 Color;
+    }
+
+    private readonly List<TerrainWireframe> _terrainWireframes = [];
+
     private static readonly List<WeakReference<IGizmoDrawable>> _gizmoDrawables = [];
 
     public static void Register(IGizmoDrawable drawable)
@@ -583,6 +592,7 @@ public unsafe class DebugDrawer : IDisposable
     public void Clear()
     {
         _lines.Clear();
+        _terrainWireframes.Clear();
         _billboardQuads.Clear();
     }
 
@@ -616,58 +626,133 @@ public unsafe class DebugDrawer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Queues the mesh currently selected by a terrain chunk's LOD set. The
+    /// active mesh is intentionally taken from TerrainLod.CurrentMesh instead
+    /// of regenerating a separate diagnostic grid, so the overlay shows the
+    /// exact render LOD and stitched geometry used by the scene.
+    /// </summary>
+    public void DrawTerrainLod(Entity entity)
+    {
+        if (!Enabled || !entity.Visible || entity.TerrainLod == null)
+            return;
+
+        var lod = entity.TerrainLod;
+        _terrainWireframes.Add(new TerrainWireframe
+        {
+            Mesh = lod.CurrentMesh,
+            Model = entity.RenderMatrix,
+            Color = GetTerrainLodColor(lod.CurrentLevel)
+        });
+    }
+
     public void Render(Matrix4x4 view, Matrix4x4 proj)
     {
-        if (_lines.Count == 0)
+        if (_lines.Count == 0 && _terrainWireframes.Count == 0)
         {
             FlushBillboards(view, proj);
             return;
         }
 
-        var verts = new DebugVert[_lines.Count * 2];
-        for (int i = 0; i < _lines.Count; i++)
+        if (_lines.Count > 0)
         {
-            var l = _lines[i];
-            verts[i * 2 + 0] = new DebugVert { PX = l.From.X, PY = l.From.Y, PZ = l.From.Z, CR = l.Color.X, CG = l.Color.Y, CB = l.Color.Z };
-            verts[i * 2 + 1] = new DebugVert { PX = l.To.X,   PY = l.To.Y,   PZ = l.To.Z,   CR = l.Color.X, CG = l.Color.Y, CB = l.Color.Z };
+            var verts = new DebugVert[_lines.Count * 2];
+            for (int i = 0; i < _lines.Count; i++)
+            {
+                var l = _lines[i];
+                verts[i * 2 + 0] = new DebugVert { PX = l.From.X, PY = l.From.Y, PZ = l.From.Z, CR = l.Color.X, CG = l.Color.Y, CB = l.Color.Z };
+                verts[i * 2 + 1] = new DebugVert { PX = l.To.X,   PY = l.To.Y,   PZ = l.To.Z,   CR = l.Color.X, CG = l.Color.Y, CB = l.Color.Z };
+            }
+
+            _gl.BindVertexArray(_vao);
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+
+            fixed (DebugVert* vPtr = verts)
+            {
+                _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verts.Length * sizeof(DebugVert)), vPtr, BufferUsageARB.DynamicDraw);
+            }
+
+            _gl.EnableVertexAttribArray(0);
+            _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(DebugVert), (void*)0);
+            _gl.EnableVertexAttribArray(1);
+            _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(DebugVert), (void*)(3 * sizeof(float)));
+
+            _gl.UseProgram(_shader);
+            _gl.Disable(GLEnum.DepthTest);
+
+            float[] viewArr = GetMatrixValues(view);
+            float[] projArr = GetMatrixValues(proj);
+            float[] modelArr = GetMatrixValues(Matrix4x4.Identity);
+            fixed (float* vp = viewArr, pp = projArr, mp = modelArr)
+            {
+                _gl.UniformMatrix4(_uView, 1, false, vp);
+                _gl.UniformMatrix4(_uProj, 1, false, pp);
+                int uModel = _gl.GetUniformLocation(_shader, "uModel");
+                _gl.UniformMatrix4(uModel, 1, false, mp);
+            }
+
+            int uUseVC = _gl.GetUniformLocation(_shader, "uUseVertexColor");
+            _gl.Uniform1(uUseVC, 1);
+
+            _gl.DrawArrays(GLEnum.Lines, 0, (uint)verts.Length);
+
+            _gl.BindVertexArray(0);
+            _gl.Enable(GLEnum.DepthTest);
         }
 
-        _gl.BindVertexArray(_vao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+        RenderTerrainWireframes(view, proj);
+        FlushBillboards(view, proj);
+    }
 
-        fixed (DebugVert* vPtr = verts)
-        {
-            _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(verts.Length * sizeof(DebugVert)), vPtr, BufferUsageARB.DynamicDraw);
-        }
+    private void RenderTerrainWireframes(Matrix4x4 view, Matrix4x4 proj)
+    {
+        if (_terrainWireframes.Count == 0)
+            return;
 
-        _gl.EnableVertexAttribArray(0);
-        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)sizeof(DebugVert), (void*)0);
-        _gl.EnableVertexAttribArray(1);
-        _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, (uint)sizeof(DebugVert), (void*)(3 * sizeof(float)));
+        bool depthEnabled = _gl.IsEnabled(GLEnum.DepthTest);
+        bool cullEnabled = _gl.IsEnabled(GLEnum.CullFace);
 
         _gl.UseProgram(_shader);
         _gl.Disable(GLEnum.DepthTest);
+        _gl.Disable(GLEnum.CullFace);
+        _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Line);
 
         float[] viewArr = GetMatrixValues(view);
         float[] projArr = GetMatrixValues(proj);
-        float[] modelArr = GetMatrixValues(Matrix4x4.Identity);
-        fixed (float* vp = viewArr, pp = projArr, mp = modelArr)
+        fixed (float* vp = viewArr, pp = projArr)
         {
             _gl.UniformMatrix4(_uView, 1, false, vp);
             _gl.UniformMatrix4(_uProj, 1, false, pp);
-            int uModel = _gl.GetUniformLocation(_shader, "uModel");
-            _gl.UniformMatrix4(uModel, 1, false, mp);
         }
 
+        int uModel = _gl.GetUniformLocation(_shader, "uModel");
         int uUseVC = _gl.GetUniformLocation(_shader, "uUseVertexColor");
-        _gl.Uniform1(uUseVC, 1);
+        int uColor = _gl.GetUniformLocation(_shader, "uColor");
+        _gl.Uniform1(uUseVC, 0);
 
-        _gl.DrawArrays(GLEnum.Lines, 0, (uint)verts.Length);
+        foreach (TerrainWireframe wireframe in _terrainWireframes)
+        {
+            float[] modelArr = GetMatrixValues(wireframe.Model);
+            fixed (float* mp = modelArr)
+                _gl.UniformMatrix4(uModel, 1, false, mp);
 
-        _gl.BindVertexArray(0);
-        _gl.Enable(GLEnum.DepthTest);
-        FlushBillboards(view, proj);
+            _gl.Uniform3(uColor, wireframe.Color.X, wireframe.Color.Y, wireframe.Color.Z);
+            wireframe.Mesh.Draw();
+        }
+
+        _gl.PolygonMode(GLEnum.FrontAndBack, GLEnum.Fill);
+        if (depthEnabled) _gl.Enable(GLEnum.DepthTest); else _gl.Disable(GLEnum.DepthTest);
+        if (cullEnabled) _gl.Enable(GLEnum.CullFace); else _gl.Disable(GLEnum.CullFace);
     }
+
+    private static Vector3 GetTerrainLodColor(int level) => level switch
+    {
+        0 => new Vector3(0.15f, 1.0f, 0.2f),
+        1 => new Vector3(1.0f, 1.0f, 0.1f),
+        2 => new Vector3(1.0f, 0.55f, 0.05f),
+        3 => new Vector3(1.0f, 0.12f, 0.05f),
+        _ => new Vector3(1.0f, 0.05f, 0.8f)
+    };
 
     public void DrawCachedLineMesh(Mesh mesh, Vector3 pos, Quaternion rot, Vector3 scale, Vector3 color, Matrix4x4 view, Matrix4x4 proj)
     {

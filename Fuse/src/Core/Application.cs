@@ -564,6 +564,21 @@ public unsafe class Application : IDisposable
         _debugDrawer.Clear();
         _debugDrawer.InvokeOnDrawGizmos();
         _sceneManager.DrawDebug(_debugDrawer);
+
+        // Draw the exact active render mesh of visible terrain chunks. The
+        // per-LOD colors make transitions and unexpected forced LODs obvious,
+        // while the frustum prevents a large terrain from overwhelming the
+        // diagnostic pass with off-screen chunks.
+        ViewFrustum terrainDebugFrustum = new(
+            _player.Camera.GetViewMatrix() * _player.Camera.GetProjectionMatrix(aspect));
+        foreach (Entity entity in _sceneManager.ActiveScene.Entities)
+        {
+            if (entity.TerrainLod == null || !entity.Visible)
+                continue;
+            if (terrainDebugFrustum.Intersects(entity.GetWorldRenderBounds()))
+                _debugDrawer.DrawTerrainLod(entity);
+        }
+
         _debugDrawer.DrawPlayerDebug(_player);
         _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect, renderViewOverride);
 
