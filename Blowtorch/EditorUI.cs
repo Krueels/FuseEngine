@@ -4654,6 +4654,23 @@ public unsafe class EditorUI : IDisposable
                 }
                 Undo.TrackItem(_frameBeginState);
 
+                ImGui.SeparatorText("Sky / atmospheric layer");
+                float fogSkyDensity = fog.SkyDensity;
+                if (ImGui.SliderFloat("Sky density##fogSkyDensity", ref fogSkyDensity, 0.0f, 0.01f, "%.5f"))
+                {
+                    fog.SkyDensity = Math.Clamp(fogSkyDensity, 0.0f, 1.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogSkyHeightFalloff = fog.SkyHeightFalloff;
+                if (ImGui.DragFloat("Sky height falloff##fogSkyHeightFalloff", ref fogSkyHeightFalloff, 10.0f, 0.1f, 10000.0f, "%.1f"))
+                {
+                    fog.SkyHeightFalloff = Math.Clamp(fogSkyHeightFalloff, 0.1f, 10000.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
                 float fogMaxDistance = fog.MaxDistance;
                 if (ImGui.DragFloat("Maximum distance##fogMaxDistance", ref fogMaxDistance, 10.0f, 10.0f, 50000.0f, "%.0f"))
                 {
@@ -4729,6 +4746,25 @@ public unsafe class EditorUI : IDisposable
                     fogSettingsChanged = true;
                 }
                 Undo.TrackItem(_frameBeginState);
+
+                bool lightShaftsEnabled = fog.LightShaftsEnabled;
+                if (ImGui.Checkbox("Volumetric light shafts##fogLightShafts", ref lightShaftsEnabled))
+                {
+                    fog.LightShaftsEnabled = lightShaftsEnabled;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                if (fog.LightShaftsEnabled)
+                {
+                    float lightShaftStrength = fog.LightShaftStrength;
+                    if (ImGui.SliderFloat("Light shaft strength##fogLightShaftStrength", ref lightShaftStrength, 0.0f, 4.0f, "%.2f"))
+                    {
+                        fog.LightShaftStrength = Math.Clamp(lightShaftStrength, 0.0f, 4.0f);
+                        fogSettingsChanged = true;
+                    }
+                    Undo.TrackItem(_frameBeginState);
+                }
 
                 int fogRaySteps = fog.RaySteps;
                 if (ImGui.SliderInt("Ray-march steps##fogRaySteps", ref fogRaySteps, 8, 128))

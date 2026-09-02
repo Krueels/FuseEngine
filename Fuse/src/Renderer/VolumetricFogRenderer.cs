@@ -15,7 +15,10 @@ public readonly record struct FogCompositeResult(uint Framebuffer, uint ColorTex
 /// </summary>
 public sealed unsafe class VolumetricFogRenderer : IDisposable
 {
-    private const int FogDepthHistoryTextureUnit = 7;
+    private const int SpotShadowTextureUnit = 4;
+    private const int PointShadowTextureUnit = 5;
+    private const int FogDepthHistoryTextureUnit = 9;
+    private const int MaxPointShadowMaps = 4;
 
     private readonly GL _gl;
     private readonly FullscreenQuad _quad;
@@ -23,6 +26,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
     private readonly Shader _compositeShader;
     private readonly uint _sharedNoiseTexture;
     private ShadowMap? _directionalShadowMap;
+    private ShadowMap? _spotShadowMap;
+    private PointShadowMap[]? _pointShadowMaps;
     private readonly long _timeOriginMilliseconds = Environment.TickCount64;
 
     private readonly uint[] _fogFbos = new uint[2];
@@ -69,6 +74,14 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
 
     public void SetDirectionalShadowMap(ShadowMap? directionalShadowMap) =>
         _directionalShadowMap = directionalShadowMap;
+
+    public void SetLocalShadowMaps(
+        ShadowMap? spotShadowMap,
+        PointShadowMap[]? pointShadowMaps)
+    {
+        _spotShadowMap = spotShadowMap;
+        _pointShadowMaps = pointShadowMaps;
+    }
 
     public void InvalidateHistory()
     {
@@ -147,6 +160,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         _fogShader.SetFloat("uFogDensity", MathF.Max(settings.Density, 0.0f));
         _fogShader.SetFloat("uFogBaseHeight", settings.BaseHeight);
         _fogShader.SetFloat("uFogHeightFalloff", MathF.Max(settings.HeightFalloff, 0.1f));
+        _fogShader.SetFloat("uFogSkyDensity", MathF.Max(settings.SkyDensity, 0.0f));
+        _fogShader.SetFloat("uFogSkyHeightFalloff", MathF.Max(settings.SkyHeightFalloff, 0.1f));
         _fogShader.SetFloat("uFogMaxDistance", MathF.Max(settings.MaxDistance, 10.0f));
         _fogShader.SetFloat("uFogNoiseScale", MathF.Max(settings.NoiseScale, 0.00001f));
         _fogShader.SetFloat("uFogNoiseStrength", System.Math.Clamp(settings.NoiseStrength, 0.0f, 1.0f));
@@ -159,6 +174,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         _fogShader.SetFloat("uFogAbsorption", System.Math.Clamp(settings.Absorption, 0.01f, 20.0f));
         _fogShader.SetFloat("uFogAmbientStrength", System.Math.Max(settings.AmbientStrength, 0.0f));
         _fogShader.SetFloat("uFogSunScattering", System.Math.Max(settings.SunScattering, 0.0f));
+        _fogShader.SetBool("uFogLightShaftsEnabled", settings.LightShaftsEnabled);
+        _fogShader.SetFloat("uFogLightShaftStrength", System.Math.Clamp(settings.LightShaftStrength, 0.0f, 4.0f));
         _fogShader.SetInt("uFogRaySteps", System.Math.Clamp(settings.RaySteps, 8, 128));
         _fogShader.SetFloat("uFogTemporalBlend", System.Math.Clamp(settings.TemporalBlend, 0.0f, 0.98f));
         _fogShader.SetFloat("uFogTime", time);
@@ -169,6 +186,9 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         _fogShader.SetBool("uFogNoiseEnabled", _sharedNoiseTexture != 0);
         _fogShader.SetBool("uHistoryValid", _historyValid);
         _fogShader.SetInt("uFogFrameIndex", _frameIndex);
+        _fogShader.SetInt("uSpotShadowMap", SpotShadowTextureUnit);
+        for (int i = 0; i < MaxPointShadowMaps; i++)
+            _fogShader.SetInt($"uPointShadowMap{i}", PointShadowTextureUnit + i);
 
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, sceneDepthTexture);
@@ -178,6 +198,14 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         _gl.BindTexture(TextureTarget.Texture3D, _sharedNoiseTexture);
         if (_directionalShadowMap != null)
             _directionalShadowMap.BindForReading(TextureUnit.Texture3);
+        if (_spotShadowMap != null)
+            _spotShadowMap.BindForReading((TextureUnit)((int)TextureUnit.Texture0 + SpotShadowTextureUnit));
+        if (_pointShadowMaps != null)
+        {
+            for (int i = 0; i < System.Math.Min(MaxPointShadowMaps, _pointShadowMaps.Length); i++)
+                _pointShadowMaps[i].BindForReading(
+                    (TextureUnit)((int)TextureUnit.Texture0 + PointShadowTextureUnit + i));
+        }
         _gl.ActiveTexture((TextureUnit)((int)TextureUnit.Texture0 + FogDepthHistoryTextureUnit));
         _gl.BindTexture(TextureTarget.Texture2D, _fogDepthTextures[_historyIndex]);
         _quad.Draw();
@@ -238,6 +266,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         MixFloat(ref hash, settings.Density);
         MixFloat(ref hash, settings.BaseHeight);
         MixFloat(ref hash, settings.HeightFalloff);
+        MixFloat(ref hash, settings.SkyDensity);
+        MixFloat(ref hash, settings.SkyHeightFalloff);
         MixFloat(ref hash, settings.MaxDistance);
         MixFloat(ref hash, settings.NoiseScale);
         MixFloat(ref hash, settings.NoiseStrength);
@@ -248,6 +278,8 @@ public sealed unsafe class VolumetricFogRenderer : IDisposable
         MixFloat(ref hash, settings.Absorption);
         MixFloat(ref hash, settings.AmbientStrength);
         MixFloat(ref hash, settings.SunScattering);
+        Mix(ref hash, settings.LightShaftsEnabled ? 1u : 0u);
+        MixFloat(ref hash, settings.LightShaftStrength);
         Mix(ref hash, unchecked((uint)settings.RaySteps));
         MixFloat(ref hash, settings.ResolutionScale);
         MixFloat(ref hash, settings.TemporalBlend);

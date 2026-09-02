@@ -576,6 +576,7 @@ public unsafe class MasterRenderer
                 _gl,
                 _cloudRenderer?.BaseNoiseTexture ?? 0,
                 _shadowMap);
+            _fogRenderer.SetLocalShadowMaps(_spotShadowMap, _pointShadowMaps);
         }
         catch (Exception ex)
         {
@@ -787,7 +788,10 @@ public unsafe class MasterRenderer
         }
         EnsureProceduralSkyboxIbl(lightDir, skyDirectionalLightColor);
         _cloudRenderer?.UpdateShadow(camera.Position, lightDir, _cloudSettings);
-        bool renderDirShadows = dirLight != null && dirLight.CastShadows && ShadowsEnabled;
+        bool fogNeedsDirectionalShadows = _fogSettings.Enabled &&
+                                          _fogSettings.LightShaftsEnabled;
+        bool renderDirShadows = dirLight != null && dirLight.CastShadows &&
+                                (ShadowsEnabled || fogNeedsDirectionalShadows);
 
         CalculateCascadeSplits(camera.NearPlane, ShadowFarPlane, _cascadeLevels);
         int spotCount = SelectLights(scene.Lights, LightType.Spot, _spotLights,

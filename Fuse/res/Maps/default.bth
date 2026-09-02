@@ -2541,7 +2541,7 @@
         0.89705884,
         0.35178778
       ],
-      "light_intensity": 1,
+      "light_intensity": 0,
       "light_radius": 15,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -2556,10 +2556,10 @@
           0
         ],
         "rotation": [
-          -0.74123657,
-          0.6087362,
-          -0.2738948,
-          -0.070641294
+          -0.26992995,
+          0.92039627,
+          -0.26613835,
+          0.095806785
         ],
         "mass": 0,
         "friction": 0.5,
@@ -5839,8 +5839,8 @@
           0
         ],
         "mass": 0,
-        "friction": 0,
-        "restitution": 0,
+        "friction": 2,
+        "restitution": 0.5,
         "is_trigger": false,
         "half_extents": [
           224,
@@ -5934,24 +5934,28 @@
   },
   "volumetric_fog": {
     "enabled": true,
-    "density": 0.0582,
+    "density": 0.1023,
     "base_height": 0,
     "height_falloff": 180,
+    "sky_density": 0.00025,
+    "sky_height_falloff": 1200,
     "max_distance": 4000,
-    "noise_scale": 0.11481,
+    "noise_scale": 0.06451,
     "noise_strength": 1,
     "wind_direction": [
       0.97014254,
       0.24253564
     ],
     "wind_speed": 35.5,
-    "anisotropy": 0.9,
+    "anisotropy": 0,
     "absorption": 0.86,
     "ambient_strength": 0.65,
     "sun_scattering": 1.23,
+    "light_shafts_enabled": true,
+    "light_shaft_strength": 4,
     "ray_steps": 24,
     "resolution_scale": 0.5,
-    "temporal_blend": 0.88
+    "temporal_blend": 0.3
   },
   "ocean": {
     "enabled": false,

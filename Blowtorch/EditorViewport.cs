@@ -216,9 +216,14 @@ public unsafe class EditorViewport : IDisposable
             _camera.IsOrthographic,
             assetService.ShadowShader,
             assetService.PointShadowShader,
-            assetService.SkyboxSettings);
+            assetService.SkyboxSettings,
+            forceDirectionalShadows: sceneService.Document.Fog.Enabled &&
+                                     sceneService.Document.Fog.LightShaftsEnabled);
         assetService.FogRenderer?.SetDirectionalShadowMap(
             _lightingSystem.DirectionalShadowMap);
+        assetService.FogRenderer?.SetLocalShadowMaps(
+            _lightingSystem.SpotShadowMap,
+            _lightingSystem.PointShadowMaps);
 
         ProceduralSky.ResolveSun(
             scene.Lights,

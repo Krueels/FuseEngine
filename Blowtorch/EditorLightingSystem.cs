@@ -101,6 +101,8 @@ public sealed class EditorLightingSystem : IDisposable
     }
 
     public ShadowMap? DirectionalShadowMap => _directionalShadowMap;
+    public ShadowMap? SpotShadowMap => _spotShadowMap;
+    public PointShadowMap[] PointShadowMaps => _pointShadowMaps;
 
     public void Prepare(
         Scene scene,
@@ -110,7 +112,8 @@ public sealed class EditorLightingSystem : IDisposable
         bool unlit,
         Shader shadowShader,
         Shader pointShadowShader,
-        SkyboxSettings? skyboxSettings = null)
+        SkyboxSettings? skyboxSettings = null,
+        bool forceDirectionalShadows = false)
     {
         Array.Clear(_lightSpaceMatrices);
         Array.Clear(_spotSpaceMatrices);
@@ -146,9 +149,12 @@ public sealed class EditorLightingSystem : IDisposable
 
         CalculateCascadeSplits(ShadowNearPlane, ShadowFarPlane, _cascadeLevels);
 
-        bool canRenderShadows = _supportsShadows && shadowsEnabled &&
-                                shadowShader.ID != 0 && pointShadowShader.ID != 0;
-        bool directionalShadows = canRenderShadows &&
+        bool canRenderLocalShadows = _supportsShadows && shadowsEnabled &&
+                                     shadowShader.ID != 0 && pointShadowShader.ID != 0;
+        bool canRenderDirectionalShadows = _supportsShadows &&
+                                           (shadowsEnabled || forceDirectionalShadows) &&
+                                           shadowShader.ID != 0;
+        bool directionalShadows = canRenderDirectionalShadows &&
                                   directionalLight is { CastShadows: true };
 
         if (_supportsShadows)
@@ -164,7 +170,7 @@ public sealed class EditorLightingSystem : IDisposable
         if (directionalShadows)
             RenderDirectionalShadows(scene, camera, aspect, lightDirection, shadowShader);
 
-        if (canRenderShadows)
+        if (canRenderLocalShadows)
         {
             RenderSpotShadows(scene, spotCount, shadowShader);
             RenderPointShadows(scene, shadowPointCount, pointShadowShader);
@@ -196,7 +202,7 @@ public sealed class EditorLightingSystem : IDisposable
             directionalColor,
             ambient,
             directionalShadows,
-            canRenderShadows,
+            canRenderLocalShadows,
             true,
             ShadowBiasBase,
             ShadowBiasFactor,

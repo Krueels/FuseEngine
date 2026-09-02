@@ -4509,10 +4509,10 @@
           1109.3257
         ],
         "rotation": [
-          -0.64419043,
-          -0.37616572,
-          -0.28354403,
-          0.6025952
+          -0.668401,
+          -0.36420026,
+          -0.29875746,
+          0.57562345
         ],
         "mass": 0,
         "friction": 0.5,
@@ -4695,6 +4695,8 @@
     "density": 0.0011,
     "base_height": 0,
     "height_falloff": 118,
+    "sky_density": 0.00025,
+    "sky_height_falloff": 1200,
     "max_distance": 4000,
     "noise_scale": 0.004,
     "noise_strength": 0.45,
@@ -4703,10 +4705,12 @@
       0.24253564
     ],
     "wind_speed": 2,
-    "anisotropy": 0.54,
-    "absorption": 0.91,
-    "ambient_strength": 0.89,
-    "sun_scattering": 1.24,
+    "anisotropy": 0,
+    "absorption": 0.42,
+    "ambient_strength": 1.1,
+    "sun_scattering": 2.92,
+    "light_shafts_enabled": true,
+    "light_shaft_strength": 1,
     "ray_steps": 22,
     "resolution_scale": 0.5,
     "temporal_blend": 0.88

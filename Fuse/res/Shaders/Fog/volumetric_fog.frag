@@ -12,6 +12,11 @@ uniform sampler2D uFogHistory;
 uniform sampler2D uFogDepthHistory;
 uniform sampler3D uFogNoise;
 uniform sampler2DArrayShadow uDirectionalShadowMap;
+uniform sampler2DArrayShadow uSpotShadowMap;
+uniform samplerCube uPointShadowMap0;
+uniform samplerCube uPointShadowMap1;
+uniform samplerCube uPointShadowMap2;
+uniform samplerCube uPointShadowMap3;
 
 uniform mat4 uInvViewProj;
 uniform mat4 uPreviousViewProj;
@@ -41,6 +46,8 @@ uniform vec3 uFogAmbientColor;
 uniform float uFogDensity;
 uniform float uFogBaseHeight;
 uniform float uFogHeightFalloff;
+uniform float uFogSkyDensity;
+uniform float uFogSkyHeightFalloff;
 uniform float uFogMaxDistance;
 uniform float uFogNoiseScale;
 uniform float uFogNoiseStrength;
@@ -50,6 +57,8 @@ uniform float uFogAnisotropy;
 uniform float uFogAbsorption;
 uniform float uFogAmbientStrength;
 uniform float uFogSunScattering;
+uniform bool uFogLightShaftsEnabled;
+uniform float uFogLightShaftStrength;
 uniform int uFogRaySteps;
 uniform float uFogTemporalBlend;
 uniform float uFogTime;
@@ -112,11 +121,22 @@ float HeightDensity(vec3 worldPosition)
     return exp(-aboveBase / max(uFogHeightFalloff, 0.1));
 }
 
+float SkyAtmosphereDensity(vec3 worldPosition)
+{
+    float aboveBase = max(worldPosition.y - uFogBaseHeight, 0.0);
+    return max(uFogSkyDensity, 0.0) *
+        exp(-aboveBase / max(uFogSkyHeightFalloff, 0.1));
+}
+
 float FogDensityAt(vec3 worldPosition, float time)
 {
     float noise = FogNoise(worldPosition, time);
     float noiseFactor = mix(1.0, mix(0.55, 1.25, noise), clamp(uFogNoiseStrength, 0.0, 1.0));
-    return max(uFogDensity, 0.0) * HeightDensity(worldPosition) * noiseFactor;
+    float groundFog = max(uFogDensity, 0.0) * HeightDensity(worldPosition) * noiseFactor;
+    // The atmospheric layer is intentionally independent from the dense
+    // ground layer. It keeps participating media present along sky rays
+    // without turning the low-altitude fog into a solid wall.
+    return groundFog + SkyAtmosphereDensity(worldPosition);
 }
 
 float InterleavedFogNoise(vec2 pixel, int frameIndex)
@@ -188,6 +208,430 @@ float SampleDirectionalShadow(vec3 position)
             vec4(shadowCoordinate.xy + offset, float(cascade), shadowCoordinate.z - bias));
     }
     return visibility / 9.0;
+}
+
+float SampleFogPointShadowMap(int shadowMapIndex, vec3 direction)
+{
+    vec3 sampleDirection = normalize(direction);
+    if (shadowMapIndex == 0)
+        return texture(uPointShadowMap0, sampleDirection).r;
+    if (shadowMapIndex == 1)
+        return texture(uPointShadowMap1, sampleDirection).r;
+    if (shadowMapIndex == 2)
+        return texture(uPointShadowMap2, sampleDirection).r;
+    if (shadowMapIndex == 3)
+        return texture(uPointShadowMap3, sampleDirection).r;
+    return 1.0;
+}
+
+float FogPointShadow(PointLightData light, vec3 worldPosition)
+{
+    int shadowMapIndex = int(round(light.colorShadowIndex.w));
+    if (shadowMapIndex < 0 || shadowMapIndex >= 4)
+        return 0.0;
+
+    vec3 lightToSample = worldPosition - light.positionRadius.xyz;
+    float distanceToLight = length(lightToSample);
+    float compareDepth = distanceToLight * light.params.y - light.params.x;
+    float storedDepth = SampleFogPointShadowMap(shadowMapIndex, lightToSample);
+    float visibility = compareDepth <= storedDepth ? 1.0 : 0.0;
+
+    if (!LightingShadowFilterEnabled())
+        return 1.0 - visibility;
+
+    // Four directional taps match the point-light shadow filtering used by
+    // the opaque material shader, while keeping the fog pass affordable.
+    const vec3 sampleDirections[4] = vec3[](
+        vec3(1.0, 1.0, 1.0),
+        vec3(1.0, -1.0, -1.0),
+        vec3(-1.0, -1.0, 1.0),
+        vec3(-1.0, 1.0, -1.0));
+    float diskRadius = mix(0.0005, 0.0035, clamp(compareDepth, 0.0, 1.0)) *
+        uShadowParams.z;
+    float shadow = 0.0;
+    for (int i = 0; i < 4; ++i)
+    {
+        float tapDepth = SampleFogPointShadowMap(
+            shadowMapIndex,
+            lightToSample + sampleDirections[i] * diskRadius);
+        shadow += compareDepth <= tapDepth ? 0.0 : 1.0;
+    }
+    return shadow * 0.25;
+}
+
+float FogSpotShadow(int lightIndex, SpotLightData light, vec3 worldPosition)
+{
+    if (light.shadowParams.x < 0.5 || lightIndex < 0 || lightIndex >= 4)
+        return 0.0;
+
+    vec4 lightClip = uSpotLightSpaceMatrices[lightIndex] *
+        vec4(worldPosition, 1.0);
+    if (lightClip.w <= 0.000001)
+        return 0.0;
+
+    vec3 projected = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+    if (projected.z <= 0.0 || projected.z > 1.0 ||
+        projected.x < 0.0 || projected.x > 1.0 ||
+        projected.y < 0.0 || projected.y > 1.0)
+        return 0.0;
+
+    float bias = max(light.shadowParams.y * 0.1, 0.00001);
+    if (!LightingShadowFilterEnabled())
+    {
+        float visibility = texture(uSpotShadowMap,
+            vec4(projected.xy, float(lightIndex), projected.z - bias));
+        return 1.0 - visibility;
+    }
+
+    vec2 texelSize = 1.0 / vec2(textureSize(uSpotShadowMap, 0).xy);
+    float shadow = 0.0;
+    const vec2 pcfOffsets[4] = vec2[](
+        vec2(-0.5, -0.5), vec2(0.5, -0.5),
+        vec2(-0.5, 0.5), vec2(0.5, 0.5));
+    for (int i = 0; i < 4; ++i)
+    {
+        float visibility = texture(uSpotShadowMap, vec4(
+            projected.xy + pcfOffsets[i] * texelSize * uShadowParams.z,
+            float(lightIndex), projected.z - bias));
+        shadow += 1.0 - visibility;
+    }
+    return shadow * 0.25;
+}
+
+float FogViewOpticalDepth(
+    vec3 rayOrigin,
+    vec3 rayDirection,
+    float distanceToSample,
+    float time)
+{
+    if (distanceToSample <= 0.001)
+        return 0.0;
+
+    const int viewSteps = 4;
+    float stepLength = distanceToSample / float(viewSteps);
+    float opticalDepth = 0.0;
+    for (int i = 0; i < viewSteps; ++i)
+    {
+        float distanceAlongRay = (float(i) + 0.5) * stepLength;
+        vec3 position = rayOrigin + rayDirection * distanceAlongRay;
+        opticalDepth += FogDensityAt(position, time) * stepLength * uFogAbsorption;
+        if (opticalDepth > 12.0)
+            return 12.0;
+    }
+    return opticalDepth;
+}
+
+float FogLightTransmittance(
+    vec3 worldPosition,
+    vec3 lightPosition,
+    float time)
+{
+    vec3 lightVector = lightPosition - worldPosition;
+    float distanceToLight = length(lightVector);
+    if (distanceToLight <= 0.001)
+        return 1.0;
+
+    const int lightPathSteps = 3;
+    vec3 lightDirection = lightVector / distanceToLight;
+    float stepLength = distanceToLight / float(lightPathSteps);
+    float opticalDepth = 0.0;
+    for (int i = 0; i < lightPathSteps; ++i)
+    {
+        float distanceAlongLight = (float(i) + 0.5) * stepLength;
+        vec3 position = worldPosition + lightDirection * distanceAlongLight;
+        opticalDepth += FogDensityAt(position, time) * stepLength * uFogAbsorption;
+        if (opticalDepth > 12.0)
+            return 0.0;
+    }
+    return exp(-opticalDepth);
+}
+
+vec3 EvaluatePointFogLight(
+    PointLightData light,
+    vec3 worldPosition,
+    vec3 rayDirection)
+{
+    vec3 toLight = light.positionRadius.xyz - worldPosition;
+    float distanceToLight = length(toLight);
+    float radius = light.positionRadius.w;
+    if (distanceToLight <= 0.0001 || distanceToLight >= radius)
+        return vec3(0.0);
+
+    vec3 lightDirection = toLight / distanceToLight;
+    float rangeFade = clamp(1.0 - distanceToLight / max(radius, 0.0001), 0.0, 1.0);
+    float attenuation = rangeFade * rangeFade /
+        max(distanceToLight * distanceToLight, 0.0625);
+    float phase = HenyeyGreensteinFog(
+        dot(-rayDirection, lightDirection), uFogAnisotropy);
+    float visibility = uFogLightShaftsEnabled
+        ? 1.0 - FogPointShadow(light, worldPosition)
+        : 1.0;
+    float lightTransmittance = FogLightTransmittance(
+        worldPosition, light.positionRadius.xyz, uFogTime);
+    return light.colorShadowIndex.rgb * attenuation * phase *
+        lightTransmittance * visibility;
+}
+
+vec3 EvaluateSpotFogLight(
+    int lightIndex,
+    SpotLightData light,
+    vec3 worldPosition,
+    vec3 rayDirection)
+{
+    vec3 toLight = light.positionRadius.xyz - worldPosition;
+    float distanceToLight = length(toLight);
+    float radius = light.positionRadius.w;
+    if (distanceToLight <= 0.0001 || distanceToLight >= radius)
+        return vec3(0.0);
+
+    vec3 lightDirection = toLight / distanceToLight;
+    float theta = -dot(lightDirection, light.directionInnerCos.xyz);
+    float cone = smoothstep(
+        light.colorOuterCos.w,
+        light.directionInnerCos.w,
+        theta);
+    if (cone <= 0.0001)
+        return vec3(0.0);
+
+    float rangeFade = clamp(1.0 - distanceToLight / max(radius, 0.0001), 0.0, 1.0);
+    float attenuation = rangeFade * rangeFade /
+        max(distanceToLight * distanceToLight, 0.0625);
+    float phase = HenyeyGreensteinFog(
+        dot(-rayDirection, lightDirection), uFogAnisotropy);
+    float visibility = uFogLightShaftsEnabled
+        ? 1.0 - FogSpotShadow(lightIndex, light, worldPosition)
+        : 1.0;
+    float lightTransmittance = FogLightTransmittance(
+        worldPosition, light.positionRadius.xyz, uFogTime);
+    return light.colorOuterCos.rgb * attenuation * cone * phase *
+        lightTransmittance * visibility;
+}
+
+bool IntersectFogLightVolume(
+    vec3 rayOrigin,
+    vec3 rayDirection,
+    vec3 lightPosition,
+    float lightRadius,
+    out float enterDistance,
+    out float exitDistance)
+{
+    vec3 toLight = lightPosition - rayOrigin;
+    float projection = dot(toLight, rayDirection);
+    float perpendicularSquared = max(
+        dot(toLight, toLight) - projection * projection,
+        0.0);
+    float radiusSquared = lightRadius * lightRadius;
+    if (perpendicularSquared >= radiusSquared)
+        return false;
+
+    float halfChord = sqrt(max(radiusSquared - perpendicularSquared, 0.0));
+    enterDistance = projection - halfChord;
+    exitDistance = projection + halfChord;
+    return exitDistance > 0.0;
+}
+
+bool IntersectSpotFogVolume(
+    vec3 rayOrigin,
+    vec3 rayDirection,
+    SpotLightData light,
+    out float enterDistance,
+    out float exitDistance)
+{
+    // Start with the same finite range used by the material light. The cone
+    // test below then removes the spherical part that is outside the spot.
+    if (!IntersectFogLightVolume(
+            rayOrigin,
+            rayDirection,
+            light.positionRadius.xyz,
+            light.positionRadius.w,
+            enterDistance,
+            exitDistance))
+        return false;
+
+    enterDistance = max(enterDistance, 0.0);
+    exitDistance = min(exitDistance, light.positionRadius.w);
+    if (exitDistance <= enterDistance)
+        return false;
+
+    vec3 axis = normalize(light.directionInnerCos.xyz);
+    vec3 relativeOrigin = rayOrigin - light.positionRadius.xyz;
+    float originAlongAxis = dot(relativeOrigin, axis);
+    float rayAlongAxis = dot(rayDirection, axis);
+
+    // A finite spotlight only exists in front of its apex. Clip the interval
+    // against that half-space before solving the cone equation.
+    if (abs(rayAlongAxis) <= 0.000001)
+    {
+        if (originAlongAxis <= 0.0)
+            return false;
+    }
+    else if (rayAlongAxis > 0.0)
+    {
+        enterDistance = max(enterDistance, -originAlongAxis / rayAlongAxis);
+    }
+    else
+    {
+        exitDistance = min(exitDistance, -originAlongAxis / rayAlongAxis);
+    }
+    if (exitDistance <= enterDistance)
+        return false;
+
+    // radial² <= axial² * tan²(theta), written as a quadratic in the ray
+    // distance. The positive-axial clip above removes the mirrored backward
+    // cone. Clamping the cosine keeps very wide spots numerically stable.
+    float outerCos = clamp(light.colorOuterCos.w, 0.05, 0.9999);
+    float inverseCosSquared = 1.0 / max(outerCos * outerCos, 0.0025);
+    float quadraticA = dot(rayDirection, rayDirection) -
+        rayAlongAxis * rayAlongAxis * inverseCosSquared;
+    float quadraticB = 2.0 * (dot(relativeOrigin, rayDirection) -
+        originAlongAxis * rayAlongAxis * inverseCosSquared);
+    float quadraticC = dot(relativeOrigin, relativeOrigin) -
+        originAlongAxis * originAlongAxis * inverseCosSquared;
+
+    const float quadraticEpsilon = 0.000001;
+    if (abs(quadraticA) <= quadraticEpsilon)
+    {
+        if (abs(quadraticB) <= quadraticEpsilon)
+        {
+            if (quadraticC > 0.0)
+                return false;
+        }
+        else
+        {
+            float root = -quadraticC / quadraticB;
+            if (quadraticB > 0.0)
+                exitDistance = min(exitDistance, root);
+            else
+                enterDistance = max(enterDistance, root);
+        }
+    }
+    else
+    {
+        float discriminant = quadraticB * quadraticB -
+            4.0 * quadraticA * quadraticC;
+        if (discriminant < 0.0)
+        {
+            if (quadraticA > 0.0)
+                return false;
+        }
+        else
+        {
+            float rootDistance = sqrt(max(discriminant, 0.0));
+            float root0 = (-quadraticB - rootDistance) / (2.0 * quadraticA);
+            float root1 = (-quadraticB + rootDistance) / (2.0 * quadraticA);
+            float firstRoot = min(root0, root1);
+            float secondRoot = max(root0, root1);
+            if (quadraticA > 0.0)
+            {
+                enterDistance = max(enterDistance, firstRoot);
+                exitDistance = min(exitDistance, secondRoot);
+            }
+            else if (rayAlongAxis >= 0.0)
+            {
+                // For a forward-facing ray the positive cone is the forward
+                // branch of the double-cone quadratic.
+                enterDistance = max(enterDistance, secondRoot);
+            }
+            else
+            {
+                exitDistance = min(exitDistance, firstRoot);
+            }
+        }
+    }
+
+    return exitDistance > enterDistance;
+}
+
+vec3 EvaluateLocalLightsAlongViewRay(
+    vec3 rayOrigin,
+    vec3 rayDirection,
+    float endDistance,
+    float time)
+{
+    vec3 result = vec3(0.0);
+    const int pointVolumeSamples = 4;
+    const int spotVolumeSamples = 8;
+
+    for (int i = 0; i < MAX_POINT_LIGHTS; ++i)
+    {
+        if (i >= PointLightCount())
+            break;
+
+        PointLightData light = uPointLights[i];
+        float enterDistance;
+        float exitDistance;
+        if (!IntersectFogLightVolume(
+                rayOrigin,
+                rayDirection,
+                light.positionRadius.xyz,
+                light.positionRadius.w,
+                enterDistance,
+                exitDistance))
+            continue;
+
+        enterDistance = max(enterDistance, 0.0);
+        exitDistance = min(exitDistance, endDistance);
+        if (exitDistance <= enterDistance)
+            continue;
+
+        float segmentLength = (exitDistance - enterDistance) / float(pointVolumeSamples);
+        float viewTransmittance = exp(-FogViewOpticalDepth(
+            rayOrigin, rayDirection, enterDistance, time));
+        for (int sample = 0; sample < pointVolumeSamples; ++sample)
+        {
+            float distanceAlongRay = enterDistance +
+                (float(sample) + 0.5) * segmentLength;
+            vec3 worldPosition = rayOrigin + rayDirection * distanceAlongRay;
+            float density = FogDensityAt(worldPosition, time);
+            float sampleAlpha = 1.0 - exp(-density *
+                max(uFogAbsorption, 0.01) * segmentLength);
+            result += viewTransmittance * sampleAlpha *
+                EvaluatePointFogLight(light, worldPosition, rayDirection);
+            viewTransmittance *= 1.0 - sampleAlpha;
+        }
+    }
+
+    for (int i = 0; i < MAX_SPOT_LIGHTS; ++i)
+    {
+        if (i >= SpotLightCount())
+            break;
+
+        SpotLightData light = uSpotLights[i];
+        float enterDistance;
+        float exitDistance;
+        if (!IntersectSpotFogVolume(
+                rayOrigin,
+                rayDirection,
+                light,
+                enterDistance,
+                exitDistance))
+            continue;
+
+        enterDistance = max(enterDistance, 0.0);
+        exitDistance = min(exitDistance, endDistance);
+        if (exitDistance <= enterDistance)
+            continue;
+
+        // The cone interval is analytic. Eight samples preserve the cone's
+        // soft edge and its density variation without skipping a narrow beam.
+        float segmentLength = (exitDistance - enterDistance) / float(spotVolumeSamples);
+        float viewTransmittance = exp(-FogViewOpticalDepth(
+            rayOrigin, rayDirection, enterDistance, time));
+        for (int sample = 0; sample < spotVolumeSamples; ++sample)
+        {
+            float distanceAlongRay = enterDistance +
+                (float(sample) + 0.5) * segmentLength;
+            vec3 worldPosition = rayOrigin + rayDirection * distanceAlongRay;
+            float density = FogDensityAt(worldPosition, time);
+            float sampleAlpha = 1.0 - exp(-density *
+                max(uFogAbsorption, 0.01) * segmentLength);
+            result += viewTransmittance * sampleAlpha *
+                EvaluateSpotFogLight(i, light, worldPosition, rayDirection);
+            viewTransmittance *= 1.0 - sampleAlpha;
+        }
+    }
+
+    return result * max(uFogLightShaftStrength, 0.0);
 }
 
 vec3 FogAmbient(vec3 rayDirection)
@@ -262,7 +706,8 @@ void main()
         : length(sceneWorld.xyz - uFogCameraPosition);
     float endDistance = min(sceneDistance, uFogMaxDistance);
 
-    if (endDistance <= 0.01 || uFogDensity <= 0.000001)
+    if (endDistance <= 0.01 ||
+        (uFogDensity <= 0.000001 && uFogSkyDensity <= 0.000001))
     {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
         fragDepth = 1.0;
@@ -294,8 +739,22 @@ void main()
         float sampleAlpha = 1.0 - exp(-extinction * stepLength);
 
         if ((i & 1) == 0)
+        {
+            float shadowVisibility = uFogLightShaftsEnabled
+                ? SampleDirectionalShadow(samplePosition)
+                : 1.0;
+            float shaftStrength = clamp(uFogLightShaftStrength, 0.0, 4.0);
+            // Keep ordinary fog scattering available at low strength while
+            // making shadowed regions noticeably darker as shaft strength
+            // increases. This creates visible beams without adding a second
+            // screen-space god-ray pass.
+            float shaftVisibility = mix(1.0, shadowVisibility,
+                min(shaftStrength, 1.0));
+            shaftVisibility = pow(max(shaftVisibility, 0.0),
+                1.0 + max(shaftStrength - 1.0, 0.0) * 2.0);
             cachedSunVisibility = SunTransmittance(samplePosition, uFogTime) *
-                SampleDirectionalShadow(samplePosition);
+                shaftVisibility;
+        }
 
         vec3 directLight = uSunColor * uSunIntensity *
             max(uFogSunScattering, 0.0) * sunHeight *
@@ -309,13 +768,27 @@ void main()
         distanceAlongRay += stepLength;
     }
 
+    // Local lights are integrated over the exact camera-ray/light-volume
+    // intersection. This prevents a small point or spot light from vanishing
+    // in sky pixels when the coarse atmospheric raymarch steps over it.
+    vec3 localLightScattering = EvaluateLocalLightsAlongViewRay(
+        uFogCameraPosition,
+        rayDirection,
+        endDistance,
+        uFogTime);
+    bool localLightsPresent = PointLightCount() > 0 || SpotLightCount() > 0;
+
     vec4 currentFog = vec4(inScattering, transmittance);
     float representativeDistance = weightTotal > 0.0001
         ? weightedDistance / weightTotal
         : uFogMaxDistance;
     float currentFogDepth = clamp(representativeDistance / max(uFogMaxDistance, 1.0), 0.0, 1.0);
 
-    if (uHistoryValid && weightTotal > 0.0001)
+    // The fog history texture also stores the current output. Local lights
+    // can enter or leave the camera ray when the player turns, so reusing
+    // that texture while any local source exists would preserve the old light
+    // as a false duplicate behind the camera.
+    if (uHistoryValid && weightTotal > 0.0001 && !localLightsPresent)
     {
         vec3 representativeWorld = uFogCameraPosition + rayDirection * representativeDistance;
         vec2 wind = uFogWindDirection * uFogWindSpeed *
@@ -360,6 +833,11 @@ void main()
         }
     }
 
+    // Local lights are deliberately added after temporal reprojection. Their
+    // finite volumes can enter or leave the camera ray when the player turns;
+    // keeping them out of the history prevents a previous light from being
+    // reprojected as a false duplicate behind the camera.
+    currentFog.rgb += localLightScattering;
     fragColor = currentFog;
     fragDepth = currentFogDepth;
 }

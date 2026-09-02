@@ -14,6 +14,8 @@ public sealed class VolumetricFogSettings
     public float Density { get; set; } = 0.018f;
     public float BaseHeight { get; set; } = 0.0f;
     public float HeightFalloff { get; set; } = 180.0f;
+    public float SkyDensity { get; set; } = 0.00025f;
+    public float SkyHeightFalloff { get; set; } = 1200.0f;
     public float MaxDistance { get; set; } = 4000.0f;
     public float NoiseScale { get; set; } = 0.004f;
     public float NoiseStrength { get; set; } = 0.35f;
@@ -23,6 +25,8 @@ public sealed class VolumetricFogSettings
     public float Absorption { get; set; } = 1.0f;
     public float AmbientStrength { get; set; } = 0.65f;
     public float SunScattering { get; set; } = 1.0f;
+    public bool LightShaftsEnabled { get; set; } = true;
+    public float LightShaftStrength { get; set; } = 1.0f;
     public int RaySteps { get; set; } = 24;
     public float ResolutionScale { get; set; } = 0.5f;
     public float TemporalBlend { get; set; } = 0.88f;
@@ -33,6 +37,8 @@ public sealed class VolumetricFogSettings
         Density = Density,
         BaseHeight = BaseHeight,
         HeightFalloff = HeightFalloff,
+        SkyDensity = SkyDensity,
+        SkyHeightFalloff = SkyHeightFalloff,
         MaxDistance = MaxDistance,
         NoiseScale = NoiseScale,
         NoiseStrength = NoiseStrength,
@@ -42,6 +48,8 @@ public sealed class VolumetricFogSettings
         Absorption = Absorption,
         AmbientStrength = AmbientStrength,
         SunScattering = SunScattering,
+        LightShaftsEnabled = LightShaftsEnabled,
+        LightShaftStrength = LightShaftStrength,
         RaySteps = RaySteps,
         ResolutionScale = ResolutionScale,
         TemporalBlend = TemporalBlend
@@ -53,6 +61,8 @@ public sealed class VolumetricFogSettings
         ["density"] = Density,
         ["base_height"] = BaseHeight,
         ["height_falloff"] = HeightFalloff,
+        ["sky_density"] = SkyDensity,
+        ["sky_height_falloff"] = SkyHeightFalloff,
         ["max_distance"] = MaxDistance,
         ["noise_scale"] = NoiseScale,
         ["noise_strength"] = NoiseStrength,
@@ -62,6 +72,8 @@ public sealed class VolumetricFogSettings
         ["absorption"] = Absorption,
         ["ambient_strength"] = AmbientStrength,
         ["sun_scattering"] = SunScattering,
+        ["light_shafts_enabled"] = LightShaftsEnabled,
+        ["light_shaft_strength"] = LightShaftStrength,
         ["ray_steps"] = RaySteps,
         ["resolution_scale"] = ResolutionScale,
         ["temporal_blend"] = TemporalBlend
@@ -77,6 +89,9 @@ public sealed class VolumetricFogSettings
         settings.Density = System.Math.Clamp(ReadFloat(source, "density", settings.Density), 0.0f, 1.0f);
         settings.BaseHeight = ReadFloat(source, "base_height", settings.BaseHeight);
         settings.HeightFalloff = System.Math.Clamp(ReadFloat(source, "height_falloff", settings.HeightFalloff), 0.1f, 10000.0f);
+        settings.SkyDensity = System.Math.Clamp(ReadFloat(source, "sky_density", settings.SkyDensity), 0.0f, 1.0f);
+        settings.SkyHeightFalloff = System.Math.Clamp(
+            ReadFloat(source, "sky_height_falloff", settings.SkyHeightFalloff), 0.1f, 10000.0f);
         settings.MaxDistance = System.Math.Clamp(ReadFloat(source, "max_distance", settings.MaxDistance), 10.0f, 50000.0f);
         settings.NoiseScale = System.Math.Clamp(ReadFloat(source, "noise_scale", settings.NoiseScale), 0.00001f, 1.0f);
         settings.NoiseStrength = System.Math.Clamp(ReadFloat(source, "noise_strength", settings.NoiseStrength), 0.0f, 1.0f);
@@ -90,6 +105,9 @@ public sealed class VolumetricFogSettings
         settings.Absorption = System.Math.Clamp(ReadFloat(source, "absorption", settings.Absorption), 0.01f, 20.0f);
         settings.AmbientStrength = System.Math.Clamp(ReadFloat(source, "ambient_strength", settings.AmbientStrength), 0.0f, 4.0f);
         settings.SunScattering = System.Math.Clamp(ReadFloat(source, "sun_scattering", settings.SunScattering), 0.0f, 8.0f);
+        settings.LightShaftsEnabled = ReadBool(source, "light_shafts_enabled", settings.LightShaftsEnabled);
+        settings.LightShaftStrength = System.Math.Clamp(
+            ReadFloat(source, "light_shaft_strength", settings.LightShaftStrength), 0.0f, 4.0f);
         settings.RaySteps = System.Math.Clamp(ReadInt(source, "ray_steps", settings.RaySteps), 8, 128);
         settings.ResolutionScale = System.Math.Clamp(ReadFloat(source, "resolution_scale", settings.ResolutionScale), 0.25f, 1.0f);
         settings.TemporalBlend = System.Math.Clamp(ReadFloat(source, "temporal_blend", settings.TemporalBlend), 0.0f, 0.98f);
