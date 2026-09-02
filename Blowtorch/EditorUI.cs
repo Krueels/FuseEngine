@@ -249,7 +249,8 @@ public unsafe class EditorUI : IDisposable
             _previewManager.Reset();
         }
         SyncSelection(sceneService.Document);
-        _cloudPreviewAnimated = sceneService.Document.Clouds.Enabled;
+        _cloudPreviewAnimated = sceneService.Document.Clouds.Enabled ||
+            sceneService.Document.Fog.Enabled;
         var currentIds = new HashSet<string>(_selectedObjects.Select(o => o.Id));
         if (!_lastSelectedObjectIds.SetEquals(currentIds))
         {
@@ -4313,6 +4314,7 @@ public unsafe class EditorUI : IDisposable
                 if (proceduralSettingsChanged)
                 {
                     assetService.SetProceduralSkybox(doc.Skybox);
+                    assetService.FogRenderer?.InvalidateHistory();
                     viewport3D.RequestRender();
                     viewportTop.RequestRender();
                     viewportFront.RequestRender();
@@ -4606,7 +4608,160 @@ public unsafe class EditorUI : IDisposable
             {
                 assetService.CloudRenderer?.InvalidateHistory();
                 viewport3D.RequestRender();
-                _cloudPreviewAnimated = clouds.Enabled;
+                _cloudPreviewAnimated = clouds.Enabled || doc.Fog.Enabled;
+            }
+
+            ImGui.Separator();
+            ImGui.TextUnformatted("Volumetric fog");
+            VolumetricFogSettings fog = doc.Fog;
+            bool fogSettingsChanged = false;
+
+            bool fogEnabled = fog.Enabled;
+            if (ImGui.Checkbox("Enabled##volumetricFogEnabled", ref fogEnabled))
+            {
+                fog.Enabled = fogEnabled;
+                fogSettingsChanged = true;
+            }
+            Undo.TrackItem(_frameBeginState);
+            ImGui.SameLine();
+            ImGui.TextDisabled("Rendered in the 3D viewport and game.");
+
+            if (fog.Enabled && ImGui.TreeNodeEx(
+                    "Fog settings##volumetricFogSettings",
+                    ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                float fogDensity = fog.Density;
+                if (ImGui.SliderFloat("Density##fogDensity", ref fogDensity, 0.0f, 0.20f, "%.4f"))
+                {
+                    fog.Density = Math.Clamp(fogDensity, 0.0f, 1.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogBaseHeight = fog.BaseHeight;
+                if (ImGui.DragFloat("Base height##fogBaseHeight", ref fogBaseHeight, 1.0f, -10000.0f, 10000.0f, "%.1f"))
+                {
+                    fog.BaseHeight = fogBaseHeight;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float heightFalloff = fog.HeightFalloff;
+                if (ImGui.DragFloat("Height falloff##fogHeightFalloff", ref heightFalloff, 1.0f, 0.1f, 10000.0f, "%.1f"))
+                {
+                    fog.HeightFalloff = MathF.Max(0.1f, heightFalloff);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogMaxDistance = fog.MaxDistance;
+                if (ImGui.DragFloat("Maximum distance##fogMaxDistance", ref fogMaxDistance, 10.0f, 10.0f, 50000.0f, "%.0f"))
+                {
+                    fog.MaxDistance = Math.Clamp(fogMaxDistance, 10.0f, 50000.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Noise and wind");
+                float fogNoiseScale = fog.NoiseScale;
+                if (ImGui.DragFloat("Noise scale##fogNoiseScale", ref fogNoiseScale, 0.0001f, 0.00001f, 1.0f, "%.5f"))
+                {
+                    fog.NoiseScale = Math.Clamp(fogNoiseScale, 0.00001f, 1.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogNoiseStrength = fog.NoiseStrength;
+                if (ImGui.SliderFloat("Noise strength##fogNoiseStrength", ref fogNoiseStrength, 0.0f, 1.0f, "%.2f"))
+                {
+                    fog.NoiseStrength = Math.Clamp(fogNoiseStrength, 0.0f, 1.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                Vector2 fogWindDirection = fog.WindDirection;
+                if (ImGui.DragFloat2("Wind direction X/Z##fogWindDirection", ref fogWindDirection, 0.01f, -1.0f, 1.0f, "%.2f"))
+                {
+                    fog.WindDirection = fogWindDirection.LengthSquared() > 1e-8f
+                        ? Vector2.Normalize(fogWindDirection)
+                        : Vector2.UnitX;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogWindSpeed = fog.WindSpeed;
+                if (ImGui.DragFloat("Wind speed##fogWindSpeed", ref fogWindSpeed, 0.1f, -100.0f, 100.0f, "%.1f"))
+                {
+                    fog.WindSpeed = fogWindSpeed;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.SeparatorText("Lighting and quality");
+                float fogAnisotropy = fog.Anisotropy;
+                if (ImGui.SliderFloat("Anisotropy##fogAnisotropy", ref fogAnisotropy, -0.8f, 0.9f, "%.2f"))
+                {
+                    fog.Anisotropy = fogAnisotropy;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogAbsorption = fog.Absorption;
+                if (ImGui.SliderFloat("Absorption##fogAbsorption", ref fogAbsorption, 0.01f, 8.0f, "%.2f"))
+                {
+                    fog.Absorption = Math.Clamp(fogAbsorption, 0.01f, 20.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogAmbientStrength = fog.AmbientStrength;
+                if (ImGui.SliderFloat("Ambient strength##fogAmbient", ref fogAmbientStrength, 0.0f, 4.0f, "%.2f"))
+                {
+                    fog.AmbientStrength = fogAmbientStrength;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogSunScattering = fog.SunScattering;
+                if (ImGui.SliderFloat("Sun scattering##fogSunScattering", ref fogSunScattering, 0.0f, 8.0f, "%.2f"))
+                {
+                    fog.SunScattering = fogSunScattering;
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                int fogRaySteps = fog.RaySteps;
+                if (ImGui.SliderInt("Ray-march steps##fogRaySteps", ref fogRaySteps, 8, 128))
+                {
+                    fog.RaySteps = Math.Clamp(fogRaySteps, 8, 128);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogResolutionScale = fog.ResolutionScale;
+                if (ImGui.SliderFloat("Render resolution##fogResolution", ref fogResolutionScale, 0.25f, 1.0f, "%.2fx"))
+                {
+                    fog.ResolutionScale = Math.Clamp(fogResolutionScale, 0.25f, 1.0f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                float fogTemporalBlend = fog.TemporalBlend;
+                if (ImGui.SliderFloat("Temporal reuse##fogTemporal", ref fogTemporalBlend, 0.0f, 0.98f, "%.2f"))
+                {
+                    fog.TemporalBlend = Math.Clamp(fogTemporalBlend, 0.0f, 0.98f);
+                    fogSettingsChanged = true;
+                }
+                Undo.TrackItem(_frameBeginState);
+
+                ImGui.TreePop();
+            }
+
+            if (fogSettingsChanged)
+            {
+                assetService.FogRenderer?.InvalidateHistory();
+                viewport3D.RequestRender();
+                _cloudPreviewAnimated = clouds.Enabled || fog.Enabled;
             }
 
             ImGui.Separator();

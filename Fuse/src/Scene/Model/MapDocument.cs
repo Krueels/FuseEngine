@@ -11,6 +11,7 @@ public class MapDocument
     public string SkyboxPath { get; set; } = "";
     public SkyboxSettings Skybox { get; set; } = new();
     public VolumetricCloudSettings Clouds { get; set; } = new();
+    public VolumetricFogSettings Fog { get; set; } = new();
     public OceanSettings Ocean { get; set; } = new();
     public List<MapObject> Objects { get; set; } = [];
     public MapPlayerSpawn? PlayerSpawn { get; set; }
@@ -92,6 +93,12 @@ public class MapDocument
                 doc.Clouds = VolumetricCloudSettings.FromJson(cloudsObject);
             }
 
+            if (root.TryGetPropertyValue("volumetric_fog", out var fogNode) &&
+                fogNode is JsonObject fogObject)
+            {
+                doc.Fog = VolumetricFogSettings.FromJson(fogObject);
+            }
+
             if (root.TryGetPropertyValue("ocean", out var oceanNode) &&
                 oceanNode is JsonObject oceanObject)
             {
@@ -145,6 +152,7 @@ public class MapDocument
         if (Skybox.Mode == SkyboxMode.Procedural)
             root["skybox_settings"] = Skybox.ToJson();
         root["volumetric_clouds"] = Clouds.ToJson();
+        root["volumetric_fog"] = Fog.ToJson();
         root["ocean"] = Ocean.ToJson();
 
         if (PlayerSpawn != null)

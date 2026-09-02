@@ -217,6 +217,8 @@ public unsafe class EditorViewport : IDisposable
             assetService.ShadowShader,
             assetService.PointShadowShader,
             assetService.SkyboxSettings);
+        assetService.FogRenderer?.SetDirectionalShadowMap(
+            _lightingSystem.DirectionalShadowMap);
 
         ProceduralSky.ResolveSun(
             scene.Lights,
@@ -449,6 +451,55 @@ public unsafe class EditorViewport : IDisposable
             if (clouds.Framebuffer != 0)
             {
                 _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, clouds.Framebuffer);
+                _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
+                _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
+                _gl.BlitFramebuffer(
+                    0, 0, _width, _height,
+                    0, 0, _width, _height,
+                    ClearBufferMask.ColorBufferBit,
+                    BlitFramebufferFilter.Nearest);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+                _gl.Viewport(0, 0, (uint)_width, (uint)_height);
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.Enable(EnableCap.CullFace);
+                _gl.CullFace(GLEnum.Back);
+                _gl.DepthFunc(DepthFunction.Less);
+                _gl.DepthMask(true);
+            }
+        }
+
+        // Apply fog after the cloud composite so both the opaque scene and
+        // the visible cloud layer share the same aerial attenuation. The
+        // atmospheric pass remains independent from the ocean's underwater
+        // pass: being below the waterline must not silently disable fog.
+        if (!_camera.IsOrthographic &&
+            sceneService.Document.Fog.Enabled &&
+            assetService.FogRenderer != null)
+        {
+            Vector3 fogSkyColor = assetService.IsProceduralSkybox
+                ? ProceduralSky.EstimateAmbientColor(
+                    assetService.SkyboxSettings,
+                    cloudSunDirection)
+                : Vector3.One;
+            FogCompositeResult fog = assetService.FogRenderer.Render(
+                _colorTex,
+                _depthTex,
+                _width,
+                _height,
+                view,
+                proj,
+                _camera.Position,
+                cloudSunDirection,
+                cloudSunColor,
+                sceneService.Document.Fog,
+                assetService.SkyboxSettings,
+                fogSkyColor,
+                sceneIsSrgb: true,
+                outputSrgb: true);
+            if (fog.Framebuffer != 0)
+            {
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fog.Framebuffer);
                 _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
                 _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
                 _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);

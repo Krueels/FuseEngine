@@ -65,6 +65,20 @@ public sealed unsafe class VolumetricCloudRenderer : IDisposable
     public bool IsValid =>
         _cloudShader.IsValid && _compositeShader.IsValid && _shadowShader.IsValid;
 
+    /// <summary>
+    /// Shared 128³ base volume. Other volumetric passes can sample it without
+    /// allocating a second procedural noise texture.
+    /// </summary>
+    public uint BaseNoiseTexture => _baseNoiseTexture;
+
+    /// <summary>
+    /// The normalized representative depth produced by the most recent cloud
+    /// pass. It is zero until a valid cloud frame has been rendered.
+    /// </summary>
+    public uint CurrentCloudDepthTexture => _historyValid
+        ? _cloudDepthTextures[_historyIndex]
+        : 0;
+
     public VolumetricCloudRenderer(GL gl)
     {
         _gl = gl;

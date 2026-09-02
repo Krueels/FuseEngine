@@ -140,12 +140,15 @@ public unsafe class MasterRenderer
     // Post-Process
     private PostProcessPipeline _postPipeline = null!;
     private VolumetricCloudRenderer? _cloudRenderer;
+    private VolumetricFogRenderer? _fogRenderer;
     private OceanRenderer? _oceanRenderer;
     private VolumetricCloudSettings _cloudSettings = new();
+    private VolumetricFogSettings _fogSettings = new();
     private OceanSettings _oceanSettings = new();
     private PostProcessSettings _postSettings = new();
     public PostProcessPipeline PostPipeline => _postPipeline;
     public VolumetricCloudSettings VolumetricClouds => _cloudSettings;
+    public VolumetricFogSettings VolumetricFog => _fogSettings;
     public OceanSettings Ocean => _oceanSettings;
 
     public void SetVolumetricClouds(VolumetricCloudSettings settings)
@@ -153,6 +156,13 @@ public unsafe class MasterRenderer
         ArgumentNullException.ThrowIfNull(settings);
         _cloudSettings = settings.Clone();
         _cloudRenderer?.InvalidateHistory();
+    }
+
+    public void SetVolumetricFog(VolumetricFogSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _fogSettings = settings.Clone();
+        _fogRenderer?.InvalidateHistory();
     }
 
     public void SetOcean(OceanSettings settings)
@@ -366,6 +376,7 @@ public unsafe class MasterRenderer
         _proceduralIblLastAttemptMilliseconds = 0;
         _imageBasedLighting?.Dispose();
         _imageBasedLighting = null;
+        _fogRenderer?.InvalidateHistory();
         if (_skyboxTexture.ID != 0)
         {
             _skyboxDominantColor = _skyboxTexture.GetDominantColor();
@@ -404,6 +415,7 @@ public unsafe class MasterRenderer
         _skyboxSettings = next;
         _skyboxSettingsSignature = signature;
         _skyboxDominantColor = ProceduralSky.EstimateAmbientColor(_skyboxSettings);
+        _fogRenderer?.InvalidateHistory();
     }
 
     private void EnsureProceduralSkyboxIbl(
@@ -560,6 +572,18 @@ public unsafe class MasterRenderer
         }
         try
         {
+            _fogRenderer = new VolumetricFogRenderer(
+                _gl,
+                _cloudRenderer?.BaseNoiseTexture ?? 0,
+                _shadowMap);
+        }
+        catch (Exception ex)
+        {
+            _fogRenderer = null;
+            Logger.Warn($"Volumetric fog disabled: {ex.Message}");
+        }
+        try
+        {
             _oceanRenderer = new OceanRenderer(_gl);
         }
         catch (Exception ex)
@@ -702,6 +726,7 @@ public unsafe class MasterRenderer
         _scrHeight = height;
         _postPipeline?.Resize(width, height);
         _cloudRenderer?.InvalidateHistory();
+        _fogRenderer?.InvalidateHistory();
         CreateDecalDepthResources();
     }
 
@@ -976,6 +1001,55 @@ public unsafe class MasterRenderer
             if (clouds.Framebuffer != 0)
             {
                 _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, clouds.Framebuffer);
+                _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, targetFbo);
+                _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
+                _gl.BlitFramebuffer(
+                    0, 0, _scrWidth, _scrHeight,
+                    0, 0, _scrWidth, _scrHeight,
+                    ClearBufferMask.ColorBufferBit,
+                    BlitFramebufferFilter.Nearest);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, targetFbo);
+                _gl.DrawBuffers(new[]
+                {
+                    DrawBufferMode.ColorAttachment0,
+                    DrawBufferMode.ColorAttachment1,
+                    DrawBufferMode.ColorAttachment2,
+                    DrawBufferMode.ColorAttachment3
+                });
+                _gl.Viewport(0, 0, (uint)_scrWidth, (uint)_scrHeight);
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.Enable(EnableCap.CullFace);
+                _gl.CullFace(GLEnum.Back);
+                _gl.DepthFunc(DepthFunction.Less);
+                _gl.DepthMask(true);
+            }
+        }
+
+        // Fog is composited after clouds so the already visible cloud layer is
+        // attenuated by the same aerial volume as opaque geometry. It remains
+        // independent from the ocean's underwater pass; a submerged camera
+        // must not disable the atmospheric volume altogether.
+        if (_fogRenderer != null && _fogSettings.Enabled)
+        {
+            FogCompositeResult fog = _fogRenderer.Render(
+                _postPipeline.HdrColorId,
+                _postPipeline.HdrDepthId,
+                _scrWidth,
+                _scrHeight,
+                view,
+                proj,
+                camera.Position,
+                lightDir,
+                skyDirectionalLightColor,
+                _fogSettings,
+                _skyboxSettings,
+                _skyboxDominantColor,
+                sceneIsSrgb: !_postPipeline.Settings.Enabled,
+                outputSrgb: !_postPipeline.Settings.Enabled);
+            if (fog.Framebuffer != 0)
+            {
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fog.Framebuffer);
                 _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
                 _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, targetFbo);
                 _gl.DrawBuffer(DrawBufferMode.ColorAttachment0);
@@ -2023,6 +2097,7 @@ public unsafe class MasterRenderer
                 map.Dispose();
         }
         DestroyDecalDepthResources();
+        _fogRenderer?.Dispose();
         _cloudRenderer?.Dispose();
         _oceanRenderer?.Dispose();
         _postPipeline?.Dispose();

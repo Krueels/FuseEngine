@@ -36,6 +36,7 @@ public class EditorAssetService : IDisposable
     private ImageBasedLighting? _imageBasedLighting;
     private SkyboxSettings _skyboxSettings = new();
     private VolumetricCloudRenderer? _cloudRenderer;
+    private VolumetricFogRenderer? _fogRenderer;
     private OceanRenderer? _oceanRenderer;
     private ulong _skyboxSettingsSignature;
     private ulong _proceduralIblSignature;
@@ -83,6 +84,7 @@ public class EditorAssetService : IDisposable
     public string SkyboxPath => _skyboxPath;
     public SkyboxSettings SkyboxSettings => _skyboxSettings;
     public VolumetricCloudRenderer? CloudRenderer => _cloudRenderer;
+    public VolumetricFogRenderer? FogRenderer => _fogRenderer;
     public OceanRenderer? OceanRenderer => _oceanRenderer;
     public bool IsProceduralSkybox => _skyboxSettings.Mode == SkyboxMode.Procedural;
     public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
@@ -551,6 +553,18 @@ public class EditorAssetService : IDisposable
 
         try
         {
+            _fogRenderer = new VolumetricFogRenderer(
+                _gl,
+                _cloudRenderer?.BaseNoiseTexture ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _fogRenderer = null;
+            Logger.Warn($"Blowtorch volumetric fog disabled: {ex.Message}");
+        }
+
+        try
+        {
             _oceanRenderer = new OceanRenderer(_gl);
         }
         catch (Exception ex)
@@ -614,6 +628,7 @@ public class EditorAssetService : IDisposable
 
         _imageBasedLighting?.Dispose();
         _imageBasedLighting = replacement;
+        _fogRenderer?.InvalidateHistory();
         _skyboxTexture = texture;
         _skyboxPath = normalizedPath;
         _skyboxSettings = new SkyboxSettings();
@@ -645,6 +660,7 @@ public class EditorAssetService : IDisposable
         _skyboxSettings = next;
         _skyboxSettingsSignature = signature;
         _skyboxPath = "";
+        _fogRenderer?.InvalidateHistory();
         System.Threading.Interlocked.Increment(ref _assetRevision);
         return true;
     }
@@ -982,6 +998,7 @@ public class EditorAssetService : IDisposable
         ClearBrushMeshes();
         _meshCache.Clear();
         if (_defaultTex != 0) _gl.DeleteTexture(_defaultTex);
+        _fogRenderer?.Dispose();
         _cloudRenderer?.Dispose();
         _oceanRenderer?.Dispose();
         _imageBasedLighting?.Dispose();

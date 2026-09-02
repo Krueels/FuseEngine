@@ -100,6 +100,8 @@ public sealed class EditorLightingSystem : IDisposable
         _imageBasedLighting = imageBasedLighting;
     }
 
+    public ShadowMap? DirectionalShadowMap => _directionalShadowMap;
+
     public void Prepare(
         Scene scene,
         ViewportCamera camera,

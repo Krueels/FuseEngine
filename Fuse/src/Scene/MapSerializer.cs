@@ -107,7 +107,8 @@ public static class MapSerializer
 
     public static string SerializeScene(Renderer.Scene scene, PhysicsWorld physics,
         PlayerSpawn? playerSpawn = null,
-        OceanSettings? oceanSettings = null)
+        OceanSettings? oceanSettings = null,
+        VolumetricFogSettings? fogSettings = null)
     {
         var j = new JsonObject
         {
@@ -128,6 +129,8 @@ public static class MapSerializer
 
         if (oceanSettings != null)
             j["ocean"] = oceanSettings.ToJson();
+        if (fogSettings != null)
+            j["volumetric_fog"] = fogSettings.ToJson();
 
         var objects = (JsonArray)j["objects"]!;
         foreach (var e in scene.Entities)
@@ -250,6 +253,7 @@ public static class MapSerializer
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
         out VolumetricCloudSettings cloudSettings,
+        out VolumetricFogSettings fogSettings,
         out OceanSettings oceanSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
@@ -258,6 +262,7 @@ public static class MapSerializer
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
         cloudSettings = new VolumetricCloudSettings();
+        fogSettings = new VolumetricFogSettings();
         oceanSettings = new OceanSettings();
         scene.Clear();
         var createdBodies = new List<RigidBody>();
@@ -305,6 +310,11 @@ public static class MapSerializer
             cloudsNode is JsonObject cloudsObject)
         {
             cloudSettings = VolumetricCloudSettings.FromJson(cloudsObject);
+        }
+        if (root.TryGetPropertyValue("volumetric_fog", out var fogNode) &&
+            fogNode is JsonObject fogObject)
+        {
+            fogSettings = VolumetricFogSettings.FromJson(fogObject);
         }
         if (root.TryGetPropertyValue("ocean", out var oceanNode) &&
             oceanNode is JsonObject oceanObject)
@@ -920,9 +930,11 @@ public static class MapSerializer
     }
 
     public static bool SaveToFile(Renderer.Scene scene, PhysicsWorld physics, string filepath,
-        PlayerSpawn? playerSpawn = null)
+        PlayerSpawn? playerSpawn = null,
+        OceanSettings? oceanSettings = null,
+        VolumetricFogSettings? fogSettings = null)
     {
-        string json = SerializeScene(scene, physics, playerSpawn);
+        string json = SerializeScene(scene, physics, playerSpawn, oceanSettings, fogSettings);
         try
         {
             File.WriteAllText(filepath, json);
@@ -943,6 +955,7 @@ public static class MapSerializer
         out string? skyboxPath,
         out SkyboxSettings skyboxSettings,
         out VolumetricCloudSettings cloudSettings,
+        out VolumetricFogSettings fogSettings,
         out OceanSettings oceanSettings,
         string? resPath = null,
         Action<float, string>? onProgress = null)
@@ -951,6 +964,7 @@ public static class MapSerializer
         skyboxPath = null;
         skyboxSettings = new SkyboxSettings();
         cloudSettings = new VolumetricCloudSettings();
+        fogSettings = new VolumetricFogSettings();
         oceanSettings = new OceanSettings();
         if (!File.Exists(filepath))
         {
@@ -968,6 +982,7 @@ public static class MapSerializer
             out skyboxPath,
             out skyboxSettings,
             out cloudSettings,
+            out fogSettings,
             out oceanSettings,
             resPath,
             onProgress);

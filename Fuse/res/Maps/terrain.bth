@@ -4655,7 +4655,7 @@
     "exposure": 1
   },
   "volumetric_clouds": {
-    "enabled": true,
+    "enabled": false,
     "preset": "weathermix",
     "base_height": -451,
     "thickness": 5000,
@@ -4689,6 +4689,27 @@
     "shadow_extent": 2200,
     "shadow_resolution": 256,
     "shadow_update_interval": 0.12
+  },
+  "volumetric_fog": {
+    "enabled": true,
+    "density": 0.0011,
+    "base_height": 0,
+    "height_falloff": 118,
+    "max_distance": 4000,
+    "noise_scale": 0.004,
+    "noise_strength": 0.45,
+    "wind_direction": [
+      0.97014254,
+      0.24253564
+    ],
+    "wind_speed": 2,
+    "anisotropy": 0.54,
+    "absorption": 0.91,
+    "ambient_strength": 0.89,
+    "sun_scattering": 1.24,
+    "ray_steps": 22,
+    "resolution_scale": 0.5,
+    "temporal_blend": 0.88
   },
   "ocean": {
     "enabled": true,

@@ -69,6 +69,7 @@ public class SceneManager
             out var skyboxPath,
             out var skyboxSettings,
             out var cloudSettings,
+            out var fogSettings,
             out var oceanSettings,
             Fuse.ResPath.Path,
             onProgress);
@@ -81,6 +82,7 @@ public class SceneManager
         onProgress?.Invoke(0.82f, "Loading skybox...");
         ApplyMapSkybox(skyboxPath, skyboxSettings);
         _renderer?.SetVolumetricClouds(cloudSettings);
+        _renderer?.SetVolumetricFog(fogSettings);
         _renderer?.SetOcean(oceanSettings);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");
@@ -112,6 +114,7 @@ public class SceneManager
             out var skyboxPath,
             out var skyboxSettings,
             out var cloudSettings,
+            out var fogSettings,
             out var oceanSettings,
             Fuse.ResPath.Path,
             onProgress);
@@ -124,6 +127,7 @@ public class SceneManager
         onProgress?.Invoke(0.82f, "Loading skybox...");
         ApplyMapSkybox(skyboxPath, skyboxSettings);
         _renderer?.SetVolumetricClouds(cloudSettings);
+        _renderer?.SetVolumetricFog(fogSettings);
         _renderer?.SetOcean(oceanSettings);
 
         onProgress?.Invoke(0.85f, "Registering interactions...");

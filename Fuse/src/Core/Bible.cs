@@ -88,6 +88,10 @@ public static class Bible
     public const string VolumetricCloudNoiseCompute = "Shaders/Clouds/cloud_noise.comp";
     public const string VolumetricCloudWeatherCompute = "Shaders/Clouds/cloud_weather.comp";
 
+    // Shaders - Volumetric Fog
+    public const string VolumetricFogFrag = "Shaders/Fog/volumetric_fog.frag";
+    public const string VolumetricFogCompositeFrag = "Shaders/Fog/volumetric_fog_composite.frag";
+
     // Shaders - Ocean
     public const string OceanVert = "Shaders/Ocean/ocean.vert";
     public const string OceanFrag = "Shaders/Ocean/ocean.frag";
