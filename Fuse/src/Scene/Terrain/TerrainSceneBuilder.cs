@@ -46,25 +46,142 @@ public static class TerrainSceneBuilder
         int collisionLod = DefaultCollisionLod,
         bool forceLod0 = false)
     {
+        return AddToScene(
+            scene,
+            TerrainTileSetAsset.FromSingle(terrain),
+            id,
+            worldPosition,
+            worldRotation,
+            visible,
+            chunkQuads,
+            materialPath,
+            materialPaths,
+            texturePath,
+            uvScale,
+            uvOffset,
+            uvRotation,
+            assets,
+            physics,
+            createdBodies,
+            parentId,
+            friction,
+            restitution,
+            pixelError,
+            collisionLod,
+            forceLod0);
+    }
+
+    public static int AddToScene(
+        Fuse.Renderer.Scene scene,
+        TerrainTileSetAsset terrainSet,
+        string id,
+        Vector3 worldPosition,
+        Quaternion worldRotation,
+        bool visible,
+        int chunkQuads,
+        string materialPath,
+        IReadOnlyList<string>? materialPaths,
+        string texturePath,
+        Vector2 uvScale,
+        Vector2 uvOffset,
+        float uvRotation,
+        AssetManager assets,
+        PhysicsWorld? physics = null,
+        IList<RigidBody>? createdBodies = null,
+        string parentId = "",
+        float friction = 0.5f,
+        float restitution = 0.0f,
+        float pixelError = DefaultPixelError,
+        int collisionLod = DefaultCollisionLod,
+        bool forceLod0 = false)
+    {
+        if (terrainSet == null)
+            throw new ArgumentNullException(nameof(terrainSet));
+
         chunkQuads = System.Math.Max(1, chunkQuads);
         materialPaths ??= Array.Empty<string>();
         pixelError = MathF.Max(0.1f, pixelError);
         collisionLod = System.Math.Max(0, collisionLod);
         int chunkCount = 0;
+
+        foreach (TerrainTile tile in terrainSet.Tiles)
+        {
+            Vector3 tilePosition = worldPosition + Vector3.Transform(
+                terrainSet.GetTileOrigin(tile),
+                worldRotation);
+            chunkCount += AddTileToScene(
+                scene,
+                tile,
+                terrainSet,
+                id,
+                tilePosition,
+                worldRotation,
+                visible,
+                chunkQuads,
+                materialPath,
+                materialPaths,
+                texturePath,
+                uvScale,
+                uvOffset,
+                uvRotation,
+                assets,
+                physics,
+                createdBodies,
+                parentId,
+                friction,
+                restitution,
+                pixelError,
+                collisionLod,
+                forceLod0);
+        }
+
+        return chunkCount;
+    }
+
+    private static int AddTileToScene(
+        Fuse.Renderer.Scene scene,
+        TerrainTile tile,
+        TerrainTileSetAsset terrainSet,
+        string terrainId,
+        Vector3 worldPosition,
+        Quaternion worldRotation,
+        bool visible,
+        int chunkQuads,
+        string materialPath,
+        IReadOnlyList<string> materialPaths,
+        string texturePath,
+        Vector2 uvScale,
+        Vector2 uvOffset,
+        float uvRotation,
+        AssetManager assets,
+        PhysicsWorld? physics,
+        IList<RigidBody>? createdBodies,
+        string parentId,
+        float friction,
+        float restitution,
+        float pixelError,
+        int collisionLod,
+        bool forceLod0)
+    {
+        TerrainAsset terrain = tile.Asset;
         int chunksX = (terrain.Width - 2 + chunkQuads) / chunkQuads;
         int chunksZ = (terrain.Depth - 2 + chunkQuads) / chunkQuads;
+        if (chunksX <= 0 || chunksZ <= 0)
+            return 0;
 
-        // A single native heightfield represents the complete terrain and
-        // avoids the seam/diagonal errors caused by independent chunk meshes.
-        // The render chunks below remain unchanged; this body exists only for
-        // physics and raycasts.
+        // A native heightfield represents the complete tile and avoids the
+        // seam/diagonal errors caused by independent chunk meshes. A tile set
+        // receives one complete body per tile, all using the same grid space.
         RigidBody? nativeTerrainBody = null;
         if (physics != null && visible && CanUseNativeHeightField(terrain))
         {
+            string collisionId = GetTileId(terrainId, tile) + "_collision";
             nativeTerrainBody = CreateNativeHeightFieldBody(
                 scene,
                 terrain,
-                id,
+                collisionId,
+                terrainId,
+                tile,
                 worldPosition,
                 worldRotation,
                 physics,
@@ -73,6 +190,7 @@ public static class TerrainSceneBuilder
                 restitution);
         }
 
+        int chunkCount = 0;
         for (int chunkZ = 0; chunkZ < chunksZ; chunkZ++)
         {
             for (int chunkX = 0; chunkX < chunksX; chunkX++)
@@ -178,14 +296,20 @@ public static class TerrainSceneBuilder
                     }
                 }
 
-                string chunkId = $"{id}_chunk_{terrainChunkX}_{terrainChunkZ}";
+                string chunkId = $"{GetTileId(terrainId, tile)}_chunk_{terrainChunkX}_{terrainChunkZ}";
                 Entity entity = scene.Add(terrainLod.CurrentMesh, chunkId, body);
                 entity.TerrainLod = terrainLod;
                 entity.ForceTerrainLod0 = forceLod0;
                 entity.TerrainPixelError = pixelError;
-                entity.TerrainChunkGroupId = id;
-                entity.TerrainChunkX = terrainChunkX;
-                entity.TerrainChunkZ = terrainChunkZ;
+                entity.TerrainChunkGroupId = terrainId;
+                entity.TerrainTileX = tile.X;
+                entity.TerrainTileZ = tile.Z;
+                entity.TerrainLocalChunkX = terrainChunkX;
+                entity.TerrainLocalChunkZ = terrainChunkZ;
+                // LOD adjacency uses global chunk coordinates so a tile edge
+                // is treated exactly like an ordinary chunk edge.
+                entity.TerrainChunkX = checked(tile.X * chunksX + terrainChunkX);
+                entity.TerrainChunkZ = checked(tile.Z * chunksZ + terrainChunkZ);
                 entity.MeshOwnedByEntity = true;
                 entity.MeshKey = chunkId;
                 entity.ParentId = parentId;
@@ -216,6 +340,9 @@ public static class TerrainSceneBuilder
         return chunkCount;
     }
 
+    private static string GetTileId(string terrainId, TerrainTile tile) =>
+        $"{terrainId}_tile_{tile.X}_{tile.Z}";
+
     private static bool CanUseNativeHeightField(TerrainAsset terrain)
     {
         if (terrain.Width < 3 || terrain.Width != terrain.Depth || terrain.HeightScale <= 0.0f)
@@ -228,7 +355,9 @@ public static class TerrainSceneBuilder
     private static RigidBody? CreateNativeHeightFieldBody(
         Fuse.Renderer.Scene scene,
         TerrainAsset terrain,
-        string terrainId,
+        string collisionId,
+        string terrainGroupId,
+        TerrainTile tile,
         Vector3 worldPosition,
         Quaternion worldRotation,
         PhysicsWorld physics,
@@ -261,9 +390,8 @@ public static class TerrainSceneBuilder
         }
 
         // Keep the physics body in the scene/body map without attaching it to
-        // a render chunk. It is already in world space, so it must not inherit
-        // a parent transform a second time.
-        Entity collisionEntity = scene.Add(null, $"{terrainId}_collision", body);
+        // a parent transform a second time. It is already in world space.
+        Entity collisionEntity = scene.Add(null, collisionId, body);
         collisionEntity.MeshKey = string.Empty;
         collisionEntity.ParentId = string.Empty;
         collisionEntity.Transform.Position = worldPosition;
@@ -271,7 +399,9 @@ public static class TerrainSceneBuilder
         collisionEntity.Transform.Scale = Vector3.One;
         collisionEntity.ModelScale = Vector3.One;
         collisionEntity.Visible = false;
-        collisionEntity.TerrainChunkGroupId = terrainId;
+        collisionEntity.TerrainChunkGroupId = terrainGroupId;
+        collisionEntity.TerrainTileX = tile.X;
+        collisionEntity.TerrainTileZ = tile.Z;
 
         createdBodies?.Add(body);
         return body;
@@ -290,54 +420,92 @@ public static class TerrainSceneBuilder
         Vector3 localCenter,
         float radius)
     {
+        return RefreshTerrainGeometry(
+            scene,
+            TerrainTileSetAsset.FromSingle(terrain),
+            terrainId,
+            chunkQuads,
+            localCenter,
+            radius);
+    }
+
+    public static int RefreshTerrainGeometry(
+        Fuse.Renderer.Scene scene,
+        TerrainTileSetAsset terrainSet,
+        string terrainId,
+        int chunkQuads,
+        Vector3 localCenter,
+        float radius)
+    {
         chunkQuads = System.Math.Max(1, chunkQuads);
-        int chunksX = (terrain.Width - 2 + chunkQuads) / chunkQuads;
-        int chunksZ = (terrain.Depth - 2 + chunkQuads) / chunkQuads;
-        if (chunksX <= 0 || chunksZ <= 0)
-            return 0;
-
-        float samplePadding = MathF.Max(terrain.CellSize, 0.01f) * 2.0f;
-        float influenceRadius = MathF.Max(0.0f, radius) + samplePadding;
-        float chunkWorldSize = MathF.Max(terrain.CellSize, 0.01f) * chunkQuads;
-        int minChunkX = System.Math.Clamp(
-            (int)MathF.Floor((localCenter.X - influenceRadius) / chunkWorldSize),
-            0,
-            chunksX - 1);
-        int maxChunkX = System.Math.Clamp(
-            (int)MathF.Floor((localCenter.X + influenceRadius) / chunkWorldSize),
-            0,
-            chunksX - 1);
-        int minChunkZ = System.Math.Clamp(
-            (int)MathF.Floor((localCenter.Z - influenceRadius) / chunkWorldSize),
-            0,
-            chunksZ - 1);
-        int maxChunkZ = System.Math.Clamp(
-            (int)MathF.Floor((localCenter.Z + influenceRadius) / chunkWorldSize),
-            0,
-            chunksZ - 1);
-
         int refreshed = 0;
-        foreach (Entity entity in scene.Entities)
+        float samplePadding = MathF.Max(terrainSet.CellSize, 0.01f) * 2.0f;
+        float influenceRadius = MathF.Max(0.0f, radius) + samplePadding;
+
+        foreach (TerrainTile tile in terrainSet.Tiles)
         {
-            if (entity.TerrainLod == null ||
-                !string.Equals(entity.TerrainChunkGroupId, terrainId, StringComparison.OrdinalIgnoreCase))
+            TerrainAsset terrain = tile.Asset;
+            int chunksX = (terrain.Width - 2 + chunkQuads) / chunkQuads;
+            int chunksZ = (terrain.Depth - 2 + chunkQuads) / chunkQuads;
+            if (chunksX <= 0 || chunksZ <= 0)
                 continue;
 
-            int terrainChunkX = entity.TerrainChunkX;
-            int terrainChunkZ = entity.TerrainChunkZ;
-            if (terrainChunkX < minChunkX || terrainChunkX > maxChunkX ||
-                terrainChunkZ < minChunkZ || terrainChunkZ > maxChunkZ)
+            Vector3 tileOrigin = terrainSet.GetTileOrigin(tile);
+            Vector3 tileCenter = localCenter - tileOrigin;
+            float tileMaxX = terrainSet.TileWorldWidth;
+            float tileMaxZ = terrainSet.TileWorldDepth;
+            if (tileCenter.X < -influenceRadius ||
+                tileCenter.X > tileMaxX + influenceRadius ||
+                tileCenter.Z < -influenceRadius ||
+                tileCenter.Z > tileMaxZ + influenceRadius)
                 continue;
 
-            entity.TerrainLod.RefreshGeometry((lodLevel, stitchEdges) =>
-                TerrainMeshGenerator.Generate(
-                    terrain,
-                    terrainChunkX,
-                    terrainChunkZ,
-                    chunkQuads,
-                    lodLevel,
-                    stitchEdges));
-            refreshed++;
+            float chunkWorldSize = MathF.Max(terrain.CellSize, 0.01f) * chunkQuads;
+            int minChunkX = System.Math.Clamp(
+                (int)MathF.Floor((tileCenter.X - influenceRadius) / chunkWorldSize),
+                0,
+                chunksX - 1);
+            int maxChunkX = System.Math.Clamp(
+                (int)MathF.Floor((tileCenter.X + influenceRadius) / chunkWorldSize),
+                0,
+                chunksX - 1);
+            int minChunkZ = System.Math.Clamp(
+                (int)MathF.Floor((tileCenter.Z - influenceRadius) / chunkWorldSize),
+                0,
+                chunksZ - 1);
+            int maxChunkZ = System.Math.Clamp(
+                (int)MathF.Floor((tileCenter.Z + influenceRadius) / chunkWorldSize),
+                0,
+                chunksZ - 1);
+
+            foreach (Entity entity in scene.Entities)
+            {
+                if (entity.TerrainLod == null ||
+                    !string.Equals(entity.TerrainChunkGroupId, terrainId, StringComparison.OrdinalIgnoreCase) ||
+                    entity.TerrainTileX != tile.X ||
+                    entity.TerrainTileZ != tile.Z)
+                    continue;
+
+                int terrainChunkX = entity.TerrainLocalChunkX >= 0
+                    ? entity.TerrainLocalChunkX
+                    : entity.TerrainChunkX;
+                int terrainChunkZ = entity.TerrainLocalChunkZ >= 0
+                    ? entity.TerrainLocalChunkZ
+                    : entity.TerrainChunkZ;
+                if (terrainChunkX < minChunkX || terrainChunkX > maxChunkX ||
+                    terrainChunkZ < minChunkZ || terrainChunkZ > maxChunkZ)
+                    continue;
+
+                entity.TerrainLod.RefreshGeometry((lodLevel, stitchEdges) =>
+                    TerrainMeshGenerator.Generate(
+                        terrain,
+                        terrainChunkX,
+                        terrainChunkZ,
+                        chunkQuads,
+                        lodLevel,
+                        stitchEdges));
+                refreshed++;
+            }
         }
 
         return refreshed;

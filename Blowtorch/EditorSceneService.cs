@@ -19,7 +19,7 @@ public class EditorSceneService
     private ulong _cachedSnapshotRevision = ulong.MaxValue;
     private ulong _revision;
     private bool _isDirty;
-    private readonly Dictionary<string, (TerrainAsset Asset, DateTime LastWriteUtc, long Length)> _terrainCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (TerrainTileSetAsset Asset, DateTime LastWriteUtc, long Length)> _terrainCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _terrainEditorForceLod0 = new(StringComparer.OrdinalIgnoreCase);
 
     public MapDocument Document => _doc;
@@ -155,8 +155,8 @@ public class EditorSceneService
 
             if (mapObj.IsTerrain)
             {
-                TerrainAsset? terrain = TryLoadTerrainAsset(mapObj, assetService);
-                if (terrain == null)
+                TerrainTileSetAsset? terrainSet = TryLoadTerrainTileSet(mapObj, assetService);
+                if (terrainSet == null)
                     continue;
 
                 Vector3 terrainPosition = mapObj.Body?.Position ?? Vector3.Zero;
@@ -175,7 +175,7 @@ public class EditorSceneService
 
                 TerrainSceneBuilder.AddToScene(
                     _scene,
-                    terrain,
+                    terrainSet,
                     mapObj.Id,
                     terrainPosition,
                     terrainRotation,
@@ -279,7 +279,7 @@ public class EditorSceneService
         }
     }
 
-    public TerrainAsset? TryLoadTerrainAsset(MapObject mapObj, EditorAssetService assetService)
+    public TerrainTileSetAsset? TryLoadTerrainTileSet(MapObject mapObj, EditorAssetService assetService)
     {
         if (!mapObj.IsTerrain)
             return null;
@@ -303,7 +303,7 @@ public class EditorSceneService
                 return cached.Asset;
             }
 
-            TerrainAsset loaded = TerrainAsset.Load(path);
+            TerrainTileSetAsset loaded = TerrainTileSetAsset.Load(path);
             _terrainCache[path] = (loaded, lastWriteUtc, length);
             return loaded;
         }
@@ -312,6 +312,59 @@ public class EditorSceneService
             Logger.Warn($"Terrain asset could not be loaded for '{mapObj.Id}': {ex.Message}");
             return null;
         }
+    }
+
+    public TerrainAsset? TryLoadTerrainAsset(MapObject mapObj, EditorAssetService assetService)
+    {
+        return TryLoadTerrainTileSet(mapObj, assetService)?.Primary.Asset;
+    }
+
+    public bool CreateTerrainNeighbor(
+        MapObject mapObj,
+        EditorAssetService assetService,
+        int sourceX,
+        int sourceZ,
+        int offsetX,
+        int offsetZ)
+    {
+        TerrainTileSetAsset? terrainSet = TryLoadTerrainTileSet(mapObj, assetService);
+        if (terrainSet == null ||
+            !terrainSet.TryCreateNeighbor(
+                sourceX,
+                sourceZ,
+                offsetX,
+                offsetZ,
+                out _))
+            return false;
+
+        string path = assetService.ResolveEditorAssetPath(mapObj.TerrainAssetPath!);
+        if (SaveTerrainAsset(path))
+            return true;
+
+        terrainSet.TryRemoveTile(
+            sourceX + offsetX,
+            sourceZ + offsetZ);
+        return false;
+    }
+
+    public bool DeleteTerrainNeighbor(
+        MapObject mapObj,
+        EditorAssetService assetService,
+        int tileX,
+        int tileZ)
+    {
+        TerrainTileSetAsset? terrainSet = TryLoadTerrainTileSet(mapObj, assetService);
+        if (terrainSet == null ||
+            !terrainSet.TryRemoveTile(tileX, tileZ, out TerrainTile? removed) ||
+            removed == null)
+            return false;
+
+        string path = assetService.ResolveEditorAssetPath(mapObj.TerrainAssetPath!);
+        if (SaveTerrainAsset(path))
+            return true;
+
+        terrainSet.TryRestoreTile(removed);
+        return false;
     }
 
     public bool IsTerrainEditorForceLod0(string terrainId) =>
@@ -367,8 +420,8 @@ public class EditorSceneService
         int noiseSeed,
         TerrainHeightmapBrush? heightmapBrush = null)
     {
-        TerrainAsset? terrain = TryLoadTerrainAsset(mapObj, assetService);
-        if (terrain == null)
+        TerrainTileSetAsset? terrainSet = TryLoadTerrainTileSet(mapObj, assetService);
+        if (terrainSet == null)
             return false;
 
         Vector3 terrainPosition = mapObj.Body?.Position ?? Vector3.Zero;
@@ -377,12 +430,21 @@ public class EditorSceneService
         Vector3 localOrigin = Vector3.Transform(rayOrigin - terrainPosition, inverseRotation);
         Vector3 localDirection = Vector3.Normalize(Vector3.Transform(rayDirection, inverseRotation));
 
-        if (!terrain.Raycast(localOrigin, localDirection, out _, out Vector3 localHit))
+        if (!terrainSet.Raycast(
+                localOrigin,
+                localDirection,
+                out _,
+                out Vector3 localHit,
+                out _))
             return false;
 
-        if (!terrain.ApplyBrush(
+        bool changed = false;
+        foreach (TerrainTile tile in terrainSet.GetTilesIntersectingCircle(localHit, radius))
+        {
+            Vector3 tileLocalHit = localHit - terrainSet.GetTileOrigin(tile);
+            changed |= tile.Asset.ApplyBrush(
                 tool,
-                localHit,
+                tileLocalHit,
                 radius,
                 strength,
                 lower,
@@ -391,12 +453,15 @@ public class EditorSceneService
                 noiseSeed,
                 heightmapBrush?.Samples,
                 heightmapBrush?.Width ?? 0,
-                heightmapBrush?.Height ?? 0))
+                heightmapBrush?.Height ?? 0);
+        }
+
+        if (!changed)
             return false;
 
         TerrainSceneBuilder.RefreshTerrainGeometry(
             _scene,
-            terrain,
+            terrainSet,
             mapObj.Id,
             mapObj.TerrainChunkQuads,
             localHit,

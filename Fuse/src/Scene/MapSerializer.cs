@@ -412,7 +412,7 @@ public static class MapSerializer
 
                 try
                 {
-                    TerrainAsset terrain = TerrainAsset.Load(fullTerrainPath);
+                    TerrainTileSetAsset terrain = TerrainTileSetAsset.Load(fullTerrainPath);
                     Vector3 terrainPosition = Vector3.Zero;
                     Quaternion terrainRotation = Quaternion.Identity;
                     float terrainFriction = 0.5f;

@@ -56,6 +56,10 @@ public class Entity
     public bool ForceTerrainLod0 { get; set; }
     public float TerrainPixelError { get; set; } = 5.0f;
     public string TerrainChunkGroupId { get; set; } = "";
+    public int TerrainTileX { get; set; }
+    public int TerrainTileZ { get; set; }
+    public int TerrainLocalChunkX { get; set; } = -1;
+    public int TerrainLocalChunkZ { get; set; } = -1;
     public int TerrainChunkX { get; set; } = -1;
     public int TerrainChunkZ { get; set; } = -1;
     /// <summary>True se esta entidade é dona única da Mesh (pode dar Dispose). False = mesh compartilhada/cacheada pelo AssetManager.</summary>

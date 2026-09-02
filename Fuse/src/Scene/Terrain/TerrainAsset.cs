@@ -7,7 +7,7 @@ namespace Fuse.Scene.Terrain;
 
 public sealed class TerrainAsset
 {
-    private const uint Magic = 0x314E5254;
+    internal const uint FileMagic = 0x314E5254;
     public const int CurrentVersion = 1;
 
     public int Width { get; }
@@ -949,7 +949,7 @@ public sealed class TerrainAsset
         using var stream = File.Create(path);
         using var writer = new BinaryWriter(stream);
 
-        writer.Write(Magic);
+        writer.Write(FileMagic);
         writer.Write(CurrentVersion);
         writer.Write(Width);
         writer.Write(Depth);
@@ -967,7 +967,7 @@ public sealed class TerrainAsset
         using var reader = new BinaryReader(stream);
 
         uint magic = reader.ReadUInt32();
-        if (magic != Magic)
+        if (magic != FileMagic)
             throw new InvalidDataException("Invalid terrain asset magic.");
 
         int version = reader.ReadInt32();

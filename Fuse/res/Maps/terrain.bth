@@ -4058,9 +4058,9 @@
       "body": {
         "shape": "trimesh",
         "position": [
-          317.5,
-          30.375,
-          603.5
+          891.5,
+          86.375,
+          1085.5
         ],
         "rotation": [
           1,
@@ -4464,9 +4464,9 @@
       "body": {
         "shape": "trimesh",
         "position": [
-          316,
-          26,
-          618
+          890,
+          82,
+          1100
         ],
         "rotation": [
           1,
@@ -4491,10 +4491,10 @@
       "light_type": "directional",
       "light_color": [
         1,
-        0.9232987,
-        0.3480392
+        1,
+        1
       ],
-      "light_intensity": 0,
+      "light_intensity": 1,
       "light_radius": 15,
       "light_inner_cone": 0.2617994,
       "light_outer_cone": 0.5235988,
@@ -4504,15 +4504,15 @@
       "body": {
         "shape": "none",
         "position": [
-          346,
+          849.44336,
           111,
-          668
+          1109.3257
         ],
         "rotation": [
-          0.72150016,
-          0.3561496,
-          0.30470306,
-          -0.5096579
+          -0.71733373,
+          -0.33593762,
+          -0.33021775,
+          0.5133562
         ],
         "mass": 0,
         "friction": 0.5,
@@ -4521,10 +4521,33 @@
       }
     },
     {
-      "id": "terrain_terrain",
+      "id": "group_1",
+      "visible": true,
+      "body": {
+        "shape": "none",
+        "position": [
+          890,
+          82,
+          1100
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 0,
+        "friction": 0,
+        "restitution": 0,
+        "is_trigger": false
+      }
+    },
+    {
+      "id": "terrain_terrain_1",
       "visible": true,
       "type": "terrain",
-      "terrain_asset": "Terrains/terrain.terrain",
+      "terrain_asset": "Terrains/terrain_1.terrain",
+      "terrain_chunk_quads": 64,
       "uv_scale": [
         1024,
         1024
@@ -4550,14 +4573,27 @@
       }
     },
     {
-      "id": "group_1",
+      "id": "new_spot_light",
       "visible": true,
+      "light_type": "spot",
+      "light_color": [
+        1,
+        0.9,
+        0.7
+      ],
+      "light_intensity": 84.55,
+      "light_radius": 15,
+      "light_inner_cone": 0.2617994,
+      "light_outer_cone": 0.5235988,
+      "light_cast_shadows": true,
+      "light_shadow_bias": 0.001,
+      "light_dynamic": false,
       "body": {
         "shape": "none",
         "position": [
-          316,
-          26,
-          618
+          891.66595,
+          88.55573,
+          1098.5419
         ],
         "rotation": [
           1,
@@ -4566,7 +4602,7 @@
           0
         ],
         "mass": 0,
-        "friction": 0,
+        "friction": 0.5,
         "restitution": 0,
         "is_trigger": false
       }
@@ -4619,13 +4655,13 @@
     "exposure": 1
   },
   "volumetric_clouds": {
-    "enabled": false,
+    "enabled": true,
     "preset": "weathermix",
     "base_height": -451,
     "thickness": 5000,
-    "coverage": 0.06,
-    "density": 1.55,
-    "scale": 0.07,
+    "coverage": 0.05,
+    "density": 2.62,
+    "scale": 0.0567,
     "detail_scale": 7,
     "detail_strength": 0.55,
     "shape_factor": 0.92,
@@ -4645,11 +4681,11 @@
     "absorption": 1.25,
     "ambient_strength": 0.22,
     "powder_effect": 0.65,
-    "multi_scattering": 0.55,
+    "multi_scattering": 0.32,
     "domain_warp_strength": 0.2,
     "secondary_shape_strength": 0.28,
     "shadows_enabled": true,
-    "shadow_strength": 0.55,
+    "shadow_strength": 1,
     "shadow_extent": 2200,
     "shadow_resolution": 256,
     "shadow_update_interval": 0.12
@@ -4708,9 +4744,9 @@
   },
   "player_spawn": {
     "position": [
-      316,
-      28.85,
-      618
+      872.85,
+      84.8,
+      1100
     ],
     "yaw": 0,
     "pitch": 0

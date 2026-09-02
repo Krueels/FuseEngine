@@ -53,36 +53,35 @@ public sealed class TerrainSnapshotCommand : ICommand
     private readonly EditorSceneService _sceneService;
     private readonly EditorAssetService _assetService;
     private readonly string _assetPath;
-    private readonly ushort[] _before;
-    private readonly ushort[] _after;
+    private readonly TerrainTileSetSnapshot _before;
+    private readonly TerrainTileSetSnapshot _after;
 
     public TerrainSnapshotCommand(
         EditorSceneService sceneService,
         EditorAssetService assetService,
         string assetPath,
-        ushort[] before,
-        ushort[] after)
+        TerrainTileSetSnapshot before,
+        TerrainTileSetSnapshot after)
     {
         _sceneService = sceneService;
         _assetService = assetService;
         _assetPath = assetPath;
-        _before = (ushort[])before.Clone();
-        _after = (ushort[])after.Clone();
+        _before = before;
+        _after = after;
     }
 
     public void Execute() => Restore(_after);
 
     public void Undo() => Restore(_before);
 
-    private void Restore(ushort[] samples)
+    private void Restore(TerrainTileSetSnapshot snapshot)
     {
         try
         {
-            TerrainAsset terrain = TerrainAsset.Load(_assetPath);
-            if (terrain.Samples.Length != samples.Length)
+            TerrainTileSetAsset terrain = TerrainTileSetAsset.Load(_assetPath);
+            if (!terrain.RestoreSnapshot(snapshot))
                 return;
 
-            Array.Copy(samples, terrain.Samples, samples.Length);
             terrain.Save(_assetPath);
             _sceneService.InvalidateTerrainAsset(_assetPath);
             _sceneService.PopulateScene(_assetService);

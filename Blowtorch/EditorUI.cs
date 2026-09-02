@@ -95,6 +95,10 @@ public unsafe class EditorUI : IDisposable
     private float _terrainHeightScale = 8.0f;
     private string _terrainHeightmapPath = "";
     private int _terrainChunkQuads = TerrainSceneBuilder.DefaultChunkQuads;
+    private int _terrainNeighborSourceX;
+    private int _terrainNeighborSourceZ;
+    private bool _terrainNeighborEditMode = true;
+    private string _terrainNeighborStatus = "";
     private static readonly string[] TerrainSculptToolLabels =
     [
         "Raise / Lower",
@@ -115,8 +119,8 @@ public unsafe class EditorUI : IDisposable
     private TerrainHeightmapBrush? _terrainHeightmapBrush;
     private bool _terrainSculptActive;
     private string _terrainSculptAssetPath = "";
-    private TerrainAsset? _terrainSculptAsset;
-    private ushort[]? _terrainSculptBefore;
+    private TerrainTileSetAsset? _terrainSculptAsset;
+    private TerrainTileSetSnapshot? _terrainSculptBefore;
     private List<string> _modelFiles = new();
     private int _selectedModelIndex = -1;
     private string? _detectedTexturePath = null;
@@ -2511,6 +2515,12 @@ public unsafe class EditorUI : IDisposable
 
         HandleAssetDropOnViewport(viewport, vpPos, vpSize, sceneService, assetService, history);
         bool isHovered = ImGui.IsItemHovered() && inputService.IsMapContext;
+        bool terrainNeighborClickHandled = isHovered && TryHandleTerrainNeighborClick(
+            viewport,
+            vpPos,
+            vpSize,
+            sceneService,
+            assetService);
 
         // 2D Handle Detection & State Setup
         bool showHandles = false;
@@ -2630,7 +2640,7 @@ public unsafe class EditorUI : IDisposable
         //bool normalInteractionAllowed = isHovered && !EditorGizmo.IsUsing() && !EditorGizmo.IsHovered && !_isDraggingHandle;
 
         bool gizmoActive = EditorGizmo.IsUsing();
-        bool allowViewportInput = isHovered && !gizmoActive && !_isDraggingHandle;
+        bool allowViewportInput = isHovered && !terrainNeighborClickHandled && !gizmoActive && !_isDraggingHandle;
         bool allowPicking = allowViewportInput && !EditorGizmo.IsHovered;
 
         // Hammer-style: suppress translation and scale gizmos when the entire selection is made of brushes
@@ -3434,9 +3444,9 @@ public unsafe class EditorUI : IDisposable
             
             if (obj.IsTerrain && !string.IsNullOrWhiteSpace(obj.TerrainAssetPath))
             {
-                TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(obj, assetService);
+                TerrainTileSetAsset? terrain = sceneService.TryLoadTerrainTileSet(obj, assetService);
                 hit = terrain != null &&
-                    terrain.Raycast(localOrigin, localDir, out dist, out _);
+                    terrain.Raycast(localOrigin, localDir, out dist, out _, out _);
             }
             else if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
             {
@@ -5372,18 +5382,69 @@ public unsafe class EditorUI : IDisposable
                 // Visuals & Material
                 if (obj.IsTerrain && ImGui.CollapsingHeader("Terrain", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(obj, assetService);
-                    if (terrain == null)
+                    TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(obj, assetService);
+                    TerrainAsset? terrain = terrainSet?.Primary.Asset;
+                    if (terrainSet == null || terrain == null)
                     {
                         ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), "Terrain asset could not be loaded.");
                     }
                     else
                     {
-                        terrain.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
+                        terrainSet.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
                         ImGui.TextUnformatted($"Asset: {obj.TerrainAssetPath}");
                         ImGui.TextUnformatted($"Resolution: {terrain.Width} x {terrain.Depth}");
                         ImGui.TextUnformatted($"Size: {(terrain.Width - 1) * terrain.CellSize:0.##} x {(terrain.Depth - 1) * terrain.CellSize:0.##}");
                         ImGui.TextUnformatted($"Height: {terrainMin.Y:0.##} .. {terrainMax.Y:0.##}");
+                        ImGui.TextUnformatted($"Neighbor tiles: {terrainSet.Tiles.Count}");
+                        ImGui.TextDisabled(
+                            "Existing: " + string.Join(
+                                ", ",
+                                terrainSet.Tiles.Select(tile => $"({tile.X}, {tile.Z})")));
+
+                        ImGui.SeparatorText("Neighbor terrains");
+                        if (ImGui.Checkbox(
+                                "Edit neighbors in 3D viewport##terrainNeighborEditMode",
+                                ref _terrainNeighborEditMode))
+                            viewport3D.RequestRender();
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip(
+                                "Empty cells are clickable to create a neighbor. Click an existing neighbor to delete it.");
+                        ImGui.TextDisabled("Blue cells create; green cells delete. The origin cannot be deleted.");
+                        if (!string.IsNullOrWhiteSpace(_terrainNeighborStatus))
+                            ImGui.TextDisabled(_terrainNeighborStatus);
+                        ImGui.TextDisabled("Create connected tiles in the same .terrain asset.");
+                        ImGui.SetNextItemWidth(90.0f);
+                        ImGui.InputInt("Source X##terrainNeighborSourceX", ref _terrainNeighborSourceX);
+                        ImGui.SameLine();
+                        ImGui.SetNextItemWidth(90.0f);
+                        ImGui.InputInt("Source Z##terrainNeighborSourceZ", ref _terrainNeighborSourceZ);
+
+                        bool neighborCreated = false;
+                        if (ImGui.Button("-X##terrainNeighborMinusX"))
+                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, -1, 0);
+                        ImGui.SameLine();
+                        if (ImGui.Button("+X##terrainNeighborPlusX"))
+                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 1, 0);
+                        ImGui.SameLine();
+                        if (ImGui.Button("-Z##terrainNeighborMinusZ"))
+                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, -1);
+                        ImGui.SameLine();
+                        if (ImGui.Button("+Z##terrainNeighborPlusZ"))
+                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, 1);
+
+                        if (neighborCreated)
+                        {
+                            sceneService.PopulateScene(assetService);
+                            sceneService.MarkModified(sceneService.Document.Serialize());
+                            _terrainNeighborStatus = "Created neighbor from the manual coordinates.";
+                            viewport3D.RequestRender();
+                            viewportTop.RequestRender();
+                            viewportFront.RequestRender();
+                            viewportSide.RequestRender();
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("The source tile must exist and the target grid slot must be empty.");
+
                         int terrainChunkQuads = obj.TerrainChunkQuads;
                         if (ImGui.DragInt("Chunk quads##terrainChunkQuads", ref terrainChunkQuads, 1.0f, 1, 256))
                         {
@@ -6016,7 +6077,7 @@ public unsafe class EditorUI : IDisposable
                             assetService.ResolveEditorAssetPath(_terrainHeightmapPath),
                             _terrainCellSize,
                             _terrainHeightScale);
-                    terrain.Save(fullPath);
+                    TerrainTileSetAsset.FromSingle(terrain).Save(fullPath);
 
                     string objectId = $"terrain_{safeName}";
                     var obj = new MapObject
@@ -6307,13 +6368,13 @@ public unsafe class EditorUI : IDisposable
         try
         {
             string path = assetService.ResolveEditorAssetPath(_selectedObject.TerrainAssetPath!);
-            TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(_selectedObject, assetService);
+            TerrainTileSetAsset? terrain = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
             if (terrain == null)
                 throw new InvalidOperationException("The selected terrain asset could not be loaded.");
 
             _terrainSculptAssetPath = path;
             _terrainSculptAsset = terrain;
-            _terrainSculptBefore = (ushort[])terrain.Samples.Clone();
+            _terrainSculptBefore = terrain.CaptureSnapshot();
             _terrainSculptActive = true;
         }
         catch (Exception ex)
@@ -6336,13 +6397,13 @@ public unsafe class EditorUI : IDisposable
 
         try
         {
-            TerrainAsset? terrain = _terrainSculptAsset;
+            TerrainTileSetAsset? terrain = _terrainSculptAsset;
             if (terrain == null)
                 throw new InvalidOperationException("The active terrain sculpt has no loaded terrain asset.");
 
-            ushort[] after = (ushort[])terrain.Samples.Clone();
+            TerrainTileSetSnapshot after = terrain.CaptureSnapshot();
             if (_terrainSculptBefore != null &&
-                !_terrainSculptBefore.AsSpan().SequenceEqual(after))
+                !_terrainSculptBefore.ContentEquals(after))
             {
                 if (!sceneService.SaveTerrainAsset(_terrainSculptAssetPath))
                     throw new IOException("The terrain asset could not be saved.");
@@ -7542,8 +7603,415 @@ public unsafe class EditorUI : IDisposable
         DrawWorldAxes(drawList, viewport, vpPos, vpSize);
         DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, assetService);
         DrawBrushComponentOverlay(drawList, viewport, vpPos, vpSize);
+        DrawTerrainNeighborPreview(drawList, viewport, vpPos, vpSize, sceneService, assetService);
         DrawTerrainBrushPreview(drawList, viewport, vpPos, vpSize, sceneService, assetService);
         DrawOrientationWidget(drawList, viewport, vpPos, vpSize);
+    }
+
+    private void DrawTerrainNeighborPreview(
+        ImDrawListPtr drawList,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (!_terrainNeighborEditMode ||
+            _currentMode != EditorMode.Select ||
+            viewport.Camera.ViewType != CameraViewType.Perspective3D ||
+            _selectedObject?.IsTerrain != true ||
+            _selectedObject.Body == null)
+            return;
+
+        TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
+        if (terrainSet == null)
+            return;
+
+        Vector3 terrainPosition = _selectedObject.Body.Position;
+        Quaternion terrainRotation = _selectedObject.Body.Rotation;
+        Vector2 mousePosition = ImGui.GetMousePos();
+
+        foreach ((int tileX, int tileZ) in GetTerrainNeighborPreviewCoordinates(terrainSet))
+        {
+            if (!TryProjectTerrainNeighborCell(
+                    terrainSet,
+                    terrainPosition,
+                    terrainRotation,
+                    tileX,
+                    tileZ,
+                    viewport,
+                    vpPos,
+                    vpSize,
+                    out Vector2 p00,
+                    out Vector2 p10,
+                    out Vector2 p11,
+                    out Vector2 p01))
+                continue;
+
+            bool exists = terrainSet.TryGetTile(tileX, tileZ, out _);
+            bool canCreate = !exists && TryFindTerrainNeighborSource(
+                terrainSet,
+                tileX,
+                tileZ,
+                out _,
+                out _,
+                out _,
+                out _);
+            bool hovered = IsPointInsideTerrainPreviewQuad(mousePosition, p00, p10, p11, p01);
+
+            Vector4 fillColor;
+            Vector4 outlineColor;
+            if (exists)
+            {
+                fillColor = new Vector4(0.10f, 0.80f, 0.35f, 0.06f);
+                outlineColor = tileX == 0 && tileZ == 0
+                    ? new Vector4(1.00f, 0.76f, 0.18f, 0.95f)
+                    : new Vector4(0.20f, 1.00f, 0.42f, 0.95f);
+            }
+            else if (canCreate)
+            {
+                fillColor = hovered
+                    ? new Vector4(0.20f, 0.85f, 1.00f, 0.25f)
+                    : new Vector4(0.20f, 0.65f, 1.00f, 0.10f);
+                outlineColor = hovered
+                    ? new Vector4(0.90f, 0.98f, 1.00f, 1.00f)
+                    : new Vector4(0.28f, 0.82f, 1.00f, 0.85f);
+            }
+            else
+            {
+                fillColor = new Vector4(0.35f, 0.40f, 0.50f, 0.025f);
+                outlineColor = new Vector4(0.48f, 0.53f, 0.62f, 0.42f);
+            }
+
+            if (!exists)
+                AddTerrainPreviewQuadFilled(drawList, p00, p10, p11, p01, ImGui.GetColorU32(fillColor));
+
+            uint outline = ImGui.GetColorU32(hovered && !exists
+                ? new Vector4(0.95f, 0.98f, 1.00f, 1.00f)
+                : outlineColor);
+            float thickness = hovered ? 3.0f : (exists ? 2.0f : 1.5f);
+            drawList.AddLine(p00, p10, outline, thickness);
+            drawList.AddLine(p10, p11, outline, thickness);
+            drawList.AddLine(p11, p01, outline, thickness);
+            drawList.AddLine(p01, p00, outline, thickness);
+
+            if (hovered)
+            {
+                string message = exists
+                    ? (tileX == 0 && tileZ == 0
+                        ? "Origin terrain"
+                        : $"Click to delete neighbor ({tileX}, {tileZ})")
+                    : canCreate
+                        ? $"Click to create neighbor ({tileX}, {tileZ})"
+                        : "Create a connected tile first";
+                drawList.AddText(mousePosition + new Vector2(12.0f, 12.0f), outline, message);
+            }
+        }
+    }
+
+    private bool TryHandleTerrainNeighborClick(
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (!_terrainNeighborEditMode ||
+            _currentMode != EditorMode.Select ||
+            viewport.Camera.ViewType != CameraViewType.Perspective3D ||
+            _selectedObject?.IsTerrain != true ||
+            _selectedObject.Body == null ||
+            !ImGui.IsMouseHoveringRect(vpPos, vpPos + vpSize) ||
+            !ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            return false;
+
+        TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
+        if (terrainSet == null)
+            return false;
+
+        Vector3 terrainPosition = _selectedObject.Body.Position;
+        Quaternion terrainRotation = _selectedObject.Body.Rotation;
+        Vector2 mousePosition = ImGui.GetMousePos();
+        foreach ((int tileX, int tileZ) in GetTerrainNeighborPreviewCoordinates(terrainSet))
+        {
+            if (!TryProjectTerrainNeighborCell(
+                    terrainSet,
+                    terrainPosition,
+                    terrainRotation,
+                    tileX,
+                    tileZ,
+                    viewport,
+                    vpPos,
+                    vpSize,
+                    out Vector2 p00,
+                    out Vector2 p10,
+                    out Vector2 p11,
+                    out Vector2 p01) ||
+                !IsPointInsideTerrainPreviewQuad(mousePosition, p00, p10, p11, p01))
+                continue;
+
+            bool exists = terrainSet.TryGetTile(tileX, tileZ, out _);
+            if (exists)
+            {
+                if (tileX == 0 && tileZ == 0)
+                    return false;
+
+                bool deleted = sceneService.DeleteTerrainNeighbor(
+                    _selectedObject,
+                    assetService,
+                    tileX,
+                    tileZ);
+                if (!deleted)
+                {
+                    _terrainNeighborStatus = $"Could not delete neighbor ({tileX}, {tileZ}).";
+                    return true;
+                }
+
+                _terrainNeighborStatus = $"Deleted neighbor ({tileX}, {tileZ}).";
+            }
+            else
+            {
+                if (!TryFindTerrainNeighborSource(
+                        terrainSet,
+                        tileX,
+                        tileZ,
+                        out int sourceX,
+                        out int sourceZ,
+                        out int offsetX,
+                        out int offsetZ))
+                {
+                    _terrainNeighborStatus = "That preview needs a connected neighbor first.";
+                    return true;
+                }
+
+                bool created = sceneService.CreateTerrainNeighbor(
+                    _selectedObject,
+                    assetService,
+                    sourceX,
+                    sourceZ,
+                    offsetX,
+                    offsetZ);
+                if (!created)
+                {
+                    _terrainNeighborStatus = $"Could not create neighbor ({tileX}, {tileZ}).";
+                    return true;
+                }
+
+                _terrainNeighborSourceX = sourceX;
+                _terrainNeighborSourceZ = sourceZ;
+                _terrainNeighborStatus = $"Created neighbor ({tileX}, {tileZ}).";
+            }
+
+            sceneService.PopulateScene(assetService);
+            sceneService.MarkModified(sceneService.Document.Serialize());
+            viewport.RequestRender();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static List<(int X, int Z)> GetTerrainNeighborPreviewCoordinates(TerrainTileSetAsset terrainSet)
+    {
+        var coordinates = new HashSet<(int X, int Z)>();
+        foreach (TerrainTile tile in terrainSet.Tiles)
+        {
+            for (int z = tile.Z - 1; z <= tile.Z + 1; z++)
+            {
+                for (int x = tile.X - 1; x <= tile.X + 1; x++)
+                    coordinates.Add((x, z));
+            }
+        }
+
+        return coordinates
+            .OrderBy(coordinate => coordinate.Z)
+            .ThenBy(coordinate => coordinate.X)
+            .ToList();
+    }
+
+    private static bool TryFindTerrainNeighborSource(
+        TerrainTileSetAsset terrainSet,
+        int targetX,
+        int targetZ,
+        out int sourceX,
+        out int sourceZ,
+        out int offsetX,
+        out int offsetZ)
+    {
+        ReadOnlySpan<int> offsetsX = stackalloc int[] { -1, 1, 0, 0 };
+        ReadOnlySpan<int> offsetsZ = stackalloc int[] { 0, 0, -1, 1 };
+        for (int i = 0; i < offsetsX.Length; i++)
+        {
+            int candidateSourceX = targetX - offsetsX[i];
+            int candidateSourceZ = targetZ - offsetsZ[i];
+            if (!terrainSet.TryGetTile(candidateSourceX, candidateSourceZ, out _))
+                continue;
+
+            sourceX = candidateSourceX;
+            sourceZ = candidateSourceZ;
+            offsetX = offsetsX[i];
+            offsetZ = offsetsZ[i];
+            return true;
+        }
+
+        sourceX = 0;
+        sourceZ = 0;
+        offsetX = 0;
+        offsetZ = 0;
+        return false;
+    }
+
+    private static bool TryProjectTerrainNeighborCell(
+        TerrainTileSetAsset terrainSet,
+        Vector3 terrainPosition,
+        Quaternion terrainRotation,
+        int tileX,
+        int tileZ,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        out Vector2 p00,
+        out Vector2 p10,
+        out Vector2 p11,
+        out Vector2 p01)
+    {
+        p00 = Vector2.Zero;
+        p10 = Vector2.Zero;
+        p11 = Vector2.Zero;
+        p01 = Vector2.Zero;
+        float x0 = tileX * terrainSet.TileWorldWidth;
+        float x1 = x0 + terrainSet.TileWorldWidth;
+        float z0 = tileZ * terrainSet.TileWorldDepth;
+        float z1 = z0 + terrainSet.TileWorldDepth;
+        const float lift = 0.035f;
+
+        float y00;
+        float y10;
+        float y11;
+        float y01;
+        if (terrainSet.TryGetTile(tileX, tileZ, out TerrainTile? tile))
+        {
+            y00 = tile.Asset.GetHeight(0, 0) + lift;
+            y10 = tile.Asset.GetHeight(tile.Asset.Width - 1, 0) + lift;
+            y11 = tile.Asset.GetHeight(tile.Asset.Width - 1, tile.Asset.Depth - 1) + lift;
+            y01 = tile.Asset.GetHeight(0, tile.Asset.Depth - 1) + lift;
+        }
+        else
+        {
+            y00 = GetTerrainNeighborPreviewHeight(terrainSet, tileX, tileZ, 0, 0) + lift;
+            y10 = GetTerrainNeighborPreviewHeight(terrainSet, tileX, tileZ, terrainSet.Width - 1, 0) + lift;
+            y11 = GetTerrainNeighborPreviewHeight(terrainSet, tileX, tileZ, terrainSet.Width - 1, terrainSet.Depth - 1) + lift;
+            y01 = GetTerrainNeighborPreviewHeight(terrainSet, tileX, tileZ, 0, terrainSet.Depth - 1) + lift;
+        }
+
+        Vector3 local00 = new(x0, y00, z0);
+        Vector3 local10 = new(x1, y10, z0);
+        Vector3 local11 = new(x1, y11, z1);
+        Vector3 local01 = new(x0, y01, z1);
+        return TryWorldToScreenStatic(
+            terrainPosition + Vector3.Transform(local00, terrainRotation),
+            viewport,
+            vpPos,
+            vpSize,
+            out p00) &&
+            TryWorldToScreenStatic(
+                terrainPosition + Vector3.Transform(local10, terrainRotation),
+                viewport,
+                vpPos,
+                vpSize,
+                out p10) &&
+            TryWorldToScreenStatic(
+                terrainPosition + Vector3.Transform(local11, terrainRotation),
+                viewport,
+                vpPos,
+                vpSize,
+                out p11) &&
+            TryWorldToScreenStatic(
+                terrainPosition + Vector3.Transform(local01, terrainRotation),
+                viewport,
+                vpPos,
+                vpSize,
+                out p01);
+    }
+
+    private static float GetTerrainNeighborPreviewHeight(
+        TerrainTileSetAsset terrainSet,
+        int tileX,
+        int tileZ,
+        int cornerX,
+        int cornerZ)
+    {
+        if (terrainSet.TryGetTile(tileX - 1, tileZ, out TerrainTile? left))
+            return left.Asset.GetHeight(left.Asset.Width - 1, cornerZ);
+        if (terrainSet.TryGetTile(tileX + 1, tileZ, out TerrainTile? right))
+            return right.Asset.GetHeight(0, cornerZ);
+        if (terrainSet.TryGetTile(tileX, tileZ - 1, out TerrainTile? back))
+            return back.Asset.GetHeight(cornerX, back.Asset.Depth - 1);
+        if (terrainSet.TryGetTile(tileX, tileZ + 1, out TerrainTile? front))
+            return front.Asset.GetHeight(cornerX, 0);
+
+        return terrainSet.Primary.Asset.GetHeight(cornerX, cornerZ);
+    }
+
+    private static bool IsPointInsideTerrainPreviewQuad(
+        Vector2 point,
+        Vector2 p00,
+        Vector2 p10,
+        Vector2 p11,
+        Vector2 p01)
+    {
+        float c0 = Cross2D(p10 - p00, point - p00);
+        float c1 = Cross2D(p11 - p10, point - p10);
+        float c2 = Cross2D(p01 - p11, point - p11);
+        float c3 = Cross2D(p00 - p01, point - p01);
+        const float epsilon = 0.5f;
+        bool hasPositive = c0 > epsilon || c1 > epsilon || c2 > epsilon || c3 > epsilon;
+        bool hasNegative = c0 < -epsilon || c1 < -epsilon || c2 < -epsilon || c3 < -epsilon;
+        return !(hasPositive && hasNegative);
+    }
+
+    private static float Cross2D(Vector2 left, Vector2 right) => left.X * right.Y - left.Y * right.X;
+
+    private static void AddTerrainPreviewQuadFilled(
+        ImDrawListPtr drawList,
+        Vector2 p00,
+        Vector2 p10,
+        Vector2 p11,
+        Vector2 p01,
+        uint color)
+    {
+        Vector2[] points = [p00, p10, p11, p01];
+        fixed (Vector2* pointsPtr = points)
+            drawList.AddConvexPolyFilled(ref pointsPtr[0], 4, color);
+    }
+
+    private static bool TryWorldToScreenStatic(
+        Vector3 worldPos,
+        EditorViewport viewport,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        out Vector2 screenPos)
+    {
+        var view = viewport.Camera.ViewMatrix;
+        var proj = viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y);
+        Vector4 clip = Vector4.Transform(new Vector4(worldPos, 1.0f), view * proj);
+        if (clip.W <= 0.0001f || !float.IsFinite(clip.W))
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+
+        Vector3 ndc = new Vector3(clip.X, clip.Y, clip.Z) / clip.W;
+        if (!float.IsFinite(ndc.X) || !float.IsFinite(ndc.Y))
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+
+        screenPos = new Vector2(
+            vpPos.X + (ndc.X + 1.0f) * 0.5f * vpSize.X,
+            vpPos.Y + (1.0f - ndc.Y) * 0.5f * vpSize.Y);
+        return true;
     }
 
     private void DrawTerrainBrushPreview(
@@ -7559,8 +8027,8 @@ public unsafe class EditorUI : IDisposable
             !ImGui.IsMouseHoveringRect(vpPos, vpPos + vpSize))
             return;
 
-        TerrainAsset? terrain = sceneService.TryLoadTerrainAsset(_selectedObject, assetService);
-        if (terrain == null || _selectedObject.Body == null)
+        TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
+        if (terrainSet == null || _selectedObject.Body == null)
             return;
 
         EditorGizmo.GetMouseRay(
@@ -7577,7 +8045,12 @@ public unsafe class EditorUI : IDisposable
         Quaternion inverseRotation = Quaternion.Inverse(terrainRotation);
         Vector3 localOrigin = Vector3.Transform(rayOrigin - terrainPosition, inverseRotation);
         Vector3 localDirection = Vector3.Normalize(Vector3.Transform(rayDirection, inverseRotation));
-        if (!terrain.Raycast(localOrigin, localDirection, out _, out Vector3 localHit))
+        if (!terrainSet.Raycast(
+                localOrigin,
+                localDirection,
+                out _,
+                out Vector3 localHit,
+                out _))
             return;
 
         if (_terrainHeightmapBrush != null &&
@@ -7591,7 +8064,7 @@ public unsafe class EditorUI : IDisposable
                     viewport,
                     vpPos,
                     vpSize,
-                    terrain,
+                    terrainSet,
                     terrainPosition,
                     terrainRotation,
                     localHit,
@@ -7608,10 +8081,18 @@ public unsafe class EditorUI : IDisposable
             float angle = i / (float)segments * MathF.Tau;
             float localX = localHit.X + MathF.Cos(angle) * radius;
             float localZ = localHit.Z + MathF.Sin(angle) * radius;
-            Vector3 localPoint = new(
-                localX,
-                terrain.GetInterpolatedHeight(localX, localZ) + 0.025f,
-                localZ);
+            if (!TryGetTerrainSurfacePoint(
+                    terrainSet,
+                    localHit.Y,
+                    localX,
+                    localZ,
+                    0.025f,
+                    out Vector3 localPoint))
+            {
+                visible[i] = false;
+                continue;
+            }
+
             Vector3 worldPoint = terrainPosition + Vector3.Transform(localPoint, terrainRotation);
             visible[i] = TryWorldToScreen(worldPoint, viewport, vpPos, vpSize, out points[i]);
         }
@@ -7632,8 +8113,14 @@ public unsafe class EditorUI : IDisposable
 
         Vector3 localCenter = new(
             localHit.X,
-            terrain.GetInterpolatedHeight(localHit.X, localHit.Z) + 0.035f,
+            localHit.Y,
             localHit.Z);
+        if (terrainSet.TryGetTileAt(localHit, out TerrainTile centerTile))
+        {
+            localCenter.Y = centerTile.Asset.GetInterpolatedHeight(
+                localHit.X - terrainSet.GetTileOrigin(centerTile).X,
+                localHit.Z - terrainSet.GetTileOrigin(centerTile).Z) + 0.035f;
+        }
         Vector3 worldCenter = terrainPosition + Vector3.Transform(localCenter, terrainRotation);
         if (TryWorldToScreen(worldCenter, viewport, vpPos, vpSize, out Vector2 center))
         {
@@ -7647,7 +8134,7 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewport,
         Vector2 vpPos,
         Vector2 vpSize,
-        TerrainAsset terrain,
+        TerrainTileSetAsset terrainSet,
         Vector3 terrainPosition,
         Quaternion terrainRotation,
         Vector3 localHit,
@@ -7673,30 +8160,17 @@ public unsafe class EditorUI : IDisposable
                 if (circleX * circleX + circleZ * circleZ > 1.0f)
                     continue;
 
-                Vector3 localP00 = GetTerrainBrushSurfacePoint(
-                    terrain,
-                    localHit,
-                    radius,
-                    u0,
-                    v0);
-                Vector3 localP10 = GetTerrainBrushSurfacePoint(
-                    terrain,
-                    localHit,
-                    radius,
-                    u1,
-                    v0);
-                Vector3 localP11 = GetTerrainBrushSurfacePoint(
-                    terrain,
-                    localHit,
-                    radius,
-                    u1,
-                    v1);
-                Vector3 localP01 = GetTerrainBrushSurfacePoint(
-                    terrain,
-                    localHit,
-                    radius,
-                    u0,
-                    v1);
+                Vector3 localP00 = Vector3.Zero;
+                Vector3 localP10 = Vector3.Zero;
+                Vector3 localP11 = Vector3.Zero;
+                Vector3 localP01 = Vector3.Zero;
+                bool hasSurface =
+                    TryGetTerrainBrushSurfacePoint(terrainSet, localHit, radius, u0, v0, out localP00) &&
+                    TryGetTerrainBrushSurfacePoint(terrainSet, localHit, radius, u1, v0, out localP10) &&
+                    TryGetTerrainBrushSurfacePoint(terrainSet, localHit, radius, u1, v1, out localP11) &&
+                    TryGetTerrainBrushSurfacePoint(terrainSet, localHit, radius, u0, v1, out localP01);
+                if (!hasSurface)
+                    continue;
 
                 Vector2 p00 = Vector2.Zero;
                 Vector2 p10 = Vector2.Zero;
@@ -7748,19 +8222,50 @@ public unsafe class EditorUI : IDisposable
         }
     }
 
-    private static Vector3 GetTerrainBrushSurfacePoint(
-        TerrainAsset terrain,
+    private static bool TryGetTerrainSurfacePoint(
+        TerrainTileSetAsset terrainSet,
+        float referenceY,
+        float localX,
+        float localZ,
+        float lift,
+        out Vector3 surfacePoint)
+    {
+        if (!terrainSet.TryGetTileAt(new Vector3(localX, referenceY, localZ), out TerrainTile tile))
+        {
+            surfacePoint = default;
+            return false;
+        }
+
+        Vector3 tileOrigin = terrainSet.GetTileOrigin(tile);
+        surfacePoint = new Vector3(
+            localX,
+            tile.Asset.GetInterpolatedHeight(localX - tileOrigin.X, localZ - tileOrigin.Z) + lift,
+            localZ);
+        return true;
+    }
+
+    private static bool TryGetTerrainBrushSurfacePoint(
+        TerrainTileSetAsset terrainSet,
         Vector3 localHit,
         float radius,
         float u,
-        float v)
+        float v,
+        out Vector3 surfacePoint)
     {
         float localX = localHit.X + (u * 2.0f - 1.0f) * radius;
         float localZ = localHit.Z + (v * 2.0f - 1.0f) * radius;
-        return new Vector3(
+        if (!terrainSet.TryGetTileAt(new Vector3(localX, localHit.Y, localZ), out TerrainTile tile))
+        {
+            surfacePoint = default;
+            return false;
+        }
+
+        Vector3 tileOrigin = terrainSet.GetTileOrigin(tile);
+        surfacePoint = new Vector3(
             localX,
-            terrain.GetInterpolatedHeight(localX, localZ) + 0.04f,
+            tile.Asset.GetInterpolatedHeight(localX - tileOrigin.X, localZ - tileOrigin.Z) + 0.04f,
             localZ);
+        return true;
     }
 
     private void DrawBrushComponentOverlay(ImDrawListPtr drawList, EditorViewport viewport, Vector2 vpPos, Vector2 vpSize)
@@ -8116,7 +8621,7 @@ public unsafe class EditorUI : IDisposable
                     string terrainPath = assetService.ResolveEditorAssetPath(selObj.TerrainAssetPath);
                     if (File.Exists(terrainPath))
                     {
-                        TerrainAsset terrain = TerrainAsset.Load(terrainPath);
+                        TerrainTileSetAsset terrain = TerrainTileSetAsset.Load(terrainPath);
                         terrain.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
                         for (int i = 0; i < 8; i++)
                         {
