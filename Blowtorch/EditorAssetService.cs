@@ -49,6 +49,7 @@ public class EditorAssetService : IDisposable
     private readonly Dictionary<string, GeometryGraphAsset> _liveGeometryGraphs = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _brushMeshKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _geometryMeshKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _staircaseMeshKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _catalogLock = new();
     private readonly ConcurrentQueue<string> _pendingTextureInvalidations = new();
     private readonly ConcurrentQueue<string> _pendingTerrainHeightmapBrushInvalidations = new();
@@ -817,6 +818,27 @@ public class EditorAssetService : IDisposable
 
     public Mesh? GetOrCreateMesh(MapObject mapObj)
     {
+        if (mapObj.IsStaircase)
+        {
+            string cacheKey = $"staircase:{mapObj.Id}";
+            if (_meshCache.TryGetValue(cacheKey, out Mesh? staircaseMesh))
+                return staircaseMesh;
+
+            Vector3 sourceHalfExtents = mapObj.Body?.HalfExtents ?? new Vector3(0.5f);
+            MeshData meshData = StaircaseMeshGenerator.Generate(
+                sourceHalfExtents,
+                mapObj.Staircase!);
+            staircaseMesh = new Mesh(
+                _gl,
+                meshData.Vertices,
+                meshData.Indices,
+                meshData.LineIndices,
+                meshData.Parts);
+            _meshCache[cacheKey] = staircaseMesh;
+            _staircaseMeshKeys.Add(cacheKey);
+            return staircaseMesh;
+        }
+
         if (!string.IsNullOrWhiteSpace(mapObj.GeometryGraphPath))
         {
             string graphPath = ResolveEditorAssetPath(mapObj.GeometryGraphPath);
@@ -950,7 +972,8 @@ public class EditorAssetService : IDisposable
     {
         string[] keys = _meshCache.Keys
             .Where(candidate => candidate.Equals(key, StringComparison.OrdinalIgnoreCase) ||
-                                candidate.Equals($"geometry:{key}", StringComparison.OrdinalIgnoreCase))
+                                candidate.Equals($"geometry:{key}", StringComparison.OrdinalIgnoreCase) ||
+                                candidate.Equals($"staircase:{key}", StringComparison.OrdinalIgnoreCase))
             .ToArray();
         foreach (string cacheKey in keys)
         {
@@ -958,6 +981,7 @@ public class EditorAssetService : IDisposable
                 mesh?.Dispose();
             _brushMeshKeys.Remove(cacheKey);
             _geometryMeshKeys.Remove(cacheKey);
+            _staircaseMeshKeys.Remove(cacheKey);
         }
     }
 
@@ -977,6 +1001,12 @@ public class EditorAssetService : IDisposable
                 mesh?.Dispose();
         }
         _geometryMeshKeys.Clear();
+        foreach (string key in _staircaseMeshKeys.ToArray())
+        {
+            if (_meshCache.Remove(key, out Mesh? mesh))
+                mesh?.Dispose();
+        }
+        _staircaseMeshKeys.Clear();
     }
 
     public void Dispose()

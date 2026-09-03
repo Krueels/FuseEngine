@@ -111,6 +111,19 @@ public static class MapSerializer
                 // rebuilt when the map is loaded. The shape marker is enough
                 // here; the loader resolves the actual geometry again.
                 break;
+            case RigidBody.ShapeType.Compound:
+                // A procedural staircase is authored from source bounds and
+                // rebuilt as one box per step when the map is loaded. Keep
+                // those bounds when serializing a running scene.
+                if (e.MapData != null &&
+                    e.MapData.TryGetPropertyValue("body", out var sourceBodyNode) &&
+                    sourceBodyNode is JsonObject sourceBody &&
+                    sourceBody.TryGetPropertyValue("half_extents", out var sourceHalfExtentsNode) &&
+                    sourceHalfExtentsNode != null)
+                {
+                    bj["half_extents"] = JsonNode.Parse(sourceHalfExtentsNode.ToJsonString());
+                }
+                break;
             case RigidBody.ShapeType.Plane:
                 bj["normal"] = Vec3ToJson(e.Body.PlaneNormal);
                 bj["distance"] = e.Body.PlaneDistance;
@@ -195,6 +208,13 @@ public static class MapSerializer
 
             if (e.MapData != null && e.MapData.TryGetPropertyValue("geometry_graph", out var graphNode) && graphNode != null)
                 obj["geometry_graph"] = (string?)graphNode;
+
+            if (e.MapData != null &&
+                e.MapData.TryGetPropertyValue("staircase", out var staircaseNode) &&
+                staircaseNode is JsonObject)
+            {
+                obj["staircase"] = JsonNode.Parse(staircaseNode.ToJsonString());
+            }
 
             if (!string.IsNullOrEmpty(e.InteractableType))
                 obj["interactable"] = e.InteractableType;
@@ -438,6 +458,12 @@ public static class MapSerializer
                 return true;
             }
 
+            if (obj.TryGetPropertyValue("staircase", out var staircaseToken) &&
+                staircaseToken is JsonObject)
+            {
+                return true;
+            }
+
             if (obj.TryGetPropertyValue("type", out var typeToken) &&
                 string.Equals((string?)typeToken, "brush", StringComparison.OrdinalIgnoreCase))
             {
@@ -526,6 +552,8 @@ public static class MapSerializer
 
             bool isModel = obj.TryGetPropertyValue("model", out var modelNode);
             bool isBrush = obj.TryGetPropertyValue("type", out var typeNode) && string.Equals((string?)typeNode, "brush", StringComparison.OrdinalIgnoreCase);
+            bool isStaircase = obj.TryGetPropertyValue("staircase", out var staircaseNode) &&
+                               staircaseNode is JsonObject;
             bool isTerrain = obj.TryGetPropertyValue("type", out var terrainTypeNode) && string.Equals((string?)terrainTypeNode, "terrain", StringComparison.OrdinalIgnoreCase);
             string terrainAssetPath = obj.TryGetPropertyValue("terrain_asset", out var terrainAssetNode) ? (string?)terrainAssetNode ?? "" : "";
             isTerrain |= !string.IsNullOrWhiteSpace(terrainAssetPath);
@@ -704,10 +732,23 @@ public static class MapSerializer
                 continue;
             }
 
+            StaircaseSettings? staircaseSettings = isStaircase
+                ? StaircaseSettings.FromJson((JsonObject)staircaseNode!)
+                : null;
+            Vector3 staircaseHalfExtents = new(0.5f);
+            if (isStaircase &&
+                obj.TryGetPropertyValue("body", out var staircaseBodyNode) &&
+                staircaseBodyNode is JsonObject staircaseBodyObject &&
+                staircaseBodyObject.TryGetPropertyValue("half_extents", out var staircaseHalfExtentsNode) &&
+                staircaseHalfExtentsNode is JsonArray staircaseHalfExtentsArray)
+            {
+                staircaseHalfExtents = Vec3FromJson(staircaseHalfExtentsArray);
+            }
+
             string meshKey = isModel
                 ? (string)modelNode!
                 : (obj.TryGetPropertyValue("mesh", out var meshNode)
-                    ? (string)meshNode! : (isBrush ? id : ""));
+                    ? (string)meshNode! : (isBrush ? id : (isStaircase ? "staircase" : "")));
             string geometryGraphPath = obj.TryGetPropertyValue("geometry_graph", out var graphPathNode)
                 ? (string?)graphPathNode ?? "" : "";
 
@@ -761,7 +802,13 @@ public static class MapSerializer
             if (resPath != null && isModel && !Path.IsPathRooted(meshKey))
                 modelPath = Path.GetFullPath(Path.Combine(resPath, meshKey));
 
-            if (isBrush)
+            if (isStaircase)
+            {
+                generatedGeometry = StaircaseMeshGenerator.Generate(
+                    staircaseHalfExtents,
+                    staircaseSettings!);
+            }
+            else if (isBrush)
             {
                 loadedBrush = (Brush)MapDocument.ParseObject(obj);
                 var meshData = MeshGenerator.Generate(loadedBrush);
@@ -865,9 +912,10 @@ public static class MapSerializer
             }
 
             var entity = scene.Add(mesh, id);
-            entity.MeshOwnedByEntity = isBrush || generatedGeometry != null && !string.IsNullOrWhiteSpace(geometryGraphPath);
+            entity.MeshOwnedByEntity = isBrush || isStaircase ||
+                                       generatedGeometry != null && !string.IsNullOrWhiteSpace(geometryGraphPath);
             entity.MapData = obj;
-            entity.MeshKey = meshKey;
+            entity.MeshKey = isStaircase ? "staircase" : meshKey;
             entity.MaterialPath = materialPath;
             entity.MaterialPaths = materialPaths;
             entity.TexturePath = texturePath;
@@ -977,6 +1025,25 @@ public static class MapSerializer
                 var body = new RigidBody();
                 ConfigureBodyFromJson(body, bj);
 
+                if (isStaircase && staircaseSettings != null)
+                {
+                    var staircaseChildren = StaircaseMeshGenerator
+                        .GenerateCollisionSteps(staircaseHalfExtents, staircaseSettings)
+                        .Select(step => new RigidBody.CompoundChild(
+                            RigidBody.ShapeType.Box,
+                            step.Center,
+                            Quaternion.Identity,
+                            step.HalfExtents,
+                            0.0f,
+                            0.0f,
+                            0.0f,
+                            null,
+                            null,
+                            Vector3.One))
+                        .ToArray();
+                    body.SetCompound(staircaseChildren);
+                }
+
                 if (body.IsTrigger)
                     entity.Visible = false;
 
@@ -1038,7 +1105,7 @@ public static class MapSerializer
                 entity.Transform.Position = body.GetPosition();
                 entity.Transform.Rotation = body.GetRotation();
 
-                if (isBrush)
+                if (isBrush || isStaircase)
                     entity.Transform.Scale = Vector3.One;
                 else if (!isModel && body.Type == RigidBody.ShapeType.Box)
                     entity.Transform.Scale = body.BoxHalfExtents * 2.0f;

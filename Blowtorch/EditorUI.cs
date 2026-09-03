@@ -1916,8 +1916,17 @@ public unsafe class EditorUI : IDisposable
         Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
         if (entity != null)
         {
-            entity.Transform.Scale = GetInspectorScale(obj, scene);
-            SyncPrimitiveVisualScale(obj, entity);
+            if (obj.IsStaircase)
+            {
+                assetService.InvalidateMesh(obj.Id);
+                entity.Transform.Scale = Vector3.One;
+                entity.Mesh = assetService.GetOrCreateMesh(obj);
+            }
+            else
+            {
+                entity.Transform.Scale = GetInspectorScale(obj, scene);
+                SyncPrimitiveVisualScale(obj, entity);
+            }
             if (obj is Brush brushObject)
                 entity.Mesh = assetService.GetOrCreateMesh(brushObject);
         }
@@ -3855,9 +3864,9 @@ public unsafe class EditorUI : IDisposable
                     {
                         if (obj.Body == null) continue;
 
-                        if (obj is Brush brush)
+                        if (obj is Brush brush || obj.IsStaircase)
                         {
-                            assetService.InvalidateMesh(brush.Id);
+                            assetService.InvalidateMesh(obj.Id);
                         }
 
                         var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
@@ -3866,7 +3875,12 @@ public unsafe class EditorUI : IDisposable
                             entity.Transform.Position = obj.Body.Position;
                             entity.Transform.Rotation = obj.Body.Rotation;
                             
-                            if (obj is Brush brushObj)
+                            if (obj.IsStaircase)
+                            {
+                                entity.Transform.Scale = Vector3.One;
+                                entity.Mesh = assetService.GetOrCreateMesh(obj);
+                            }
+                            else if (obj is Brush brushObj)
                             {
                                 entity.Transform.Scale = Vector3.One;
                                 entity.Mesh = assetService.GetOrCreateMesh(brushObj);
@@ -3887,7 +3901,7 @@ public unsafe class EditorUI : IDisposable
                         SyncLight(sceneService, obj);
                     }
 
-                    if (objectsToTransform.Any(obj => obj.IsTerrain))
+                    if (objectsToTransform.Any(obj => obj.IsTerrain || obj.IsStaircase))
                         sceneService.PopulateScene(assetService);
                 }
 
@@ -6754,7 +6768,9 @@ public unsafe class EditorUI : IDisposable
 
                         if (entity != null)
                         {
-                            if (!obj.IsModel && obj.Body != null && (obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
+                            if (obj.IsStaircase)
+                                entity.Transform.Scale = Vector3.One;
+                            else if (!obj.IsModel && obj.Body != null && (obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
                                 entity.Transform.Scale = obj.Body.HalfExtents.Value * 2.0f;
                             else if (!obj.IsModel && obj.Body != null && obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
                                 entity.Transform.Scale = new Vector3(obj.Body.Radius.Value * 2.0f);
@@ -7027,6 +7043,113 @@ public unsafe class EditorUI : IDisposable
                             assetService.InvalidateMesh(obj.Id);
                             sceneService.PopulateScene(assetService);
                             Undo.ForceEnd(history, sceneService, assetService);
+                        }
+                    }
+                }
+
+                bool staircaseEligible = !obj.IsLight &&
+                    !obj.IsModel &&
+                    !obj.IsTerrain &&
+                    (obj.IsStaircase ||
+                     (!IsGroupObject(obj) &&
+                      obj.Body?.Shape == MapShapeType.Box &&
+                      obj.Body.HalfExtents.HasValue));
+                if (staircaseEligible &&
+                    ImGui.CollapsingHeader(
+                        "Staircase##inspectStaircase",
+                        obj.IsStaircase ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
+                {
+                    if (!obj.IsStaircase)
+                    {
+                        ImGui.TextDisabled("Generate a staircase from this object's box bounds.");
+                        ImGui.TextDisabled("The source object, material, pose and ID are preserved.");
+                        if (ImGui.Button("Convert to Staircase##inspectStaircaseConvert"))
+                        {
+                            string preStaircase = sceneService.Document.Serialize();
+                            obj.Staircase = new StaircaseSettings();
+                            assetService.InvalidateMesh(obj.Id);
+                            sceneService.PopulateScene(assetService);
+                            string postStaircase = sceneService.Document.Serialize();
+                            sceneService.MarkModified(postStaircase);
+                            history.PushCommand(new SnapshotCommand(
+                                sceneService,
+                                assetService,
+                                preStaircase,
+                                postStaircase));
+                        }
+                    }
+                    else
+                    {
+                        StaircaseSettings staircase = obj.Staircase!;
+                        bool staircaseChanged = false;
+
+                        float stepHeight = staircase.StepHeight;
+                        if (ImGui.DragFloat(
+                                "Step height##inspectStaircaseHeight",
+                                ref stepHeight,
+                                0.01f,
+                                0.01f,
+                                1000.0f,
+                                "%.3f"))
+                        {
+                            Undo.TrackItem(_frameBeginState);
+                            staircase.StepHeight = MathF.Max(0.01f, stepHeight);
+                            staircaseChanged = true;
+                        }
+
+                        int stepCount = staircase.StepCount;
+                        if (ImGui.DragInt(
+                                "Step count##inspectStaircaseCount",
+                                ref stepCount,
+                                1.0f,
+                                0,
+                                StaircaseSettings.MaximumStepCount))
+                        {
+                            Undo.TrackItem(_frameBeginState);
+                            staircase.StepCount = Math.Clamp(stepCount, 0, StaircaseSettings.MaximumStepCount);
+                            staircaseChanged = true;
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Set to 0 to calculate the count from Step height.");
+
+                        string[] staircaseDirections = ["Ascending +Z", "Ascending -Z"];
+                        int directionIndex = staircase.Direction >= 0 ? 0 : 1;
+                        if (ImGui.Combo(
+                                "Direction##inspectStaircaseDirection",
+                                ref directionIndex,
+                                staircaseDirections,
+                                staircaseDirections.Length))
+                        {
+                            Undo.TrackItem(_frameBeginState);
+                            staircase.Direction = directionIndex == 0 ? 1 : -1;
+                            staircaseChanged = true;
+                        }
+
+                        Vector3 staircaseBounds = obj.Body?.HalfExtents ?? new Vector3(0.5f);
+                        int resolvedStepCount = StaircaseMeshGenerator.ResolveStepCount(staircaseBounds, staircase);
+                        float resolvedStepHeight = MathF.Abs(staircaseBounds.Y) * 2.0f / resolvedStepCount;
+                        ImGui.TextDisabled(
+                            $"Generated: {resolvedStepCount} steps, {resolvedStepHeight:0.###} actual height");
+
+                        if (staircaseChanged)
+                        {
+                            assetService.InvalidateMesh(obj.Id);
+                            sceneService.PopulateScene(assetService);
+                        }
+
+                        if (ImGui.Button("Remove Staircase##inspectStaircaseRemove"))
+                        {
+                            string preStaircase = sceneService.Document.Serialize();
+                            obj.Staircase = null;
+                            assetService.InvalidateMesh(obj.Id);
+                            sceneService.PopulateScene(assetService);
+                            string postStaircase = sceneService.Document.Serialize();
+                            sceneService.MarkModified(postStaircase);
+                            history.PushCommand(new SnapshotCommand(
+                                sceneService,
+                                assetService,
+                                preStaircase,
+                                postStaircase));
                         }
                     }
                 }
@@ -7381,9 +7504,15 @@ public unsafe class EditorUI : IDisposable
                                             entity.Mesh = assetService.GetOrCreateMesh(brush);
                                         }
                                     }
+                                    else if (obj.IsStaircase)
+                                    {
+                                        assetService.InvalidateMesh(obj.Id);
+                                        if (entity != null)
+                                            entity.Mesh = assetService.GetOrCreateMesh(obj);
+                                    }
                                     if (entity != null && body.HalfExtents.HasValue)
                                     {
-                                        if (obj is Brush)
+                                        if (obj is Brush || obj.IsStaircase)
                                             entity.Transform.Scale = Vector3.One;
                                         else if (!obj.IsModel)
                                             entity.Transform.Scale = body.HalfExtents.Value * 2.0f;

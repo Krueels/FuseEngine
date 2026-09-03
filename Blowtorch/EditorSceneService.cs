@@ -231,7 +231,19 @@ public class EditorSceneService
             entity.UvOffset = mapObj.UvOffset;
             entity.UvRotation = mapObj.UvRotation;
 
-            if (mapObj is Brush)
+            if (mapObj.IsStaircase)
+            {
+                // The staircase generator already emits vertices in the
+                // object's authored bounds. Keep the render scale neutral so
+                // the mesh and its compound collision share one size.
+                entity.Transform.Scale = System.Numerics.Vector3.One;
+                if (mapObj.Body != null)
+                {
+                    entity.Transform.Position = mapObj.Body.Position;
+                    entity.Transform.Rotation = mapObj.Body.Rotation;
+                }
+            }
+            else if (mapObj is Brush)
             {
                 entity.Transform.Scale = System.Numerics.Vector3.One;
                 if (mapObj.Body != null)

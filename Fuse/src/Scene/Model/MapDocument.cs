@@ -210,6 +210,11 @@ public class MapDocument
         mo.UvScale = obj.TryGetPropertyValue("uv_scale", out var uvNode) ? Vec2FromJson(uvNode!.AsArray()) : Vector2.One;
         mo.UvOffset = obj.TryGetPropertyValue("uv_offset", out var uvOffNode) ? Vec2FromJson(uvOffNode!.AsArray()) : Vector2.Zero;
         mo.UvRotation = obj.TryGetPropertyValue("uv_rotation", out var uvRotNode) ? (float)uvRotNode! : 0f;
+        if (obj.TryGetPropertyValue("staircase", out var staircaseNode) &&
+            staircaseNode is JsonObject staircaseObject)
+        {
+            mo.Staircase = StaircaseSettings.FromJson(staircaseObject);
+        }
         mo.MaterialPath = obj.TryGetPropertyValue("material", out var materialNode) ? (string)materialNode! : null;
         if (obj.TryGetPropertyValue("material_slots", out var slotsNode) && slotsNode is JsonArray slotsArray)
         {
@@ -421,6 +426,9 @@ public class MapDocument
         if (!string.IsNullOrWhiteSpace(obj.GeometryGraphPath))
             j["geometry_graph"] = obj.GeometryGraphPath.Replace('\\', '/');
 
+        if (obj.Staircase != null)
+            j["staircase"] = obj.Staircase.ToJson();
+
         // Legacy compatibility. New objects normally use material/material_slots.
         if (!string.IsNullOrEmpty(obj.Texture))
             j["texture"] = obj.Texture;
@@ -483,6 +491,7 @@ public class MapDocument
             case MapShapeType.Box:
             case MapShapeType.Trimesh:
             case MapShapeType.ConvexHull:
+            case MapShapeType.Compound:
                 if (body.HalfExtents.HasValue)
                     bj["half_extents"] = Vec3ToJson(body.HalfExtents.Value);
                 break;

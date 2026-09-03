@@ -17,6 +17,11 @@ public class MapObject
 
     /// <summary>Optional CPU geometry graph asset, stored relative to res/.</summary>
     public string? GeometryGraphPath { get; set; }
+    /// <summary>
+    /// Optional procedural staircase generated from this object's authored
+    /// bounds. The source object keeps its id, pose, material and bounds.
+    /// </summary>
+    public StaircaseSettings? Staircase { get; set; }
     public System.Numerics.Vector3 ModelScale { get; set; } = System.Numerics.Vector3.One;
     public System.Numerics.Vector2 UvScale { get; set; } = System.Numerics.Vector2.One;
     public System.Numerics.Vector2 UvOffset { get; set; } = System.Numerics.Vector2.Zero;
@@ -46,6 +51,7 @@ public class MapObject
     public bool IsLight => !string.IsNullOrEmpty(LightType);
     public bool IsModel => !string.IsNullOrEmpty(Model);
     public bool IsTerrain => !string.IsNullOrWhiteSpace(TerrainAssetPath);
+    public bool IsStaircase => Staircase != null;
 
     public bool IsGloballyVisible(MapDocument doc)
     {
