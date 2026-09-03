@@ -1,0 +1,546 @@
+{
+  "version": 2,
+  "name": "TERRAIN",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "parent_material": null,
+  "exposed_parameters": [],
+  "parameter_overrides": {},
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          701.73895,
+          193.91302
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.824,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "308554a461c045bd8a422a6c9045ef66",
+        "type": "TriplanarTexture",
+        "name": "Grass",
+        "position": [
+          -785.54315,
+          -24.34085
+        ],
+        "properties": {
+          "path": "Textures/Grass/Grass001_1K-PNG_Color.png",
+          "color_space": "sRGB",
+          "tiling": 0.05,
+          "sharpness": 4
+        }
+      },
+      {
+        "id": "d05df21c3f9f42178a2daa6a509c2028",
+        "type": "TriplanarTexture",
+        "name": "Triplanar Texture",
+        "position": [
+          834.69586,
+          662.3141
+        ],
+        "properties": {
+          "path": "",
+          "color_space": "sRGB",
+          "tiling": 0.01,
+          "sharpness": 4
+        }
+      },
+      {
+        "id": "f612f3965fba4a2aa06c33cd710d198c",
+        "type": "TriplanarNormal",
+        "name": "Grass Normal",
+        "position": [
+          -776.3941,
+          282.93192
+        ],
+        "properties": {
+          "path": "Textures/Grass/Grass001_1K-PNG_NormalDX.png",
+          "color_space": "linear",
+          "tiling": 0.05,
+          "sharpness": 4,
+          "strength": 1
+        }
+      },
+      {
+        "id": "e0fecd4d645b4455887ac9e2ccc139b5",
+        "type": "TriplanarTexture",
+        "name": "Rock",
+        "position": [
+          -782.7243,
+          426.65353
+        ],
+        "properties": {
+          "path": "Textures/Rock/Rocks007_1K-JPG_Color.jpg",
+          "color_space": "sRGB",
+          "tiling": 0.05,
+          "sharpness": 4
+        }
+      },
+      {
+        "id": "ae6a3038242d424397dd488d40541dcb",
+        "type": "TriplanarNormal",
+        "name": "Rock Normal",
+        "position": [
+          -785.60144,
+          532.5
+        ],
+        "properties": {
+          "path": "Textures/Rock/Rocks007_1K-JPG_NormalGL.jpg",
+          "color_space": "linear",
+          "tiling": 0.05,
+          "sharpness": 4,
+          "strength": 1
+        }
+      },
+      {
+        "id": "26800883e1ec43c19e4745fbcfd2720d",
+        "type": "WorldPosition",
+        "name": "World Position",
+        "position": [
+          -1185.994,
+          278.6194
+        ],
+        "properties": {}
+      },
+      {
+        "id": "c13ffc14c37f430798aac1366e35b036",
+        "type": "WorldNormal",
+        "name": "World Normal",
+        "position": [
+          -1196.5165,
+          394.53937
+        ],
+        "properties": {}
+      },
+      {
+        "id": "d27d99061fb246769eebc77beb28bbd5",
+        "type": "TerrainSlope",
+        "name": "Terrain Slope",
+        "position": [
+          -540.9635,
+          134.63214
+        ],
+        "properties": {}
+      },
+      {
+        "id": "6e23c69539f6443796ccec55d219662b",
+        "type": "Float",
+        "name": "Float",
+        "position": [
+          -528.85016,
+          221.88855
+        ],
+        "properties": {
+          "value": 0.05
+        }
+      },
+      {
+        "id": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "type": "Smoothstep",
+        "name": "Smoothstep",
+        "position": [
+          -277.17123,
+          178.17143
+        ],
+        "properties": {}
+      },
+      {
+        "id": "5cff434b8a0f4dd5ab21b905b70e72a9",
+        "type": "Float",
+        "name": "Float",
+        "position": [
+          -556.7,
+          323.9886
+        ],
+        "properties": {
+          "value": 0.22,
+          "expose": false
+        }
+      },
+      {
+        "id": "3edca41a47df430291a4c0dfec7ea428",
+        "type": "Lerp",
+        "name": "Mix",
+        "position": [
+          19.194576,
+          67.18793
+        ],
+        "properties": {}
+      },
+      {
+        "id": "3514c6f9258149429de372f91548879c",
+        "type": "NormalBlend",
+        "name": "Normal Blend",
+        "position": [
+          -67.76861,
+          388.48013
+        ],
+        "properties": {}
+      },
+      {
+        "id": "5cc930b990eb4b15990df14082228cc9",
+        "type": "TerrainHeight",
+        "name": "Terrain Height",
+        "position": [
+          -1053.6273,
+          918.90454
+        ],
+        "properties": {}
+      },
+      {
+        "id": "6e9f92e4e483494b95eabc6854725659",
+        "type": "Smoothstep",
+        "name": "Smoothstep",
+        "position": [
+          -628.3592,
+          961.98553
+        ],
+        "properties": {}
+      },
+      {
+        "id": "d1f2692b619845f795f574199bffa3a9",
+        "type": "Float",
+        "name": "Float",
+        "position": [
+          -949.0482,
+          1051.2944
+        ],
+        "properties": {
+          "value": 0.05
+        }
+      },
+      {
+        "id": "0e07acfeb5c4481797eb3667e96a66c0",
+        "type": "Float",
+        "name": "Float",
+        "position": [
+          -956.3086,
+          1123.5173
+        ],
+        "properties": {
+          "value": 15
+        }
+      },
+      {
+        "id": "74616e594d6c48d18d7a0ac2e828e474",
+        "type": "OneMinus",
+        "name": "One Minus",
+        "position": [
+          -343.25177,
+          997.58936
+        ],
+        "properties": {}
+      },
+      {
+        "id": "b1d2029975cf464c9ec4a0f2d1fc8a4a",
+        "type": "OneMinus",
+        "name": "One Minus",
+        "position": [
+          -375.85318,
+          623.77203
+        ],
+        "properties": {}
+      },
+      {
+        "id": "82f0ed7fe6b248f09f57531789a12c92",
+        "type": "Min",
+        "name": "Minimum",
+        "position": [
+          -76.908226,
+          627.03937
+        ],
+        "properties": {}
+      },
+      {
+        "id": "209e1ac1c92340379bfa5e4ff27c195f",
+        "type": "Lerp",
+        "name": "Mix",
+        "position": [
+          301.53635,
+          208.63332
+        ],
+        "properties": {}
+      },
+      {
+        "id": "d5f439921d1b4d358622b282fd662c74",
+        "type": "TriplanarTexture",
+        "name": "Sand",
+        "position": [
+          -778.3571,
+          642.88293
+        ],
+        "properties": {
+          "path": "Textures/Sand/Ground080_1K-JPG_Color.jpg",
+          "color_space": "sRGB",
+          "tiling": 0.05,
+          "sharpness": 4
+        }
+      },
+      {
+        "id": "0e3fe3e67afb468a9038a8b0c1939059",
+        "type": "TriplanarNormal",
+        "name": "Sand Normal",
+        "position": [
+          -776.8528,
+          751.4835
+        ],
+        "properties": {
+          "path": "Textures/Sand/Ground080_1K-JPG_NormalGL.jpg",
+          "color_space": "linear",
+          "tiling": 0.05,
+          "sharpness": 4,
+          "strength": 1
+        }
+      },
+      {
+        "id": "a91b1024f25e4a569da1d5fcfbf3f89b",
+        "type": "NormalBlend",
+        "name": "Normal Blend",
+        "position": [
+          279.34457,
+          436.6481
+        ],
+        "properties": {}
+      }
+    ],
+    "links": [
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "308554a461c045bd8a422a6c9045ef66",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "f612f3965fba4a2aa06c33cd710d198c",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "e0fecd4d645b4455887ac9e2ccc139b5",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "ae6a3038242d424397dd488d40541dcb",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "308554a461c045bd8a422a6c9045ef66",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "f612f3965fba4a2aa06c33cd710d198c",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "e0fecd4d645b4455887ac9e2ccc139b5",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "ae6a3038242d424397dd488d40541dcb",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "6e23c69539f6443796ccec55d219662b",
+        "from_socket": "Value",
+        "to_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "to_socket": "Edge0"
+      },
+      {
+        "from_node": "5cff434b8a0f4dd5ab21b905b70e72a9",
+        "from_socket": "Value",
+        "to_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "to_socket": "Edge1"
+      },
+      {
+        "from_node": "d27d99061fb246769eebc77beb28bbd5",
+        "from_socket": "Slope",
+        "to_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "to_socket": "Value"
+      },
+      {
+        "from_node": "308554a461c045bd8a422a6c9045ef66",
+        "from_socket": "Color",
+        "to_node": "3edca41a47df430291a4c0dfec7ea428",
+        "to_socket": "A"
+      },
+      {
+        "from_node": "e0fecd4d645b4455887ac9e2ccc139b5",
+        "from_socket": "Color",
+        "to_node": "3edca41a47df430291a4c0dfec7ea428",
+        "to_socket": "B"
+      },
+      {
+        "from_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "from_socket": "Value",
+        "to_node": "3edca41a47df430291a4c0dfec7ea428",
+        "to_socket": "Factor"
+      },
+      {
+        "from_node": "f612f3965fba4a2aa06c33cd710d198c",
+        "from_socket": "Normal",
+        "to_node": "3514c6f9258149429de372f91548879c",
+        "to_socket": "A"
+      },
+      {
+        "from_node": "ae6a3038242d424397dd488d40541dcb",
+        "from_socket": "Normal",
+        "to_node": "3514c6f9258149429de372f91548879c",
+        "to_socket": "B"
+      },
+      {
+        "from_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "from_socket": "Value",
+        "to_node": "3514c6f9258149429de372f91548879c",
+        "to_socket": "Factor"
+      },
+      {
+        "from_node": "5cc930b990eb4b15990df14082228cc9",
+        "from_socket": "Height",
+        "to_node": "6e9f92e4e483494b95eabc6854725659",
+        "to_socket": "Value"
+      },
+      {
+        "from_node": "d1f2692b619845f795f574199bffa3a9",
+        "from_socket": "Value",
+        "to_node": "6e9f92e4e483494b95eabc6854725659",
+        "to_socket": "Edge0"
+      },
+      {
+        "from_node": "0e07acfeb5c4481797eb3667e96a66c0",
+        "from_socket": "Value",
+        "to_node": "6e9f92e4e483494b95eabc6854725659",
+        "to_socket": "Edge1"
+      },
+      {
+        "from_node": "6e9f92e4e483494b95eabc6854725659",
+        "from_socket": "Value",
+        "to_node": "74616e594d6c48d18d7a0ac2e828e474",
+        "to_socket": "Input"
+      },
+      {
+        "from_node": "04aa0a1ff1c440f09b6dc2ad7cdc1c37",
+        "from_socket": "Value",
+        "to_node": "b1d2029975cf464c9ec4a0f2d1fc8a4a",
+        "to_socket": "Input"
+      },
+      {
+        "from_node": "b1d2029975cf464c9ec4a0f2d1fc8a4a",
+        "from_socket": "Result",
+        "to_node": "82f0ed7fe6b248f09f57531789a12c92",
+        "to_socket": "A"
+      },
+      {
+        "from_node": "74616e594d6c48d18d7a0ac2e828e474",
+        "from_socket": "Result",
+        "to_node": "82f0ed7fe6b248f09f57531789a12c92",
+        "to_socket": "B"
+      },
+      {
+        "from_node": "3edca41a47df430291a4c0dfec7ea428",
+        "from_socket": "Result",
+        "to_node": "209e1ac1c92340379bfa5e4ff27c195f",
+        "to_socket": "A"
+      },
+      {
+        "from_node": "d5f439921d1b4d358622b282fd662c74",
+        "from_socket": "Color",
+        "to_node": "209e1ac1c92340379bfa5e4ff27c195f",
+        "to_socket": "B"
+      },
+      {
+        "from_node": "82f0ed7fe6b248f09f57531789a12c92",
+        "from_socket": "Result",
+        "to_node": "209e1ac1c92340379bfa5e4ff27c195f",
+        "to_socket": "Factor"
+      },
+      {
+        "from_node": "209e1ac1c92340379bfa5e4ff27c195f",
+        "from_socket": "Result",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "d5f439921d1b4d358622b282fd662c74",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "d5f439921d1b4d358622b282fd662c74",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "c13ffc14c37f430798aac1366e35b036",
+        "from_socket": "Normal",
+        "to_node": "0e3fe3e67afb468a9038a8b0c1939059",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "26800883e1ec43c19e4745fbcfd2720d",
+        "from_socket": "Position",
+        "to_node": "0e3fe3e67afb468a9038a8b0c1939059",
+        "to_socket": "Position"
+      },
+      {
+        "from_node": "3514c6f9258149429de372f91548879c",
+        "from_socket": "Normal",
+        "to_node": "a91b1024f25e4a569da1d5fcfbf3f89b",
+        "to_socket": "A"
+      },
+      {
+        "from_node": "0e3fe3e67afb468a9038a8b0c1939059",
+        "from_socket": "Normal",
+        "to_node": "a91b1024f25e4a569da1d5fcfbf3f89b",
+        "to_socket": "B"
+      },
+      {
+        "from_node": "82f0ed7fe6b248f09f57531789a12c92",
+        "from_socket": "Result",
+        "to_node": "a91b1024f25e4a569da1d5fcfbf3f89b",
+        "to_socket": "Factor"
+      },
+      {
+        "from_node": "a91b1024f25e4a569da1d5fcfbf3f89b",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      }
+    ]
+  }
+}

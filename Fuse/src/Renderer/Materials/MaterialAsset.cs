@@ -387,10 +387,16 @@ public sealed class MaterialAsset
             MaterialValueType type = node.Type switch
             {
                 "Color" or "Vector3" => MaterialValueType.Vector3,
+                "Vector2" => MaterialValueType.Vector2,
                 _ => MaterialValueType.Float
             };
             JsonNode defaultValue = node.Properties["value"]?.DeepClone()
-                ?? (type == MaterialValueType.Vector3 ? Vec3ToJson(Vector3.Zero) : JsonValue.Create(0.0f)!);
+                ?? (type switch
+                {
+                    MaterialValueType.Vector2 => Vec2ToJson(Vector2.Zero),
+                    MaterialValueType.Vector3 => Vec3ToJson(Vector3.Zero),
+                    _ => JsonValue.Create(0.0f)!
+                });
             discovered.Add(existing.TryGetValue(name, out MaterialExposedParameter? parameter)
                 ? new MaterialExposedParameter { Name = name, Type = type, DefaultValue = parameter.DefaultValue?.DeepClone() ?? defaultValue }
                 : new MaterialExposedParameter { Name = name, Type = type, DefaultValue = defaultValue });
@@ -415,16 +421,58 @@ public sealed class MaterialAsset
         return new Vector3(array[0]!.GetValue<float>(), array[1]!.GetValue<float>(), array[2]!.GetValue<float>());
     }
 
-    public static float GetFloat(JsonObject properties, string key, float fallback) =>
-        properties.TryGetPropertyValue(key, out JsonNode? value) && value != null
-            ? value.GetValue<float>()
-            : fallback;
+    public static float GetFloat(JsonObject properties, string key, float fallback)
+    {
+        if (!properties.TryGetPropertyValue(key, out JsonNode? value) || value is not JsonValue jsonValue)
+            return fallback;
+
+        // JsonNode preserves integer literals as Int32/Int64. Material defaults
+        // and hand-authored .fmat files commonly mix integer and floating-point
+        // numbers, so do not require every scalar to be serialized as a float.
+        if (jsonValue.TryGetValue<float>(out float single))
+            return single;
+        if (jsonValue.TryGetValue<double>(out double real))
+            return (float)real;
+        if (jsonValue.TryGetValue<int>(out int integer))
+            return integer;
+        if (jsonValue.TryGetValue<long>(out long longInteger))
+            return longInteger;
+        return fallback;
+    }
 
     public static Vector2 GetVector2(JsonObject properties, string key, Vector2 fallback)
     {
         if (properties[key] is not JsonArray array || array.Count < 2)
             return fallback;
         return new Vector2(array[0]!.GetValue<float>(), array[1]!.GetValue<float>());
+    }
+
+    public static List<string> GetStringArray(JsonObject properties, string key)
+    {
+        if (properties[key] is JsonArray array)
+            return array
+                .OfType<JsonValue>()
+                .Select(value => value.TryGetValue<string>(out string? text) ? text.Trim() : "")
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList();
+
+        string legacyValue = properties[key]?.GetValue<string>() ?? "";
+        return legacyValue
+            .Split([';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+    }
+
+    public static void SetStringArray(JsonObject properties, string key, IEnumerable<string> values)
+    {
+        var array = new JsonArray();
+        foreach (string value in values)
+        {
+            string trimmed = value.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+                array.Add(trimmed);
+        }
+        properties[key] = array;
     }
 
     public static string GetString(JsonObject properties, string key, string fallback) =>
@@ -436,6 +484,8 @@ public sealed class MaterialAsset
         properties.TryGetPropertyValue(key, out JsonNode? value) && value != null
             ? value.GetValue<bool>()
             : fallback;
+
+    public static JsonArray Vec2ToJson(Vector2 value) => new(value.X, value.Y);
 
     public static JsonArray Vec3ToJson(Vector3 value) => new(value.X, value.Y, value.Z);
 

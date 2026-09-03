@@ -198,6 +198,7 @@ public class AssetManager
 
     private readonly GL _gl;
     private readonly Dictionary<string, Renderer.Texture> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Renderer.TextureArray> _textureArrays = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Renderer.Shader> _shaders = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Renderer.Mesh> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Renderer.LoadedModel> _models = new(StringComparer.OrdinalIgnoreCase);
@@ -237,6 +238,24 @@ public class AssetManager
         tex = new Renderer.Texture(_gl, filePath, colorSpace);
         _textures[key] = tex;
         return tex;
+    }
+
+    public Renderer.TextureArray GetTextureArray(
+        IReadOnlyList<string> paths,
+        Renderer.TextureColorSpace colorSpace = Renderer.TextureColorSpace.Linear)
+    {
+        string[] resolvedPaths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(ResolveAssetPath)
+            .ToArray();
+        string key = string.Join("|", resolvedPaths.Select(path => path.Replace('\\', '/')))
+            + $"|{colorSpace}";
+        if (_textureArrays.TryGetValue(key, out Renderer.TextureArray? existing))
+            return existing;
+
+        var textureArray = new Renderer.TextureArray(_gl, resolvedPaths, colorSpace);
+        _textureArrays[key] = textureArray;
+        return textureArray;
     }
 
     /// <summary>
@@ -753,6 +772,7 @@ public class AssetManager
         _materialShaders.Clear();
 
         foreach (var t in _textures.Values) t.Dispose();
+        foreach (Renderer.TextureArray textureArray in _textureArrays.Values) textureArray.Dispose();
         foreach (var s in _shaders.Values) s.Dispose();
         foreach (var m in _meshes.Values) m.Dispose();
         foreach (var m in _models.Values)
@@ -762,6 +782,7 @@ public class AssetManager
         }
         foreach (var sm in _skinnedModels.Values) sm.Dispose();
         _textures.Clear();
+        _textureArrays.Clear();
         _shaders.Clear();
         _meshes.Clear();
         _models.Clear();

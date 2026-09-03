@@ -114,7 +114,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
 
         MaterialGraphNode? node = _asset.Graph.FindNode(_selectedNodeId);
         if (node == null ||
-            node.Type is not ("Texture2D" or "ScalarTexture" or "PackedMetallicRoughness"))
+            node.Type is not ("Texture2D" or "ScalarTexture" or "PackedMetallicRoughness" or
+                "TriplanarTexture" or "TriplanarNormal"))
             return;
 
         node.Properties["path"] = MaterialAsset.NormalizeAssetPath(texturePath);
@@ -1352,12 +1353,63 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             case "Color":
             case "Vector3":
                 return new Vector4(MaterialAsset.GetVector3(node.Properties, "value", Vector3.Zero), 1);
+            case "Vector2":
+            {
+                Vector2 value = MaterialAsset.GetVector2(node.Properties, "value", Vector2.Zero);
+                return new Vector4(value.X, value.Y, 0, 1);
+            }
             case "Float":
                 return new Vector4(MaterialAsset.GetFloat(node.Properties, "value", 0.5f));
             case "Texture2D":
+            case "ScalarTexture":
+            case "PackedMetallicRoughness":
+            case "Texture2DArray":
                 return new Vector4(0.55f, 0.55f, 0.55f, 1);
-            case "NormalMap":
+            case "TriplanarTexture":
+                return new Vector4(0.50f, 0.56f, 0.46f, 1);
+            case "TriplanarNormal":
                 return new Vector4(0.5f, 0.5f, 1, 1);
+            case "TerrainLayer":
+                return socket switch
+                {
+                    "Normal" => new Vector4(0.5f, 0.5f, 1, 1),
+                    "Roughness" => new Vector4(0.65f),
+                    "AO" => new Vector4(1),
+                    "Height" => new Vector4(0.5f),
+                    _ => TerrainLayerPreviewColor(MaterialAsset.GetFloat(node.Properties, "layer", 0))
+                };
+            case "WorldPosition":
+                return new Vector4(0.5f, 0.55f, 0.5f, 1);
+            case "WorldNormal":
+                return new Vector4(0.5f, 1.0f, 0.5f, 1);
+            case "Swizzle":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Vector", depth + 1);
+                string mode = MaterialAsset.GetString(node.Properties, "mode", "XZ");
+                return mode.ToUpperInvariant() switch
+                {
+                    "X" => new Vector4(value.X),
+                    "Y" => new Vector4(value.Y),
+                    "Z" => new Vector4(value.Z),
+                    "XY" => new Vector4(value.X, value.Y, 0, 1),
+                    "YZ" => new Vector4(value.Y, value.Z, 0, 1),
+                    "VECTOR" => value,
+                    _ => new Vector4(value.X, value.Z, 0, 1)
+                };
+            }
+            case "Mapping":
+            case "DomainWarp":
+                return EvaluateInputPreview(node, "Coordinates", depth + 1);
+            case "NormalMap":
+            {
+                Vector4 color = EvaluateInputPreviewOrDefault(node, "Color", new Vector4(0.5f, 0.5f, 1, 1), depth + 1);
+                float strength = MaterialAsset.GetFloat(node.Properties, "strength", 1.0f);
+                Vector3 tangent = new(color.X * 2 - 1, color.Y * 2 - 1, color.Z * 2 - 1);
+                tangent.X *= strength;
+                tangent.Y *= strength;
+                tangent = tangent.LengthSquared() > 0.0001f ? Vector3.Normalize(tangent) : Vector3.UnitZ;
+                return new Vector4(tangent * 0.5f + new Vector3(0.5f), 1);
+            }
             case "Reroute":
             {
                 MaterialGraphLink? link = _asset!.Graph.Links.LastOrDefault(candidate =>
@@ -1365,13 +1417,118 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 MaterialGraphNode? source = link == null ? null : _asset.Graph.FindNode(link.FromNode);
                 return source == null ? new Vector4(0.5f, 0.5f, 0.5f, 1) : EvaluateNodePreview(source, link!.FromSocket, depth + 1);
             }
+            case "Subtract":
+            case "Divide":
+            case "Min":
+            case "Max":
+            case "Power":
             case "Add":
             case "Multiply":
+            case "Math":
             {
                 Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
                 Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
-                return node.Type == "Add" ? Vector4.Clamp(a + b, Vector4.Zero, Vector4.One) : a * b;
+                string operation = node.Type == "Math"
+                    ? MaterialAsset.GetString(node.Properties, "operation", "Multiply")
+                    : node.Type;
+                return ApplyPreviewBinary(operation, a, b);
             }
+            case "Abs":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Input", depth + 1);
+                return new Vector4(MathF.Abs(value.X), MathF.Abs(value.Y), MathF.Abs(value.Z), MathF.Abs(value.W));
+            }
+            case "Normalize":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Input", depth + 1);
+                Vector3 xyz = new(value.X, value.Y, value.Z);
+                xyz = xyz.LengthSquared() > 0.0001f ? Vector3.Normalize(xyz) : Vector3.UnitZ;
+                return new Vector4(xyz, value.W);
+            }
+            case "Length":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Input", depth + 1);
+                return new Vector4(new Vector3(value.X, value.Y, value.Z).Length());
+            }
+            case "Dot":
+            {
+                Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
+                Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
+                return new Vector4(Vector3.Dot(new Vector3(a.X, a.Y, a.Z), new Vector3(b.X, b.Y, b.Z)));
+            }
+            case "OneMinus":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Input", depth + 1);
+                return Vector4.One - value;
+            }
+            case "Saturate":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Input", depth + 1);
+                return Vector4.Clamp(value, Vector4.Zero, Vector4.One);
+            }
+            case "Clamp":
+            {
+                Vector4 value = EvaluateInputPreview(node, "Value", depth + 1);
+                Vector4 minimum = EvaluateInputPreviewOrDefault(node, "Min", Vector4.Zero, depth + 1);
+                Vector4 maximum = EvaluateInputPreviewOrDefault(node, "Max", Vector4.One, depth + 1);
+                return Vector4.Clamp(value, minimum, maximum);
+            }
+            case "Smoothstep":
+            {
+                float value = EvaluateInputPreview(node, "Value", depth + 1).X;
+                float edge0 = EvaluateInputPreviewOrDefault(node, "Edge0", Vector4.Zero, depth + 1).X;
+                float edge1 = EvaluateInputPreviewOrDefault(node, "Edge1", Vector4.One, depth + 1).X;
+                return new Vector4(PreviewSmoothstep(edge0, edge1, value));
+            }
+            case "Remap":
+            {
+                float value = EvaluateInputPreview(node, "Value", depth + 1).X;
+                float inMin = EvaluateInputPreviewOrDefault(node, "InMin", Vector4.Zero, depth + 1).X;
+                float inMax = EvaluateInputPreviewOrDefault(node, "InMax", Vector4.One, depth + 1).X;
+                float outMin = EvaluateInputPreviewOrDefault(node, "OutMin", Vector4.Zero, depth + 1).X;
+                float outMax = EvaluateInputPreviewOrDefault(node, "OutMax", Vector4.One, depth + 1).X;
+                float denominator = MathF.Abs(inMax - inMin) < 0.0001f ? 1 : inMax - inMin;
+                return new Vector4(outMin + (value - inMin) / denominator * (outMax - outMin));
+            }
+            case "TerrainHeight":
+                return new Vector4(0.5f);
+            case "TerrainSlope":
+                return new Vector4(0.35f);
+            case "Noise2D":
+            case "FBMNoise":
+            {
+                Vector4 coordinates = EvaluateInputPreviewOrDefault(node, "Coordinates", new Vector4(0.37f, 0.63f, 0, 1), depth + 1);
+                float scale = MaterialAsset.GetFloat(node.Properties, "scale", 0.01f);
+                float seed = MaterialAsset.GetFloat(node.Properties, "seed", 0.0f);
+                Vector2 point = new(coordinates.X * scale + seed, coordinates.Y * scale + seed * 1.37f);
+                float noise = node.Type == "FBMNoise"
+                    ? PreviewFbm(point, MaterialAsset.GetFloat(node.Properties, "octaves", 5),
+                        MaterialAsset.GetFloat(node.Properties, "lacunarity", 2),
+                        MaterialAsset.GetFloat(node.Properties, "gain", 0.5f))
+                    : PreviewValueNoise(point);
+                return new Vector4(noise);
+            }
+            case "NormalBlend":
+            {
+                Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
+                Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
+                float factor = Math.Clamp(EvaluateInputPreview(node, "Factor", depth + 1).X, 0, 1);
+                Vector3 normal = Vector3.Lerp(new Vector3(a.X, a.Y, a.Z), new Vector3(b.X, b.Y, b.Z), factor);
+                normal = normal.LengthSquared() > 0.0001f ? Vector3.Normalize(normal) : Vector3.UnitZ;
+                return new Vector4(normal, 1);
+            }
+            case "HeightBlend":
+            {
+                Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
+                Vector4 b = EvaluateInputPreview(node, "B", depth + 1);
+                float heightA = EvaluateInputPreview(node, "HeightA", depth + 1).X;
+                float heightB = EvaluateInputPreview(node, "HeightB", depth + 1).X;
+                float weight = EvaluateInputPreview(node, "Weight", depth + 1).X;
+                float factor = Math.Clamp(weight + heightB - heightA, 0, 1);
+                return Vector4.Lerp(a, b, factor);
+            }
+            case "TerrainLayerBlend":
+                return EvaluateTerrainLayerBlendPreview(node, socket, depth + 1);
             case "Lerp":
             {
                 Vector4 a = EvaluateInputPreview(node, "A", depth + 1);
@@ -1392,6 +1549,136 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         return source == null ? new Vector4(0.5f, 0.5f, 0.5f, 1) : EvaluateNodePreview(source, link!.FromSocket, depth);
     }
 
+    private Vector4 EvaluateInputPreviewOrDefault(MaterialGraphNode node, string socket, Vector4 fallback, int depth)
+    {
+        MaterialGraphLink? link = _asset!.Graph.Links.LastOrDefault(candidate =>
+            candidate.ToNode == node.Id && candidate.ToSocket == socket);
+        MaterialGraphNode? source = link == null ? null : _asset.Graph.FindNode(link.FromNode);
+        return source == null ? fallback : EvaluateNodePreview(source, link!.FromSocket, depth);
+    }
+
+    private static Vector4 ApplyPreviewBinary(string operation, Vector4 a, Vector4 b) =>
+        operation.Trim().ToLowerInvariant() switch
+        {
+            "add" or "+" => a + b,
+            "subtract" or "sub" or "-" => a - b,
+            "divide" or "/" => new Vector4(
+                a.X / SafePreviewDenominator(b.X), a.Y / SafePreviewDenominator(b.Y),
+                a.Z / SafePreviewDenominator(b.Z), a.W / SafePreviewDenominator(b.W)),
+            "min" => Vector4.Min(a, b),
+            "max" => Vector4.Max(a, b),
+            "power" or "pow" => new Vector4(
+                MathF.Pow(MathF.Max(0, a.X), b.X), MathF.Pow(MathF.Max(0, a.Y), b.Y),
+                MathF.Pow(MathF.Max(0, a.Z), b.Z), MathF.Pow(MathF.Max(0, a.W), b.W)),
+            _ => a * b
+        };
+
+    private static float SafePreviewDenominator(float value) => MathF.Abs(value) < 0.0001f ? 1 : value;
+
+    private static float PreviewSmoothstep(float edge0, float edge1, float value)
+    {
+        float denominator = MathF.Abs(edge1 - edge0) < 0.0001f ? 1 : edge1 - edge0;
+        float t = Math.Clamp((value - edge0) / denominator, 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
+    private static Vector4 TerrainLayerPreviewColor(float layer)
+    {
+        int index = Math.Clamp((int)MathF.Round(layer), 0, 3);
+        return index switch
+        {
+            1 => new Vector4(0.28f, 0.18f, 0.08f, 1),
+            2 => new Vector4(0.38f, 0.40f, 0.42f, 1),
+            3 => new Vector4(0.85f, 0.88f, 0.92f, 1),
+            _ => new Vector4(0.18f, 0.38f, 0.12f, 1)
+        };
+    }
+
+    private Vector4 EvaluateTerrainLayerBlendPreview(MaterialGraphNode node, string socket, int depth)
+    {
+        Vector3 color = Vector3.Zero;
+        Vector3 normal = Vector3.Zero;
+        float roughness = 0;
+        float ao = 0;
+        float height = 0;
+        float totalWeight = 0;
+        for (int layer = 0; layer < 4; layer++)
+        {
+            string prefix = $"layer{layer}_";
+            Vector4 layerColor = EvaluateInputPreviewOrDefault(node, $"Layer{layer}Color",
+                new Vector4(MaterialAsset.GetVector3(node.Properties, prefix + "color", Vector3.One), 1), depth + 1);
+            Vector4 layerNormal = EvaluateInputPreviewOrDefault(node, $"Layer{layer}Normal",
+                new Vector4(MaterialAsset.GetVector3(node.Properties, prefix + "normal", Vector3.UnitZ), 1), depth + 1);
+            float layerWeight = MathF.Max(0, EvaluateInputPreviewOrDefault(node, $"Layer{layer}Weight",
+                new Vector4(MaterialAsset.GetFloat(node.Properties, prefix + "weight", layer == 0 ? 1 : 0)), depth + 1).X);
+            float layerHeight = EvaluateInputPreviewOrDefault(node, $"Layer{layer}Height",
+                new Vector4(MaterialAsset.GetFloat(node.Properties, prefix + "height", 0.5f)), depth + 1).X;
+            float layerRoughness = EvaluateInputPreviewOrDefault(node, $"Layer{layer}Roughness",
+                new Vector4(MaterialAsset.GetFloat(node.Properties, prefix + "roughness", 0.5f)), depth + 1).X;
+            float layerAo = EvaluateInputPreviewOrDefault(node, $"Layer{layer}AO",
+                new Vector4(MaterialAsset.GetFloat(node.Properties, prefix + "ao", 1)), depth + 1).X;
+            color += new Vector3(layerColor.X, layerColor.Y, layerColor.Z) * layerWeight;
+            normal += new Vector3(layerNormal.X, layerNormal.Y, layerNormal.Z) * layerWeight;
+            roughness += layerRoughness * layerWeight;
+            ao += layerAo * layerWeight;
+            height += layerHeight * layerWeight;
+            totalWeight += layerWeight;
+        }
+
+        if (totalWeight > 0.0001f)
+        {
+            float inverse = 1.0f / totalWeight;
+            color *= inverse;
+            normal *= inverse;
+            roughness *= inverse;
+            ao *= inverse;
+            height *= inverse;
+        }
+        normal = normal.LengthSquared() > 0.0001f ? Vector3.Normalize(normal) : Vector3.UnitZ;
+        return socket switch
+        {
+            "Normal" => new Vector4(normal, 1),
+            "Roughness" => new Vector4(roughness),
+            "AO" => new Vector4(ao),
+            "Height" => new Vector4(height),
+            _ => new Vector4(color, 1)
+        };
+    }
+
+    private static float PreviewValueNoise(Vector2 point)
+    {
+        Vector2 cell = new(MathF.Floor(point.X), MathF.Floor(point.Y));
+        Vector2 fraction = new(point.X - cell.X, point.Y - cell.Y);
+        fraction *= fraction * (new Vector2(3) - 2 * fraction);
+        float a = PreviewHash(cell);
+        float b = PreviewHash(cell + Vector2.UnitX);
+        float c = PreviewHash(cell + Vector2.UnitY);
+        float d = PreviewHash(cell + Vector2.One);
+        return Math.Clamp(float.Lerp(float.Lerp(a, b, fraction.X), float.Lerp(c, d, fraction.X), fraction.Y), 0, 1);
+    }
+
+    private static float PreviewHash(Vector2 point)
+    {
+        float value = MathF.Sin(Vector2.Dot(point, new Vector2(127.1f, 311.7f))) * 43758.5453f;
+        return value - MathF.Floor(value);
+    }
+
+    private static float PreviewFbm(Vector2 point, float octaves, float lacunarity, float gain)
+    {
+        int count = Math.Clamp((int)MathF.Round(octaves), 1, 8);
+        float value = 0;
+        float amplitude = 0.5f;
+        float normalization = 0;
+        for (int i = 0; i < count; i++)
+        {
+            value += PreviewValueNoise(point) * amplitude;
+            normalization += amplitude;
+            point *= lacunarity;
+            amplitude *= gain;
+        }
+        return normalization > 0 ? value / normalization : 0;
+    }
+
     private void DrawExposedParameters()
     {
         _asset!.SyncExposedParameters();
@@ -1399,7 +1686,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             return;
         if (_asset.ExposedParameters.Count == 0)
         {
-            ImGui.TextDisabled("Expose a Color, Vector3, or Float node to create material parameters.");
+            ImGui.TextDisabled("Expose a Color, Vector2, Vector3, or Float node to create material parameters.");
             return;
         }
 
@@ -1413,11 +1700,23 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 continue;
 
             JsonNode? value = _asset.GetParameterValue(node);
-            bool changed = parameter.Type == MaterialValueType.Float
-                ? DrawExposedFloat(parameter.Name, value?.GetValue<float>() ?? 0)
-                : DrawExposedVector(parameter.Name, value is JsonArray array && array.Count >= 3
-                    ? new Vector3(array[0]!.GetValue<float>(), array[1]!.GetValue<float>(), array[2]!.GetValue<float>())
+            bool changed;
+            if (parameter.Type == MaterialValueType.Float)
+            {
+                changed = DrawExposedFloat(parameter.Name, value?.GetValue<float>() ?? 0);
+            }
+            else if (parameter.Type == MaterialValueType.Vector2)
+            {
+                changed = DrawExposedVector2(parameter.Name, value is JsonArray vector2 && vector2.Count >= 2
+                    ? new Vector2(vector2[0]!.GetValue<float>(), vector2[1]!.GetValue<float>())
+                    : Vector2.Zero);
+            }
+            else
+            {
+                changed = DrawExposedVector(parameter.Name, value is JsonArray vector3 && vector3.Count >= 3
+                    ? new Vector3(vector3[0]!.GetValue<float>(), vector3[1]!.GetValue<float>(), vector3[2]!.GetValue<float>())
                     : Vector3.Zero);
+            }
             if (!changed)
                 continue;
 
@@ -1425,6 +1724,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             {
                 float edited = _lastEditedFloat;
                 SetExposedValue(node, edited);
+            }
+            else if (parameter.Type == MaterialValueType.Vector2)
+            {
+                SetExposedValue(node, _lastEditedVector2);
             }
             else
             {
@@ -1434,6 +1737,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     }
 
     private float _lastEditedFloat;
+    private Vector2 _lastEditedVector2;
     private Vector3 _lastEditedVector;
 
     private bool DrawExposedFloat(string label, float value)
@@ -1448,11 +1752,21 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         return ImGui.ColorEdit3(label, ref _lastEditedVector);
     }
 
+    private bool DrawExposedVector2(string label, Vector2 value)
+    {
+        _lastEditedVector2 = value;
+        return ImGui.DragFloat2(label, ref _lastEditedVector2, 0.01f);
+    }
+
     private void SetExposedValue(MaterialGraphNode node, object value)
     {
-        JsonNode jsonValue = value is float scalar
-            ? JsonValue.Create(scalar)!
-            : MaterialAsset.Vec3ToJson((Vector3)value);
+        JsonNode jsonValue = value switch
+        {
+            float scalar => JsonValue.Create(scalar)!,
+            Vector2 vector2 => MaterialAsset.Vec2ToJson(vector2),
+            Vector3 vector3 => MaterialAsset.Vec3ToJson(vector3),
+            _ => throw new ArgumentException("Unsupported exposed material parameter value.", nameof(value))
+        };
         if (!string.IsNullOrWhiteSpace(_asset!.ParentMaterialPath))
             _asset.ParameterOverrides[MaterialAsset.GetString(node.Properties, "parameter_name", "")] = jsonValue;
         else
@@ -1470,31 +1784,25 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             case "Texture2D":
             case "ScalarTexture":
             case "PackedMetallicRoughness":
-            {
-                string path = MaterialAsset.GetString(node.Properties, "path", "");
-                if (ImGui.InputText("Texture", ref path, 512))
-                {
-                    node.Properties["path"] = MaterialAsset.NormalizeAssetPath(path);
-                    _dirty = true;
-                }
-                if (ImGui.Button("Open Asset Browser"))
-                    openTextureBrowser?.Invoke();
-                string defaultSpace = node.Type == "Texture2D" ? "sRGB" : "linear";
-                string colorSpace = MaterialAsset.GetString(node.Properties, "color_space", defaultSpace);
-                if (ImGui.BeginCombo("Color Space", colorSpace))
-                {
-                    foreach (string option in new[] { "sRGB", "linear" })
-                    {
-                        if (ImGui.Selectable(option, option.Equals(colorSpace, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            node.Properties["color_space"] = option;
-                            _dirty = true;
-                        }
-                    }
-                    ImGui.EndCombo();
-                }
+                DrawSingleTextureProperties(node, openTextureBrowser);
                 break;
-            }
+            case "TriplanarTexture":
+            case "TriplanarNormal":
+                DrawTriplanarProperties(node, openTextureBrowser);
+                break;
+            case "Texture2DArray":
+                DrawStringArrayProperty(node, "Layers", "paths", 2048);
+                DrawColorSpaceProperty(node, "sRGB");
+                break;
+            case "TerrainLayer":
+                DrawStringArrayProperty(node, "Albedo layers", "albedo_paths", 2048);
+                DrawStringArrayProperty(node, "Normal layers", "normal_paths", 2048);
+                DrawStringArrayProperty(node, "ORM layers", "orm_paths", 2048);
+                DrawStringArrayProperty(node, "Height layers", "height_paths", 2048);
+                DrawFloatProperty(node, "Layer index", "layer", 0.0f, 0.0f, 64.0f);
+                DrawFloatProperty(node, "World tiling", "tiling", 0.01f, 0.00001f, 100.0f);
+                DrawFloatProperty(node, "Projection sharpness", "sharpness", 4.0f, 1.0f, 32.0f);
+                break;
             case "Color":
             case "Vector3":
             {
@@ -1505,6 +1813,17 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 if (changed)
                 {
                     node.Properties["value"] = MaterialAsset.Vec3ToJson(value);
+                    _dirty = true;
+                }
+                DrawParameterExposure(node);
+                break;
+            }
+            case "Vector2":
+            {
+                Vector2 value = MaterialAsset.GetVector2(node.Properties, "value", Vector2.Zero);
+                if (ImGui.DragFloat2("Value", ref value, 0.01f))
+                {
+                    node.Properties["value"] = MaterialAsset.Vec2ToJson(value);
                     _dirty = true;
                 }
                 DrawParameterExposure(node);
@@ -1521,6 +1840,41 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 DrawParameterExposure(node);
                 break;
             }
+            case "Swizzle":
+                DrawComboProperty(node, "Mode", "mode", ["X", "Y", "Z", "XY", "XZ", "YZ", "Vector"], "XZ");
+                break;
+            case "Mapping":
+            {
+                Vector2 scale = MaterialAsset.GetVector2(node.Properties, "scale", Vector2.One);
+                if (ImGui.DragFloat2("Scale", ref scale, 0.01f)) { node.Properties["scale"] = MaterialAsset.Vec2ToJson(scale); _dirty = true; }
+                Vector2 offset = MaterialAsset.GetVector2(node.Properties, "offset", Vector2.Zero);
+                if (ImGui.DragFloat2("Offset", ref offset, 0.01f)) { node.Properties["offset"] = MaterialAsset.Vec2ToJson(offset); _dirty = true; }
+                DrawFloatProperty(node, "Rotation (radians)", "rotation", 0.0f, -MathF.Tau, MathF.Tau);
+                break;
+            }
+            case "Math":
+                DrawComboProperty(node, "Operation", "operation", ["Add", "Subtract", "Multiply", "Divide", "Min", "Max", "Power"], "Multiply");
+                break;
+            case "Noise2D":
+                DrawFloatProperty(node, "Scale", "scale", 0.01f, 0.00001f, 100.0f);
+                DrawFloatProperty(node, "Seed", "seed", 0.0f, -100000.0f, 100000.0f);
+                break;
+            case "FBMNoise":
+                DrawFloatProperty(node, "Scale", "scale", 0.01f, 0.00001f, 100.0f);
+                DrawFloatProperty(node, "Octaves", "octaves", 5.0f, 1.0f, 8.0f);
+                DrawFloatProperty(node, "Lacunarity", "lacunarity", 2.0f, 1.0f, 8.0f);
+                DrawFloatProperty(node, "Gain", "gain", 0.5f, 0.0f, 1.0f);
+                DrawFloatProperty(node, "Seed", "seed", 0.0f, -100000.0f, 100000.0f);
+                break;
+            case "DomainWarp":
+                DrawFloatProperty(node, "Scale", "scale", 0.01f, 0.00001f, 100.0f);
+                DrawFloatProperty(node, "Strength", "strength", 0.25f, 0.0f, 100.0f);
+                DrawFloatProperty(node, "Octaves", "octaves", 3.0f, 1.0f, 6.0f);
+                DrawFloatProperty(node, "Seed", "seed", 0.0f, -100000.0f, 100000.0f);
+                break;
+            case "TerrainLayerBlend":
+                DrawTerrainLayerBlendProperties(node);
+                break;
             case "NormalMap":
             {
                 float strength = MaterialAsset.GetFloat(node.Properties, "strength", 1.0f);
@@ -1550,6 +1904,103 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                 if (ImGui.DragFloat("Height", ref height, 1, 48, 2000)) { node.Properties["height"] = height; _dirty = true; }
                 break;
             }
+        }
+    }
+
+    private void DrawSingleTextureProperties(MaterialGraphNode node, Action? openTextureBrowser)
+    {
+        string path = MaterialAsset.GetString(node.Properties, "path", "");
+        if (ImGui.InputText("Texture", ref path, 512))
+        {
+            node.Properties["path"] = MaterialAsset.NormalizeAssetPath(path);
+            _dirty = true;
+        }
+        if (ImGui.Button("Open Asset Browser"))
+            openTextureBrowser?.Invoke();
+        string defaultSpace = node.Type is "Texture2D" or "TriplanarTexture"
+            ? "sRGB"
+            : node.Type == "TriplanarNormal" ? "data" : "linear";
+        DrawColorSpaceProperty(node, defaultSpace);
+    }
+
+    private void DrawTriplanarProperties(MaterialGraphNode node, Action? openTextureBrowser)
+    {
+        DrawSingleTextureProperties(node, openTextureBrowser);
+        DrawFloatProperty(node, "World tiling", "tiling", 0.01f, 0.00001f, 100.0f);
+        DrawFloatProperty(node, "Projection sharpness", "sharpness", 4.0f, 1.0f, 32.0f);
+        if (node.Type == "TriplanarNormal")
+            DrawFloatProperty(node, "Strength", "strength", 1.0f, 0.0f, 2.0f);
+    }
+
+    private void DrawColorSpaceProperty(MaterialGraphNode node, string defaultValue)
+    {
+        string value = MaterialAsset.GetString(node.Properties, "color_space", defaultValue);
+        if (ImGui.BeginCombo("Color Space", value))
+        {
+            foreach (string option in new[] { "sRGB", "linear", "data" })
+            {
+                if (ImGui.Selectable(option, option.Equals(value, StringComparison.OrdinalIgnoreCase)))
+                {
+                    node.Properties["color_space"] = option;
+                    _dirty = true;
+                }
+            }
+            ImGui.EndCombo();
+        }
+    }
+
+    private void DrawStringArrayProperty(MaterialGraphNode node, string label, string key, uint maxLength)
+    {
+        string paths = string.Join(';', MaterialAsset.GetStringArray(node.Properties, key));
+        ImGui.TextDisabled("Use semicolons to separate texture layers.");
+        if (ImGui.InputText(label, ref paths, maxLength))
+        {
+            MaterialAsset.SetStringArray(node.Properties, key,
+                paths.Split([';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(MaterialAsset.NormalizeAssetPath));
+            _dirty = true;
+        }
+    }
+
+    private void DrawFloatProperty(MaterialGraphNode node, string label, string key, float fallback, float min, float max)
+    {
+        float value = MaterialAsset.GetFloat(node.Properties, key, fallback);
+        if (ImGui.DragFloat(label, ref value, 0.01f, min, max))
+        {
+            node.Properties[key] = value;
+            _dirty = true;
+        }
+    }
+
+    private void DrawComboProperty(MaterialGraphNode node, string label, string key, string[] options, string fallback)
+    {
+        string current = MaterialAsset.GetString(node.Properties, key, fallback);
+        int index = Array.FindIndex(options, option => option.Equals(current, StringComparison.OrdinalIgnoreCase));
+        index = index < 0 ? 0 : index;
+        if (ImGui.Combo(label, ref index, options, options.Length))
+        {
+            node.Properties[key] = options[index];
+            _dirty = true;
+        }
+    }
+
+    private void DrawTerrainLayerBlendProperties(MaterialGraphNode node)
+    {
+        for (int layer = 0; layer < 4; layer++)
+        {
+            string prefix = $"layer{layer}_";
+            if (!ImGui.TreeNode($"Layer {layer}##terrainBlendLayer{layer}"))
+                continue;
+
+            Vector3 color = MaterialAsset.GetVector3(node.Properties, prefix + "color", Vector3.One);
+            if (ImGui.ColorEdit3($"Color##terrainBlendColor{layer}", ref color)) { node.Properties[prefix + "color"] = MaterialAsset.Vec3ToJson(color); _dirty = true; }
+            Vector3 normal = MaterialAsset.GetVector3(node.Properties, prefix + "normal", Vector3.UnitZ);
+            if (ImGui.DragFloat3($"Normal##terrainBlendNormal{layer}", ref normal, 0.01f)) { node.Properties[prefix + "normal"] = MaterialAsset.Vec3ToJson(normal); _dirty = true; }
+            DrawFloatProperty(node, $"Weight##terrainBlendWeight{layer}", prefix + "weight", layer == 0 ? 1 : 0, 0, 1);
+            DrawFloatProperty(node, $"Height##terrainBlendHeight{layer}", prefix + "height", 0.5f, 0, 1);
+            DrawFloatProperty(node, $"Roughness##terrainBlendRoughness{layer}", prefix + "roughness", 0.5f, 0, 1);
+            DrawFloatProperty(node, $"AO##terrainBlendAo{layer}", prefix + "ao", 1, 0, 1);
+            ImGui.TreePop();
         }
     }
 

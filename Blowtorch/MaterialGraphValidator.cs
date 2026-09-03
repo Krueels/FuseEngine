@@ -92,7 +92,8 @@ public static class MaterialGraphValidator
         {
             if (node.Type is "Frame" or "Comment" or "PBROutput")
                 continue;
-            if (node.Type is "Texture2D" or "ScalarTexture" or "PackedMetallicRoughness")
+            if (node.Type is "Texture2D" or "ScalarTexture" or "PackedMetallicRoughness" or
+                "TriplanarTexture" or "TriplanarNormal")
             {
                 string path = MaterialAsset.GetString(node.Properties, "path", "");
                 if (string.IsNullOrWhiteSpace(path))
@@ -101,6 +102,35 @@ public static class MaterialGraphValidator
                 else if (!File.Exists(MaterialRuntime.ResolveAssetPath(path)))
                     diagnostics.Add(new(MaterialGraphDiagnosticSeverity.Error,
                         $"Texture asset was not found: {path}.", node.Id));
+            }
+            else if (node.Type == "Texture2DArray")
+            {
+                List<string> paths = MaterialAsset.GetStringArray(node.Properties, "paths");
+                if (paths.Count == 0)
+                    diagnostics.Add(new(MaterialGraphDiagnosticSeverity.Warning,
+                        $"Texture array node '{node.Name}' has no layers assigned.", node.Id));
+                foreach (string path in paths)
+                {
+                    if (!File.Exists(MaterialRuntime.ResolveAssetPath(path)))
+                        diagnostics.Add(new(MaterialGraphDiagnosticSeverity.Error,
+                            $"Texture array asset was not found: {path}.", node.Id));
+                }
+            }
+            else if (node.Type == "TerrainLayer")
+            {
+                string[] properties = ["albedo_paths", "normal_paths", "orm_paths", "height_paths"];
+                foreach (string property in properties)
+                {
+                    foreach (string path in MaterialAsset.GetStringArray(node.Properties, property))
+                    {
+                        if (!File.Exists(MaterialRuntime.ResolveAssetPath(path)))
+                            diagnostics.Add(new(MaterialGraphDiagnosticSeverity.Error,
+                                $"Terrain layer asset was not found: {path}.", node.Id));
+                    }
+                }
+                if (MaterialAsset.GetStringArray(node.Properties, "albedo_paths").Count == 0)
+                    diagnostics.Add(new(MaterialGraphDiagnosticSeverity.Warning,
+                        $"Terrain layer '{node.Name}' has no albedo layers assigned.", node.Id));
             }
         }
 

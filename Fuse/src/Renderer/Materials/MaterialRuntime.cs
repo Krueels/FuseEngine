@@ -11,6 +11,7 @@ public sealed class MaterialRuntime : IDisposable
     public const int MaxTextureSlots = 8;
 
     private readonly List<(MaterialTextureSlot Slot, Texture? Texture)> _textures = [];
+    private readonly List<(MaterialTextureArraySlot Slot, TextureArray? Texture)> _textureArrays = [];
     private readonly IReadOnlyList<MaterialUniformSlot> _uniforms;
     private readonly AssetManager? _owner;
     private readonly string _shaderCacheKey;
@@ -28,6 +29,7 @@ public sealed class MaterialRuntime : IDisposable
         Shader staticShader,
         Shader skinnedShader,
         IReadOnlyList<MaterialUniformSlot> uniforms,
+        IReadOnlyList<MaterialTextureArraySlot> textureArrays,
         bool isLegacy,
         AssetManager? owner = null,
         string shaderCacheKey = "")
@@ -37,6 +39,7 @@ public sealed class MaterialRuntime : IDisposable
         StaticShader = staticShader;
         SkinnedShader = skinnedShader;
         _uniforms = uniforms;
+        _textureArrays.Capacity = textureArrays.Count;
         IsLegacy = isLegacy;
         _owner = owner;
         _shaderCacheKey = shaderCacheKey;
@@ -67,12 +70,14 @@ public sealed class MaterialRuntime : IDisposable
             staticShader,
             skinnedShader,
             compilation.Uniforms,
+            compilation.TextureArrays,
             false,
             assets,
             compilation.GraphHash);
         try
         {
             material.ResolveTextures(assets, compilation.Textures);
+            material.ResolveTextureArrays(assets, compilation.TextureArrays);
             return material;
         }
         catch
@@ -96,6 +101,7 @@ public sealed class MaterialRuntime : IDisposable
             asset,
             staticShader,
             skinnedShader,
+            [],
             [],
             true);
         string resolved = ResolveAssetPath(texturePath);
@@ -146,6 +152,13 @@ public sealed class MaterialRuntime : IDisposable
             int textureUnit = FirstTextureUnit + slot.Slot;
             shader.SetInt(slot.UniformName, textureUnit);
             (texture ?? _textures.FirstOrDefault(pair => pair.Texture != null).Texture)?.Bind((uint)textureUnit);
+        }
+
+        foreach ((MaterialTextureArraySlot slot, TextureArray? texture) in _textureArrays)
+        {
+            int textureUnit = FirstTextureUnit + slot.Slot;
+            shader.SetInt(slot.UniformName, textureUnit);
+            texture?.Bind((uint)textureUnit);
         }
 
         foreach (MaterialUniformSlot uniform in _uniforms)
@@ -227,6 +240,20 @@ public sealed class MaterialRuntime : IDisposable
         }
     }
 
+    private void ResolveTextureArrays(AssetManager assets, IReadOnlyList<MaterialTextureArraySlot> slots)
+    {
+        foreach (MaterialTextureArraySlot slot in slots)
+        {
+            var paths = slot.AssetPaths
+                .Select(MaterialAsset.NormalizeAssetPath)
+                .ToArray();
+            TextureArray? texture = paths.Length > 0
+                ? assets.GetTextureArray(paths, slot.ColorSpace)
+                : null;
+            _textureArrays.Add((slot, texture));
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -235,5 +262,6 @@ public sealed class MaterialRuntime : IDisposable
         if (!IsLegacy)
             _owner?.ReleaseMaterialShaders(_shaderCacheKey);
         _textures.Clear();
+        _textureArrays.Clear();
     }
 }

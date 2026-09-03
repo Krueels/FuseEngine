@@ -97,6 +97,7 @@ struct MaterialSurface {
     float alpha;
     float ao;
     float hasNormalMap;
+    float normalSpace;
     float legacyLighting;
 };
 
@@ -105,7 +106,7 @@ uniform float uMaterialAlphaCutoff;
 uniform bool uMaterialReceiveShadows;
 
 #ifndef FUSE_CUSTOM_MATERIAL
-MaterialSurface EvaluateMaterial(vec2 materialUv)
+MaterialSurface EvaluateMaterial(vec2 materialUv, vec3 worldPosition, vec3 worldNormal, vec3 worldTangent, vec3 worldBitangent)
 {
     MaterialSurface surface;
     vec4 texel = uUseTexture ? texture(uTexture, materialUv) : vec4(uColor, 1.0);
@@ -117,6 +118,7 @@ MaterialSurface EvaluateMaterial(vec2 materialUv)
     surface.alpha = texel.a;
     surface.ao = 1.0;
     surface.hasNormalMap = 0.0;
+    surface.normalSpace = 0.0;
     surface.legacyLighting = 1.0;
     return surface;
 }
@@ -408,13 +410,15 @@ vec3 EvaluateSpotLight(int lightIndex, SpotLightData light, vec3 worldPos,
 
 void main()
 {
-    MaterialSurface material = EvaluateMaterial(vTexCoord);
+    MaterialSurface material = EvaluateMaterial(vTexCoord, vWorldPos, vWorldNormal, vWorldTangent, vWorldBitangent);
     if (uMaterialAlphaMode == 1 && material.alpha < uMaterialAlphaCutoff)
         discard;
 
     vec3 color = material.baseColor;
     vec3 normal = normalize(vWorldNormal);
-    if (material.hasNormalMap > 0.5) {
+    if (material.normalSpace > 0.5) {
+        normal = normalize(material.tangentNormal);
+    } else if (material.hasNormalMap > 0.5) {
         vec3 tangent = vWorldTangent;
         vec3 bitangent = vWorldBitangent;
         if (dot(tangent, tangent) < 0.000001 || dot(bitangent, bitangent) < 0.000001) {
