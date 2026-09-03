@@ -193,13 +193,21 @@ public unsafe class EditorViewport : IDisposable
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
         var frustum = new ViewFrustum(view * proj);
+        bool isWireframe = _camera.IsOrthographic;
         assetService.UpdateProceduralSkybox(scene.Lights);
-        scene.UpdateTerrainLod(
-            _camera.Position,
-            _height,
-            _camera.FieldOfView,
-            _camera.IsOrthographic,
-            _camera.OrthoSize);
+        // Terrain is intentionally rendered only by the perspective viewport.
+        // Besides avoiding work in the 2D editor views, this keeps their
+        // orthographic cameras from changing the shared terrain LOD state
+        // immediately after the 3D camera has selected its LOD.
+        if (!isWireframe)
+        {
+            scene.UpdateTerrainLod(
+                _camera.Position,
+                _height,
+                _camera.FieldOfView,
+                false,
+                _camera.OrthoSize);
+        }
         LastVisibleEntityCount = 0;
         LastCulledEntityCount = 0;
 
@@ -271,7 +279,6 @@ public unsafe class EditorViewport : IDisposable
         DrawSkybox(assetService, scene, view, proj);
 
         // Draw Entities
-        bool isWireframe = _camera.IsOrthographic;
         if (isWireframe)
         {
             // Orthographic views still need depth testing; disabling it makes
@@ -296,6 +303,10 @@ public unsafe class EditorViewport : IDisposable
         foreach (var entity in scene.Entities)
         {
             if (!entity.Visible || entity.Mesh == null) continue;
+            // The orthographic views are reserved for object editing and do
+            // not draw terrain. Terrain chunks are still present in the
+            // scene for the 3D viewport and picking/scene management.
+            if (isWireframe && entity.TerrainLod != null) continue;
             if (!frustum.Intersects(entity.GetWorldRenderBounds()))
             {
                 LastCulledEntityCount++;

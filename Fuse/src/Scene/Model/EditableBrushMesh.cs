@@ -137,6 +137,149 @@ public sealed class EditableBrushMesh
         .Where(face => ContainsEdge(face, edge))
         .ToList();
 
+    /// <summary>
+    /// Removes the selected polygon faces while preserving every vertex that is
+    /// still referenced by the remaining topology. Editable meshes are allowed
+    /// to be open, so deleting a face creates a real hole instead of trying to
+    /// cap it or deleting neighboring faces.
+    /// </summary>
+    public bool TryDeleteFaces(IEnumerable<int> selectedFaceIds, out string error)
+    {
+        HashSet<int> requestedIds = selectedFaceIds.ToHashSet();
+        if (requestedIds.Count == 0)
+        {
+            error = "Selecione ao menos uma face para apagar.";
+            return false;
+        }
+
+        List<EditableBrushFace> selected = Faces
+            .Where(face => requestedIds.Contains(face.Id))
+            .ToList();
+        if (selected.Count != requestedIds.Count)
+        {
+            error = "Uma ou mais faces selecionadas não pertencem à malha.";
+            return false;
+        }
+
+        // An empty editable brush cannot generate render or collision geometry.
+        // Keeping one face also makes an accidental Ctrl+A/Delete recoverable
+        // through the normal undo command instead of leaving a broken object.
+        if (selected.Count >= Faces.Count)
+        {
+            error = "A malha precisa manter ao menos uma face.";
+            return false;
+        }
+
+        EditableBrushMesh backup = DeepClone();
+        Faces.RemoveAll(face => requestedIds.Contains(face.Id));
+
+        HashSet<int> usedVertexIds = Faces
+            .SelectMany(face => face.Vertices)
+            .ToHashSet();
+        Vertices.RemoveAll(vertex => !usedVertexIds.Contains(vertex.Id));
+        EnsureNextIds();
+
+        if (!TryValidate(out error))
+        {
+            RestoreFrom(backup);
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Creates one polygonal bridge between exactly two open boundary edges.
+    /// This follows ProBuilder's default Bridge Edges rule: a selected edge must
+    /// have one adjacent face, otherwise the operation would create a
+    /// non-manifold result. The existing edge winding determines the endpoint
+    /// correspondence and the orientation of the generated face.
+    /// </summary>
+    public bool TryBridgeEdges(IEnumerable<EditableBrushEdge> selectedEdges, out string error)
+    {
+        EditableBrushEdge[] edges = selectedEdges
+            .Select(edge => EditableBrushEdge.Create(edge.A, edge.B))
+            .Distinct()
+            .ToArray();
+        if (edges.Length != 2)
+        {
+            error = "Bridge Edges exige exatamente duas arestas selecionadas.";
+            return false;
+        }
+
+        Dictionary<EditableBrushEdge, List<int>> incidences = BuildEdgeIncidences();
+        var adjacentFaces = new List<EditableBrushFace>(2);
+        foreach (EditableBrushEdge edge in edges)
+        {
+            if (!incidences.TryGetValue(edge, out List<int>? faceIds) || faceIds.Count != 1)
+            {
+                error = "Bridge Edges só pode usar duas arestas abertas, com uma face em cada lado.";
+                return false;
+            }
+
+            EditableBrushFace? face = FindFace(faceIds[0]);
+            if (face == null)
+            {
+                error = "Não foi possível localizar a face vizinha de uma aresta selecionada.";
+                return false;
+            }
+            adjacentFaces.Add(face);
+        }
+
+        if (adjacentFaces[0].Id == adjacentFaces[1].Id)
+        {
+            error = "Bridge Edges precisa conectar arestas de faces diferentes.";
+            return false;
+        }
+        if (edges[0].Contains(edges[1].A) || edges[0].Contains(edges[1].B))
+        {
+            error = "As duas arestas precisam ter quatro endpoints diferentes.";
+            return false;
+        }
+
+        if (!TryGetDirectedEdge(adjacentFaces[0].Vertices, edges[0], out int firstStart, out int firstEnd) ||
+            !TryGetDirectedEdge(adjacentFaces[1].Vertices, edges[1], out int secondStart, out int secondEnd))
+        {
+            error = "Não foi possível manter a orientação das arestas selecionadas.";
+            return false;
+        }
+
+        int[] endpointIds = [firstStart, firstEnd, secondStart, secondEnd];
+        if (endpointIds.Distinct().Count() != endpointIds.Length || endpointIds.Any(id => FindVertex(id) == null))
+        {
+            error = "Bridge Edges encontrou endpoints inválidos na topologia.";
+            return false;
+        }
+
+        // The direction of each selected edge comes from its existing face. A
+        // manifold bridge must traverse both boundary edges in the opposite
+        // direction, otherwise the generated polygon is inside-out on one of
+        // the openings. This winding also removes the old mesh-center normal
+        // heuristic, which could flip an otherwise correct bridge.
+        List<int> bridgeLoop = [firstEnd, firstStart, secondEnd, secondStart];
+        EditableBrushMesh backup = DeepClone();
+        string lastError = "As arestas não formam uma face válida.";
+        EditableBrushFace? prototype = FindFace(adjacentFaces[0].Id);
+        if (prototype == null || CalculateNormal(bridgeLoop, GetPosition).LengthSquared() < Epsilon * Epsilon)
+        {
+            error = "Bridge Edges falhou sem alterar a malha: a ponte geraria uma face degenerada.";
+            return false;
+        }
+
+        int previousFaceCount = Faces.Count;
+        AddFace(prototype.CloneWithVertices(bridgeLoop));
+        if (Faces.Count != previousFaceCount + 1 || !TryValidate(out lastError))
+        {
+            RestoreFrom(backup);
+            error = $"Bridge Edges falhou sem alterar a malha: {lastError}";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     public static bool ContainsEdge(EditableBrushFace face, EditableBrushEdge edge)
     {
         for (int index = 0; index < face.Vertices.Count; index++)

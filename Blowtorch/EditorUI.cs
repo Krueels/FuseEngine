@@ -1671,7 +1671,20 @@ public unsafe class EditorUI : IDisposable
         //}
         // avoids conflict with the camera sprint.
 
-        if (ImGui.IsKeyPressed(ImGuiKey.Delete) && _selectedObjects.Count > 0)
+        if (io.KeyAlt && ImGui.IsKeyPressed(ImGuiKey.B) &&
+            IsEditingBrushComponents && _brushComponentMode == BrushComponentMode.Edge)
+        {
+            ExecuteBrushEditOperation(sceneService, assetService, history, "BridgeEdges");
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Delete) &&
+            IsEditingBrushComponents &&
+            _brushComponentMode == BrushComponentMode.Face &&
+            _selectedBrushFaces.Count > 0)
+        {
+            ExecuteBrushEditOperation(sceneService, assetService, history, "DeleteFaces");
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.Delete) && _selectedObjects.Count > 0)
         {
             DeleteObjects(_selectedObjects.ToList(), sceneService, assetService, history);
         }
@@ -1918,6 +1931,18 @@ public unsafe class EditorUI : IDisposable
             if (DrawToolbarButton("Loop Cut", "", false))
                 ExecuteBrushEditOperation(sceneService, assetService, history, "LoopCut");
             ImGui.SameLine(0, 3);
+            if (_brushComponentMode == BrushComponentMode.Face &&
+                DrawToolbarButton("Delete Face", "Delete", false))
+            {
+                ExecuteBrushEditOperation(sceneService, assetService, history, "DeleteFaces");
+            }
+            if (_brushComponentMode == BrushComponentMode.Edge &&
+                DrawToolbarButton("Bridge Edges", "Alt+B", false))
+            {
+                ExecuteBrushEditOperation(sceneService, assetService, history, "BridgeEdges");
+            }
+            if (_brushComponentMode is BrushComponentMode.Face or BrushComponentMode.Edge)
+                ImGui.SameLine(0, 3);
             if (DrawToolbarButton(_brushEditTool == BrushEditTool.Knife ? "Knife: Click" : "Knife", "", _brushEditTool == BrushEditTool.Knife))
             {
                 _brushEditTool = _brushEditTool == BrushEditTool.Knife ? BrushEditTool.None : BrushEditTool.Knife;
@@ -2291,6 +2316,12 @@ public unsafe class EditorUI : IDisposable
                 if (_selectedBrushEdges.Count == 0)
                     error = "Selecione uma aresta para criar o Loop Cut.";
                 break;
+            case "DeleteFaces":
+                changed = topology.TryDeleteFaces(_selectedBrushFaces, out error);
+                break;
+            case "BridgeEdges":
+                changed = topology.TryBridgeEdges(_selectedBrushEdges, out error);
+                break;
             default:
                 return;
         }
@@ -2302,8 +2333,10 @@ public unsafe class EditorUI : IDisposable
         }
 
         RefreshEditableBrush(brush, sceneService, assetService);
-        if (operation is "Bevel" or "LoopCut")
+        if (operation is "Bevel" or "LoopCut" or "BridgeEdges")
             _selectedBrushEdges.Clear();
+        if (operation == "DeleteFaces")
+            _selectedBrushFaces.Clear();
         CommitBrushTopologySnapshot(pre, sceneService, assetService, history);
     }
 
@@ -2365,6 +2398,12 @@ public unsafe class EditorUI : IDisposable
         ImGui.DragFloat("Extrude distance", ref _brushExtrudeDistance, 0.01f, -10.0f, 10.0f, "%.3f");
         ImGui.SameLine();
         if (ImGui.Button("Extrude")) ExecuteBrushEditOperation(sceneService, assetService, history, "Extrude");
+        if (_brushComponentMode == BrushComponentMode.Face)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Delete Face"))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "DeleteFaces");
+        }
         ImGui.SetNextItemWidth(115);
         ImGui.DragFloat("Inset amount", ref _brushInsetAmount, 0.01f, 0.001f, 0.95f, "%.3f");
         ImGui.SameLine();
@@ -2380,6 +2419,12 @@ public unsafe class EditorUI : IDisposable
         ImGui.SliderFloat("Loop Cut", ref _brushLoopCutFactor, 0.02f, 0.98f, "%.2f");
         ImGui.SameLine();
         if (ImGui.Button("Cut")) ExecuteBrushEditOperation(sceneService, assetService, history, "LoopCut");
+        if (_brushComponentMode == BrushComponentMode.Edge)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Bridge Edges"))
+                ExecuteBrushEditOperation(sceneService, assetService, history, "BridgeEdges");
+        }
 
         ImGui.Separator();
         ImGui.TextDisabled(_brushEditTool == BrushEditTool.Knife
@@ -2427,7 +2472,7 @@ public unsafe class EditorUI : IDisposable
                         ClearBrushComponentSelection();
                     }
                 }
-                if (ImGui.IsKeyPressed(ImGuiKey.B))
+                if (ImGui.IsKeyPressed(ImGuiKey.B) && !ImGui.GetIO().KeyAlt)
                 {
                     EndTerrainSculpt(sceneService, assetService, history);
                     EndFaceExtrudeDrag(sceneService, assetService, history);
