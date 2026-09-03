@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using Fuse.Math;
 using Fuse.Scene.Model;
 using Fuse.Renderer;
 using Fuse.Core;
@@ -385,6 +386,36 @@ public class EditorSceneService
             Logger.Warn($"Terrain asset could not be loaded for '{mapObj.Id}': {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Gets the world-space bounds of the terrain chunks already present in
+    /// the editor scene. Selection overlays must use these resident render
+    /// chunks instead of loading/regenerating the terrain asset again.
+    /// </summary>
+    public bool TryGetTerrainRenderBounds(string terrainId, out AABB bounds)
+    {
+        bounds = new AABB();
+        if (string.IsNullOrWhiteSpace(terrainId))
+            return false;
+
+        bool found = false;
+        foreach (Entity entity in _scene.Entities)
+        {
+            if (entity.TerrainLod == null ||
+                !string.Equals(entity.TerrainChunkGroupId, terrainId, StringComparison.OrdinalIgnoreCase) ||
+                !entity.Visible)
+                continue;
+
+            AABB worldBounds = entity.GetWorldRenderBounds();
+            if (!worldBounds.IsValid)
+                continue;
+
+            bounds.Grow(worldBounds);
+            found = true;
+        }
+
+        return found;
     }
 
     public TerrainAsset? TryLoadTerrainAsset(MapObject mapObj, EditorAssetService assetService)

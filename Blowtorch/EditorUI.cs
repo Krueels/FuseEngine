@@ -86,6 +86,11 @@ public unsafe class EditorUI : IDisposable
     private List<MapObject> _draggedObjects = [];
     private HashSet<MapObject> _selectedObjects = new();
     private HashSet<string> _lastSelectedObjectIds = new();
+    private bool _selectionBoundsCacheValid;
+    private bool _selectionBoundsCacheHasBounds;
+    private int _selectionBoundsCacheKey;
+    private Vector3 _selectionBoundsCacheMin;
+    private Vector3 _selectionBoundsCacheMax;
     private double _lastSelectionTime = 0.0;
     private bool _showModelImportDialog = false;
     private bool _showTerrainCreateDialog;
@@ -423,6 +428,10 @@ public unsafe class EditorUI : IDisposable
             DrawDiagnosticsWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
 
         HandleKeyboardShortcuts(sceneService, assetService, history, inputService);
+        // RenderDebug runs after the UI pass. Preparing the cache here also
+        // captures selection changes made by the hierarchy later in this
+        // frame, without doing any terrain generation from the render path.
+        GetSelectionAABB(sceneService, assetService, out _, out _);
         Undo.EndFrame(history, sceneService, assetService);
     }
 
@@ -3576,7 +3585,7 @@ public unsafe class EditorUI : IDisposable
             }
             else if (_currentMode == EditorMode.Select && _selectedObjects.Count > 0)
             {
-                if (GetSelectionAABB(assetService, out Vector3 tMin, out Vector3 tMax))
+                if (GetSelectionAABB(sceneService, assetService, out Vector3 tMin, out Vector3 tMax))
                 {
                     showHandles = true;
                     boxMin = tMin;
@@ -9377,7 +9386,7 @@ public unsafe class EditorUI : IDisposable
 
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         DrawWorldAxes(drawList, viewport, vpPos, vpSize);
-        DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, assetService);
+        DrawSelectionHighlight(drawList, viewport, vpPos, vpSize, sceneService, assetService);
         DrawBrushComponentOverlay(drawList, viewport, vpPos, vpSize);
         DrawTerrainNeighborPreview(drawList, viewport, vpPos, vpSize, sceneService, assetService);
         DrawTerrainBrushPreview(drawList, viewport, vpPos, vpSize, sceneService, assetService);
@@ -10138,12 +10147,13 @@ public unsafe class EditorUI : IDisposable
         EditorViewport viewport,
         Vector2 vpPos,
         Vector2 vpSize,
+        EditorSceneService sceneService,
         EditorAssetService assetService)
     {
         if (_currentMode != EditorMode.Select || _selectedObjects.Count == 0)
             return;
 
-        if (GetSelectionAABB(assetService, out Vector3 min, out Vector3 max))
+        if (GetSelectionAABB(sceneService, assetService, out Vector3 min, out Vector3 max))
         {
             Vector3[] corners =
             [
@@ -10562,8 +10572,55 @@ public unsafe class EditorUI : IDisposable
         else if (axis == 2) v.Z = val;
     }
 
-    private bool GetSelectionAABB(EditorAssetService assetService, out Vector3 totalMin, out Vector3 totalMax)
+    private int GetSelectionBoundsCacheKey(EditorSceneService sceneService)
     {
+        var hash = new HashCode();
+        hash.Add(sceneService.Scene);
+        hash.Add(sceneService.Revision);
+
+        foreach (MapObject selObj in _selectedObjects.OrderBy(o => o.Id, StringComparer.OrdinalIgnoreCase))
+        {
+            hash.Add(selObj.Id, StringComparer.OrdinalIgnoreCase);
+            hash.Add(selObj.Visible);
+            hash.Add(selObj.IsModel);
+            hash.Add(selObj.Model);
+            hash.Add(selObj.IsTerrain);
+            hash.Add(selObj.TerrainAssetPath);
+            hash.Add(selObj.ModelScale);
+
+            MapBody? body = selObj.Body;
+            if (body == null)
+            {
+                hash.Add(false);
+                continue;
+            }
+
+            hash.Add(true);
+            hash.Add(body.Shape);
+            hash.Add(body.Position);
+            hash.Add(body.Rotation);
+            hash.Add(body.HalfExtents);
+            hash.Add(body.Radius);
+            hash.Add(body.Height);
+        }
+
+        return hash.ToHashCode();
+    }
+
+    private bool GetSelectionAABB(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        out Vector3 totalMin,
+        out Vector3 totalMax)
+    {
+        int cacheKey = GetSelectionBoundsCacheKey(sceneService);
+        if (_selectionBoundsCacheValid && _selectionBoundsCacheKey == cacheKey)
+        {
+            totalMin = _selectionBoundsCacheMin;
+            totalMax = _selectionBoundsCacheMax;
+            return _selectionBoundsCacheHasBounds;
+        }
+
         totalMin = new Vector3(float.MaxValue);
         totalMax = new Vector3(float.MinValue);
         bool hasBounds = false;
@@ -10576,32 +10633,17 @@ public unsafe class EditorUI : IDisposable
 
             if (selObj.IsTerrain && !string.IsNullOrWhiteSpace(selObj.TerrainAssetPath))
             {
-                try
+                if (sceneService.TryGetTerrainRenderBounds(selObj.Id, out var terrainBounds))
                 {
-                    string terrainPath = assetService.ResolveEditorAssetPath(selObj.TerrainAssetPath);
-                    if (File.Exists(terrainPath))
-                    {
-                        TerrainTileSetAsset terrain = TerrainTileSetAsset.Load(terrainPath);
-                        terrain.GetBounds(out Vector3 terrainMin, out Vector3 terrainMax);
-                        for (int i = 0; i < 8; i++)
-                        {
-                            Vector3 local = new(
-                                (i & 1) == 0 ? terrainMin.X : terrainMax.X,
-                                (i & 2) == 0 ? terrainMin.Y : terrainMax.Y,
-                                (i & 4) == 0 ? terrainMin.Z : terrainMax.Z);
-                            Vector3 world = body.Position + Vector3.Transform(local, rotMatrix);
-                            totalMin = Vector3.Min(totalMin, world);
-                            totalMax = Vector3.Max(totalMax, world);
-                        }
+                    totalMin = Vector3.Min(totalMin, terrainBounds.GetBoundsMin());
+                    totalMax = Vector3.Max(totalMax, terrainBounds.GetBoundsMax());
+                    hasBounds = true;
+                }
 
-                        hasBounds = true;
-                        continue;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"Terrain bounds could not be read for '{selObj.Id}': {ex.Message}");
-                }
+                // There is no visible selection box to draw when the terrain
+                // chunks are not resident, so do not fall back to a costly
+                // asset load here.
+                continue;
             }
 
             if (body.Shape == MapShapeType.Trimesh && selObj.IsModel && selObj.Model != null)
@@ -10643,6 +10685,12 @@ public unsafe class EditorUI : IDisposable
             }
             hasBounds = true;
         }
+
+        _selectionBoundsCacheKey = cacheKey;
+        _selectionBoundsCacheMin = totalMin;
+        _selectionBoundsCacheMax = totalMax;
+        _selectionBoundsCacheHasBounds = hasBounds;
+        _selectionBoundsCacheValid = true;
         return hasBounds;
     }
 
@@ -11010,8 +11058,10 @@ public unsafe class EditorUI : IDisposable
     {
         _previewManager.Draw3DPreview(drawer);
 
-        if (GetSelectionAABB(assetService, out Vector3 totalMin, out Vector3 totalMax))
+        if (_selectionBoundsCacheValid && _selectionBoundsCacheHasBounds)
         {
+            Vector3 totalMin = _selectionBoundsCacheMin;
+            Vector3 totalMax = _selectionBoundsCacheMax;
             Vector3 center = (totalMin + totalMax) * 0.5f;
             Vector3 halfExt = (totalMax - totalMin) * 0.5f;
             Vector3 color = new Vector3(0.2f, 1.0f, 0.2f);
