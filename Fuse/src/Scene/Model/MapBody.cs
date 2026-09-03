@@ -10,6 +10,7 @@ public enum MapShapeType
     Plane,
     Trimesh,
     ConvexHull,
+    Compound,
     None
 }
 

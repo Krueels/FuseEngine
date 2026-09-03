@@ -12469,33 +12469,10 @@
       }
     },
     {
-      "id": "TV_TV.obj",
-      "visible": true,
-      "body": {
-        "shape": "none",
-        "position": [
-          15.875,
-          1.4375,
-          8.25
-        ],
-        "rotation": [
-          -1.4901161E-08,
-          0,
-          -1,
-          0
-        ],
-        "mass": 0,
-        "friction": 0,
-        "restitution": 0,
-        "is_trigger": false
-      }
-    },
-    {
       "id": "TV_led_tv",
       "visible": true,
-      "parent": "TV_TV.obj",
       "body": {
-        "shape": "none",
+        "shape": "compound",
         "position": [
           15.875,
           1.4375,
@@ -12507,8 +12484,8 @@
           -1,
           0
         ],
-        "mass": 0,
-        "friction": 0,
+        "mass": 20,
+        "friction": 0.5,
         "restitution": 0,
         "is_trigger": false
       }
@@ -16010,8 +15987,8 @@
     "erosion_factor": 0.85,
     "erosion_occlusion": 0.6,
     "wind_direction": [
-      0.95782626,
-      0.28734788
+      0.9578263,
+      0.2873479
     ],
     "wind_speed": 3,
     "max_distance": 3000,
@@ -16033,7 +16010,7 @@
     "shadow_update_interval": 0.12
   },
   "volumetric_fog": {
-    "enabled": true,
+    "enabled": false,
     "density": 0.0073,
     "base_height": 0,
     "height_falloff": 180,
@@ -16042,6 +16019,7 @@
     "max_distance": 4000,
     "noise_scale": 0.004,
     "noise_strength": 0.35,
+    "noise_contrast": 1,
     "wind_direction": [
       0.97014254,
       0.24253564
@@ -16074,6 +16052,19 @@
     "small_wave_length": 0.75,
     "spectrum_seed": 1337,
     "debug_view": 0,
+    "physics_enabled": true,
+    "water_density": 1000,
+    "buoyancy_strength": 1,
+    "water_linear_drag": 1.05,
+    "water_angular_drag": 1,
+    "buoyancy_probe_count": 8,
+    "player_gravity_scale": 0.55,
+    "player_sink_acceleration": 3.5,
+    "player_swim_up_acceleration": 16,
+    "player_swim_up_speed": 4,
+    "player_water_move_speed": 2.5,
+    "player_water_drag": 3,
+    "player_surface_float_strength": 4,
     "normal_map_enabled": true,
     "normal_map_strength": 0.32,
     "normal_map_scale": 0.035,

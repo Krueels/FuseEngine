@@ -239,7 +239,14 @@ public class EditorSceneService
                 }
                 else if (!mapObj.IsModel && mapObj.Body.Shape == MapShapeType.Sphere && mapObj.Body.Radius.HasValue)
                 {
-                    entity.Transform.Scale = new System.Numerics.Vector3(mapObj.Body.Radius.Value * 2.0f);
+                    entity.Transform.Scale = MeshGenerator.GetSphereRenderScale(mapObj.Body.Radius.Value);
+                }
+                else if (!mapObj.IsModel && mapObj.Body.Shape == MapShapeType.Capsule &&
+                         mapObj.Body.Radius.HasValue && mapObj.Body.Height.HasValue)
+                {
+                    entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                        mapObj.Body.Radius.Value,
+                        mapObj.Body.Height.Value);
                 }
                 else
                 {

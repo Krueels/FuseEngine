@@ -1548,6 +1548,31 @@
         "restitution": 0,
         "is_trigger": false
       }
+    },
+    {
+      "id": "new_sphere",
+      "visible": true,
+      "mesh": "sphere",
+      "material": "Materials/Default.fmat",
+      "body": {
+        "shape": "sphere",
+        "position": [
+          4,
+          6,
+          3
+        ],
+        "rotation": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "mass": 500,
+        "friction": 0.5,
+        "restitution": 0,
+        "is_trigger": false,
+        "radius": 0.5
+      }
     }
   ],
   "skybox_settings": {

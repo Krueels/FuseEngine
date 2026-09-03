@@ -80,6 +80,7 @@ public sealed class OceanPhysicsSystem
             SourceVertices = body.TrimeshVertices;
             SourceIndices = body.TrimeshIndices;
             SourceScale = body.TrimeshScale;
+            SourceCompoundChildren = body.CompoundChildren;
             Vertices = vertices;
             Indices = indices;
             Volume = volume;
@@ -94,6 +95,7 @@ public sealed class OceanPhysicsSystem
         public Vector3[]? SourceVertices { get; }
         public uint[]? SourceIndices { get; }
         public Vector3 SourceScale { get; }
+        public IReadOnlyList<RigidBody.CompoundChild> SourceCompoundChildren { get; }
         public Vector3[] Vertices { get; }
         public uint[] Indices { get; }
         public float Volume { get; }
@@ -118,6 +120,9 @@ public sealed class OceanPhysicsSystem
                     return ReferenceEquals(SourceVertices, body.TrimeshVertices) &&
                            ReferenceEquals(SourceIndices, body.TrimeshIndices) &&
                            VectorNearlyEqual(SourceScale, body.TrimeshScale);
+
+                case RigidBody.ShapeType.Compound:
+                    return ReferenceEquals(SourceCompoundChildren, body.CompoundChildren);
 
                 default:
                     return false;
@@ -876,12 +881,18 @@ public sealed class OceanPhysicsSystem
             case RigidBody.ShapeType.Box:
                 return BuildBoxGeometry(body);
 
+            case RigidBody.ShapeType.Sphere:
+                return BuildSphereGeometry(body);
+
             case RigidBody.ShapeType.Capsule:
                 return BuildCapsuleGeometry(body);
 
             case RigidBody.ShapeType.ConvexHull:
             case RigidBody.ShapeType.Trimesh:
                 return BuildMeshGeometry(body);
+
+            case RigidBody.ShapeType.Compound:
+                return BuildCompoundGeometry(body);
 
             default:
                 return null;
@@ -924,6 +935,95 @@ public sealed class OceanPhysicsSystem
         ];
 
         return FinalizeGeometry(body, vertices, indices);
+    }
+
+    private static CachedConvexGeometry BuildSphereGeometry(RigidBody body)
+    {
+        float radius = MathF.Max(MathF.Abs(body.SphereRadius), 0.01f);
+        const int slices = 24;
+        const int hemisphereSegments = 8;
+
+        var vertices = new List<Vector3>(slices * (hemisphereSegments - 1) + 2);
+        var rings = new List<int>(hemisphereSegments - 1);
+        int bottomPole = vertices.Count;
+        vertices.Add(new Vector3(0.0f, -radius, 0.0f));
+
+        for (int ring = 1; ring < hemisphereSegments; ring++)
+        {
+            float latitude = -MathF.PI * 0.5f + MathF.PI * ring / hemisphereSegments;
+            rings.Add(AddRing(
+                vertices,
+                slices,
+                MathF.Sin(latitude) * radius,
+                MathF.Cos(latitude) * radius));
+        }
+
+        int topPole = vertices.Count;
+        vertices.Add(new Vector3(0.0f, radius, 0.0f));
+
+        var indices = new List<uint>(slices * hemisphereSegments * 6);
+        AddPoleRingTriangles(indices, bottomPole, rings[0], slices);
+        for (int i = 0; i + 1 < rings.Count; i++)
+            AddRingTriangles(indices, rings[i], rings[i + 1], slices);
+        AddPoleRingTriangles(indices, topPole, rings[^1], slices);
+
+        return FinalizeGeometry(body, vertices.ToArray(), indices.ToArray());
+    }
+
+    private static CachedConvexGeometry? BuildCompoundGeometry(RigidBody body)
+    {
+        var vertices = new List<Vector3>();
+        var indices = new List<uint>();
+
+        foreach (RigidBody.CompoundChild child in body.CompoundChildren)
+        {
+            var childBody = new RigidBody();
+            switch (child.Type)
+            {
+                case RigidBody.ShapeType.Box:
+                    childBody.SetBox(child.BoxHalfExtents);
+                    break;
+                case RigidBody.ShapeType.Sphere:
+                    childBody.SetSphere(child.SphereRadius);
+                    break;
+                case RigidBody.ShapeType.Capsule:
+                    childBody.SetCapsule(child.CapsuleRadius, child.CapsuleHeight);
+                    break;
+                case RigidBody.ShapeType.ConvexHull:
+                    if (child.Vertices == null || child.Vertices.Length < 4)
+                        continue;
+                    childBody.SetConvexHull(child.Vertices, child.Scale);
+                    break;
+                case RigidBody.ShapeType.Trimesh:
+                    if (child.Vertices == null || child.Vertices.Length < 4)
+                        continue;
+                    childBody.SetTrimesh(child.Vertices, child.Indices ?? [], child.Scale);
+                    break;
+                default:
+                    continue;
+            }
+
+            CachedConvexGeometry? childGeometry = BuildConvexGeometry(childBody);
+            if (childGeometry == null || childGeometry.Vertices.Length < 4)
+                continue;
+
+            uint baseIndex = (uint)vertices.Count;
+            foreach (Vector3 vertex in childGeometry.Vertices)
+            {
+                vertices.Add(Vector3.Transform(vertex, child.Rotation) + child.Position);
+            }
+
+            foreach (uint index in childGeometry.Indices)
+            {
+                if (index < childGeometry.Vertices.Length)
+                    indices.Add(baseIndex + index);
+            }
+        }
+
+        if (vertices.Count < 4 || indices.Count < 12)
+            return null;
+
+        return FinalizeGeometry(body, vertices.ToArray(), indices.ToArray());
     }
 
     private static CachedConvexGeometry BuildCapsuleGeometry(RigidBody body)

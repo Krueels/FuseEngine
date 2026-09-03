@@ -255,6 +255,91 @@ public static class MeshGenerator
         return true;
     }
 
+    /// <summary>
+    /// Generates the normalized sphere used by the built-in primitive mesh
+    /// cache. Its radius is normally 0.5, so a diameter-based render scale
+    /// maps directly to the authored physics radius.
+    /// </summary>
+    public static MeshData GenerateSphere(float radius = 0.5f, int segments = 24, int rings = 16)
+    {
+        radius = MathF.Max(MathF.Abs(radius), 0.001f);
+        segments = System.Math.Max(3, segments);
+        rings = System.Math.Max(2, rings);
+
+        var vertices = new List<Vertex>((rings + 1) * segments);
+        for (int ring = 0; ring <= rings; ring++)
+        {
+            float v = (float)ring / rings;
+            float latitude = MathF.PI * 0.5f - v * MathF.PI;
+            float y = MathF.Sin(latitude);
+            float horizontal = MathF.Cos(latitude);
+
+            for (int segment = 0; segment < segments; segment++)
+            {
+                float u = (float)segment / segments;
+                float theta = u * MathF.PI * 2.0f;
+                Vector3 normal = Vector3.Normalize(new Vector3(
+                    horizontal * MathF.Cos(theta),
+                    y,
+                    horizontal * MathF.Sin(theta)));
+
+                vertices.Add(new Vertex
+                {
+                    Position = normal * radius,
+                    Normal = normal,
+                    TexCoord = new Vector2(u, v)
+                });
+            }
+        }
+
+        var indices = new List<uint>(rings * segments * 6);
+        for (int ring = 0; ring < rings; ring++)
+        {
+            for (int segment = 0; segment < segments; segment++)
+            {
+                int nextSegment = (segment + 1) % segments;
+                uint a = (uint)(ring * segments + segment);
+                uint b = (uint)(ring * segments + nextSegment);
+                uint c = (uint)((ring + 1) * segments + segment);
+                uint d = (uint)((ring + 1) * segments + nextSegment);
+
+                // The first/last strip contains one degenerate triangle at
+                // each pole; keeping the same topology for every strip makes
+                // the UV seam and tangent generation predictable.
+                indices.Add(a);
+                indices.Add(b);
+                indices.Add(c);
+                indices.Add(b);
+                indices.Add(d);
+                indices.Add(c);
+            }
+        }
+
+        return new MeshData(vertices.ToArray(), indices.ToArray());
+    }
+
+    /// <summary>
+    /// Converts an authored sphere radius to the scale of the normalized
+    /// sphere mesh (whose source radius is 0.5).
+    /// </summary>
+    public static Vector3 GetSphereRenderScale(float radius) =>
+        new(MathF.Max(MathF.Abs(radius), 0.001f) * 2.0f);
+
+    /// <summary>
+    /// Converts an authored capsule radius and cylinder height to the scale
+    /// of the normalized capsule mesh (radius 0.5, cylinder height 1.0).
+    /// The Y extent includes both hemispheres.
+    /// </summary>
+    public static Vector3 GetCapsuleRenderScale(float radius, float height)
+    {
+        float normalizedRadius = MathF.Max(MathF.Abs(radius), 0.001f);
+        float normalizedHeight = MathF.Max(MathF.Abs(height), 0.001f);
+        return new(
+            normalizedRadius * 2.0f,
+            (normalizedHeight + normalizedRadius * 2.0f) * 0.5f,
+            normalizedRadius * 2.0f);
+    }
+
     public static MeshData GenerateCapsule(float radius, float height, int rings = 12)
     {
         var vertices = new List<Vertex>();

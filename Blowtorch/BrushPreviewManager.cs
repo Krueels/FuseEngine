@@ -36,7 +36,15 @@ namespace Blowtorch
                 {
                     Min = hitPoint;
                     Max = hitPoint;
-                    if (viewport.Camera.ViewType == CameraViewType.Top) { Min = new Vector3(Min.X, -1, Min.Z); Max = new Vector3(Max.X, 1, Max.Z); }
+                    if (viewport.Camera.ViewType == CameraViewType.Top)
+                    {
+                        // In the top view the hit point supplies X/Z and its Y
+                        // is the support height selected by the editor. Start
+                        // the default two-unit brush on that surface instead
+                        // of centering it around world Y=0.
+                        Min = new Vector3(Min.X, hitPoint.Y, Min.Z);
+                        Max = new Vector3(Max.X, hitPoint.Y + 2.0f, Max.Z);
+                    }
                     if (viewport.Camera.ViewType == CameraViewType.Front) { Min = new Vector3(Min.X, Min.Y, -1); Max = new Vector3(Max.X, Max.Y, 1); }
                     if (viewport.Camera.ViewType == CameraViewType.Side) { Min = new Vector3(-1, Min.Y, Min.Z); Max = new Vector3(1, Max.Y, Max.Z); }
                 }

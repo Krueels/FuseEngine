@@ -82,6 +82,7 @@ public unsafe class EditorUI : IDisposable
     private GizmoOperation _gizmoOperation = GizmoOperation.Translate;
     private MapObject? _selectedObject;
     private MapObject? _draggedObject;
+    private List<MapObject> _draggedObjects = [];
     private HashSet<MapObject> _selectedObjects = new();
     private HashSet<string> _lastSelectedObjectIds = new();
     private double _lastSelectionTime = 0.0;
@@ -273,7 +274,7 @@ public unsafe class EditorUI : IDisposable
         if (_focusCameraRequested && _selectedObject != null)
         {
             _focusCameraRequested = false;
-            FocusCameraOnObject(_selectedObject, viewport3D, viewportTop, viewportFront, viewportSide);
+            FocusCameraOnObject(_selectedObject, sceneService, viewport3D, viewportTop, viewportFront, viewportSide);
         }
 
         // --- Dockspace Fullscreen ---
@@ -721,6 +722,30 @@ public unsafe class EditorUI : IDisposable
         return false;
     }
 
+    private float GetGroupDefaultMass(MapObject group, MapDocument doc)
+    {
+        // A group's children are not separate runtime bodies anymore. When a
+        // user first enables the compound collider, seed its mass from the
+        // authored child masses so an already-dynamic selection does not turn
+        // into an unexpected static body. The group mass remains editable as
+        // the single authoritative value afterward.
+        float mass = 0.0f;
+        foreach (MapObject candidate in doc.Objects)
+        {
+            if (candidate == group ||
+                !IsDescendantOf(candidate, group, doc) ||
+                candidate.Body == null)
+            {
+                continue;
+            }
+
+            if (float.IsFinite(candidate.Body.Mass) && candidate.Body.Mass > 0.0f)
+                mass += candidate.Body.Mass;
+        }
+
+        return float.IsFinite(mass) ? mass : 0.0f;
+    }
+
     private void UpdateEntitiesVisibilityRecursive(MapDocument doc, Fuse.Renderer.Scene scene, MapObject obj)
     {
         // A group does not have a render entity of its own. Recalculate the
@@ -788,12 +813,24 @@ public unsafe class EditorUI : IDisposable
         // Calculate center position
         Vector3 sum = Vector3.Zero;
         int count = 0;
+        float groupMass = 0.0f;
+        float groupFriction = 0.5f;
+        float groupRestitution = 0.0f;
+        bool copiedMaterialPhysics = false;
         foreach (var obj in _selectedObjects)
         {
-            if (obj.Body != null)
+            if (obj.Body != null && !obj.IsLight)
             {
                 sum += obj.Body.Position;
                 count++;
+                if (float.IsFinite(obj.Body.Mass) && obj.Body.Mass > 0.0f)
+                    groupMass += obj.Body.Mass;
+                if (!copiedMaterialPhysics)
+                {
+                    groupFriction = obj.Body.Friction;
+                    groupRestitution = obj.Body.Restitution;
+                    copiedMaterialPhysics = true;
+                }
             }
         }
         Vector3 center = count > 0 ? sum / count : Vector3.Zero;
@@ -816,7 +853,10 @@ public unsafe class EditorUI : IDisposable
             {
                 Shape = MapShapeType.None,
                 Position = center,
-                Rotation = Quaternion.Identity
+                Rotation = Quaternion.Identity,
+                Mass = float.IsFinite(groupMass) ? groupMass : 0.0f,
+                Friction = groupFriction,
+                Restitution = groupRestitution
             }
         };
 
@@ -886,8 +926,7 @@ public unsafe class EditorUI : IDisposable
             };
         }
         if (obj.IsTerrain) return HierarchyIconKind.Terrain;
-        if ((obj.Body == null || obj.Body.Shape == MapShapeType.None) &&
-            string.IsNullOrEmpty(obj.Mesh) && string.IsNullOrEmpty(obj.Model))
+        if (IsGroupObject(obj))
             return HierarchyIconKind.Group;
         if (obj.IsModel) return HierarchyIconKind.Model;
         if (obj is Brush) return HierarchyIconKind.Brush;
@@ -899,6 +938,14 @@ public unsafe class EditorUI : IDisposable
             _ => HierarchyIconKind.Other
         };
     }
+
+    private static bool IsGroupObject(MapObject obj) =>
+        !obj.IsLight &&
+        !obj.IsTerrain &&
+        !obj.IsModel &&
+        obj is not Brush &&
+        string.IsNullOrEmpty(obj.Mesh) &&
+        string.IsNullOrEmpty(obj.GeometryGraphPath);
 
     private static string GetHierarchyTypeLabel(MapObject obj)
     {
@@ -1024,6 +1071,896 @@ public unsafe class EditorUI : IDisposable
         ImGui.Separator();
     }
 
+    private void DrawInspectorMultiSelection(
+        IReadOnlyList<MapObject> selection,
+        MapDocument doc,
+        Fuse.Renderer.Scene scene,
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
+    {
+        DrawInspectorMultiHeader(selection.Count);
+
+        bool allVisible = selection.All(obj => obj.Visible);
+        bool visible = allVisible;
+        if (ImGui.Checkbox("Visible##multiVis", ref visible))
+        {
+            Undo.RecordState(_frameBeginState);
+            foreach (MapObject obj in selection)
+            {
+                obj.Visible = visible;
+                Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                if (entity != null)
+                    entity.Visible = visible;
+                UpdateEntitiesVisibilityRecursive(doc, scene, obj);
+            }
+            Undo.ForceEnd(history, sceneService, assetService);
+        }
+
+        bool allHaveMaterial = selection.All(obj => !obj.IsLight);
+        if (allHaveMaterial)
+        {
+            string commonMaterial = selection.Select(obj => obj.MaterialPath ?? "").Distinct().Count() == 1
+                ? selection[0].MaterialPath ?? ""
+                : "";
+            if (DrawMaterialPicker("Material##multiMaterial", commonMaterial, assetService, out string selectedMaterial))
+            {
+                Undo.RecordState(_frameBeginState);
+                foreach (MapObject obj in selection)
+                    AssignMaterial(obj, selectedMaterial, sceneService, assetService);
+                Undo.ForceEnd(history, sceneService, assetService);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("New##multiMaterial"))
+                RequestNewMaterial(selection.ToList());
+        }
+
+        bool allSupportLegacyTexture = selection.All(obj => !obj.IsLight);
+        if (allSupportLegacyTexture &&
+            ImGui.TreeNode("Legacy Texture Compatibility##multiLegacyTexture"))
+        {
+            string commonTexture = selection.Select(obj => obj.Texture ?? "").Distinct().Count() == 1
+                ? selection[0].Texture ?? ""
+                : "";
+            string texture = commonTexture;
+            if (ImGui.InputText("Texture##multiTex", ref texture, 256))
+            {
+                Undo.TrackItem(_frameBeginState);
+                foreach (MapObject obj in selection)
+                {
+                    obj.Texture = texture;
+                    Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                    if (entity == null)
+                        continue;
+
+                    entity.TexturePath = texture;
+                    if (string.IsNullOrWhiteSpace(entity.MaterialPath) &&
+                        !string.IsNullOrWhiteSpace(texture))
+                    {
+                        entity.Material = assetService.AssetManager.GetLegacyMaterial(texture);
+                    }
+                }
+            }
+            ImGui.TreePop();
+        }
+
+        bool allSupportUv = selection.All(obj => !obj.IsModel && !obj.IsLight);
+        if (allSupportUv)
+        {
+            Vector2 commonUvScale = selection.Select(obj => obj.UvScale).Distinct().Count() == 1
+                ? selection[0].UvScale
+                : Vector2.One;
+            Vector2 uvScale = commonUvScale;
+            if (ImGui.DragFloat2("UV Scale##multiUv", ref uvScale, 0.05f))
+            {
+                Undo.TrackItem(_frameBeginState);
+                foreach (MapObject obj in selection)
+                {
+                    obj.UvScale = uvScale;
+                    Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                    if (entity != null)
+                        entity.UvScale = uvScale;
+                }
+            }
+
+            Vector2 commonUvOffset = selection.Select(obj => obj.UvOffset).Distinct().Count() == 1
+                ? selection[0].UvOffset
+                : Vector2.Zero;
+            Vector2 uvOffset = commonUvOffset;
+            if (ImGui.DragFloat2("UV Offset##multiUvOff", ref uvOffset, 0.01f))
+            {
+                Undo.TrackItem(_frameBeginState);
+                foreach (MapObject obj in selection)
+                {
+                    obj.UvOffset = uvOffset;
+                    Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                    if (entity != null)
+                        entity.UvOffset = uvOffset;
+                }
+            }
+
+            float commonUvRotation = selection.Select(obj => obj.UvRotation).Distinct().Count() == 1
+                ? selection[0].UvRotation
+                : 0.0f;
+            float uvRotationDegrees = commonUvRotation * (180.0f / MathF.PI);
+            if (ImGui.DragFloat("UV Rotation##multiUvRot", ref uvRotationDegrees,
+                    0.5f, -360.0f, 360.0f, "%.1f deg"))
+            {
+                Undo.TrackItem(_frameBeginState);
+                float uvRotation = uvRotationDegrees * (MathF.PI / 180.0f);
+                foreach (MapObject obj in selection)
+                {
+                    obj.UvRotation = uvRotation;
+                    Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                    if (entity != null)
+                        entity.UvRotation = uvRotation;
+                }
+            }
+        }
+
+        // Transform is a common option for every selectable object. Position
+        // edits preserve the arrangement by applying a delta; rotation edits
+        // use the first selected object as the shared pivot.
+        if (ImGui.CollapsingHeader("Transform##multiTransform", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            MapObject pivotObject = selection[0];
+            Vector3 pivotPosition = GetInspectorWorldPosition(pivotObject, scene);
+            Quaternion pivotRotation = GetInspectorWorldRotation(pivotObject, scene);
+            Vector3 position = pivotPosition;
+            Vector3 rotationEuler = InspectorQuaternionToEuler(pivotRotation);
+
+            ImGui.TextDisabled("Position uses a delta; rotation uses the first selected object as pivot.");
+            bool positionChanged = ImGui.DragFloat3("Location##multiPosition", ref position, 0.1f);
+            Undo.TrackItem(_frameBeginState);
+            bool rotationChanged = ImGui.DragFloat3(
+                "Rotation##multiRotation",
+                ref rotationEuler,
+                0.5f,
+                -360.0f,
+                360.0f,
+                "%.1f deg");
+            Undo.TrackItem(_frameBeginState);
+
+            bool allScaleEditable = selection.All(obj => CanEditInspectorScale(obj));
+            Vector3 firstScale = GetInspectorScale(selection[0], scene);
+            Vector3 scale = firstScale;
+            bool scaleChanged = false;
+            if (allScaleEditable)
+            {
+                scaleChanged = ImGui.DragFloat3("Scale##multiScale", ref scale, 0.05f);
+                Undo.TrackItem(_frameBeginState);
+            }
+            else
+            {
+                ImGui.TextDisabled("Scale is shown only when every selected object supports the same scale operation.");
+            }
+
+            if (positionChanged || rotationChanged || scaleChanged)
+            {
+                Vector3 positionDelta = position - pivotPosition;
+                Quaternion rotationDelta = rotationChanged
+                    ? Quaternion.Normalize(
+                        InspectorEulerToQuaternion(rotationEuler) * Quaternion.Inverse(pivotRotation))
+                    : Quaternion.Identity;
+                Vector3 scaleFactor = new(
+                    MathF.Abs(firstScale.X) > 0.0001f ? scale.X / firstScale.X : 1.0f,
+                    MathF.Abs(firstScale.Y) > 0.0001f ? scale.Y / firstScale.Y : 1.0f,
+                    MathF.Abs(firstScale.Z) > 0.0001f ? scale.Z / firstScale.Z : 1.0f);
+
+                foreach (MapObject obj in GetObjectsToTransform(doc).ToList())
+                {
+                    Vector3 objectPosition = GetInspectorWorldPosition(obj, scene);
+                    Quaternion objectRotation = GetInspectorWorldRotation(obj, scene);
+                    if (positionChanged)
+                        objectPosition += positionDelta;
+                    if (rotationChanged)
+                    {
+                        objectPosition = pivotPosition +
+                            Vector3.Transform(objectPosition - pivotPosition, rotationDelta);
+                        objectRotation = Quaternion.Normalize(rotationDelta * objectRotation);
+                    }
+
+                    if (positionChanged || rotationChanged)
+                        SetInspectorWorldPose(obj, objectPosition, objectRotation, scene, sceneService);
+
+                    if (scaleChanged)
+                        ApplyInspectorScale(obj, scaleFactor, scene, sceneService, assetService);
+                }
+            }
+        }
+
+        // A light has no material or collision inspector, but all light
+        // objects share a useful set of properties. Keep those controls when
+        // the selection is made exclusively of lights instead of dropping the
+        // whole inspector to the old visibility-only subset.
+        if (selection.All(obj => obj.IsLight))
+            DrawInspectorMultiLightSelection(selection, sceneService);
+
+        // Terrain settings are asset-independent controls common to every
+        // selected terrain. Neighbor creation remains intentionally per asset
+        // and therefore is not exposed in a mixed selection.
+        if (selection.All(obj => obj.IsTerrain))
+            DrawInspectorMultiTerrainSelection(selection, sceneService, assetService);
+
+        // Lights also carry a MapBody for their transform, but that body is
+        // not an editable collision body. Excluding lights here keeps a mixed
+        // light/mesh selection from exposing physics controls that would
+        // silently assign colliders to lights.
+        List<MapObject> bodyObjects = selection
+            .Where(obj => !obj.IsLight && obj.Body != null)
+            .ToList();
+        bool allHaveBodies = bodyObjects.Count == selection.Count;
+        bool allHaveCollision = allHaveBodies &&
+            bodyObjects.All(obj => obj.Body!.Shape != MapShapeType.None);
+        bool refreshScene = false;
+
+        if (allHaveBodies)
+        {
+            ImGui.SeparatorText("Physics (common options)");
+
+            bool allModels = bodyObjects.All(obj => obj.IsModel);
+            bool allGroups = bodyObjects.All(IsGroupObject);
+            bool allDefaultGeometry = bodyObjects.All(obj =>
+                !obj.IsModel && !IsGroupObject(obj) && !obj.IsTerrain);
+            bool allTerrains = bodyObjects.All(obj => obj.IsTerrain);
+            bool canEditCollisionShape = allModels || allGroups ||
+                allDefaultGeometry || allTerrains;
+            if (canEditCollisionShape)
+            {
+                int collisionIndex;
+                string[] collisionLabels;
+                if (allModels)
+                {
+                    collisionLabels = ["Trimesh", "Convex Hull", "No Collision"];
+                    collisionIndex = bodyObjects.Select(obj => obj.Body!.Shape).Distinct().Count() == 1
+                        ? bodyObjects[0].Body!.Shape switch
+                        {
+                            MapShapeType.Trimesh => 0,
+                            MapShapeType.ConvexHull => 1,
+                            _ => 2
+                        }
+                        : 2;
+                }
+                else if (allGroups)
+                {
+                    collisionLabels = ["Compound Group", "No Collision"];
+                    collisionIndex = bodyObjects.All(obj => obj.Body!.Shape == MapShapeType.None) ? 1 : 0;
+                }
+                else if (allTerrains)
+                {
+                    collisionLabels = ["Terrain", "No Collision"];
+                    collisionIndex = bodyObjects.All(obj => obj.Body!.Shape == MapShapeType.None) ? 1 : 0;
+                }
+                else
+                {
+                    collisionLabels = ["Default", "No Collision"];
+                    collisionIndex = bodyObjects.All(obj => obj.Body!.Shape == MapShapeType.None) ? 1 : 0;
+                }
+
+                bool collisionChanged = ImGui.Combo(
+                    "Collision Shape##multiCollision",
+                    ref collisionIndex,
+                    collisionLabels,
+                    collisionLabels.Length);
+                Undo.TrackItem(_frameBeginState);
+                if (collisionChanged)
+                {
+                    foreach (MapObject obj in bodyObjects)
+                    {
+                        if (allModels)
+                        {
+                            obj.Body!.Shape = collisionIndex switch
+                            {
+                                0 => MapShapeType.Trimesh,
+                                1 => MapShapeType.ConvexHull,
+                                _ => MapShapeType.None
+                            };
+                        }
+                        else if (collisionIndex == 1)
+                        {
+                            obj.Body!.Shape = MapShapeType.None;
+                        }
+                        else if (allGroups)
+                        {
+                            obj.Body!.Shape = MapShapeType.Compound;
+                            if (obj.Body.Mass <= 0.0f)
+                                obj.Body.Mass = GetGroupDefaultMass(obj, doc);
+                        }
+                        else if (allTerrains)
+                        {
+                            obj.Body!.Shape = MapShapeType.Trimesh;
+                        }
+                        else
+                        {
+                            obj.Body!.Shape = IsGroupObject(obj)
+                                ? MapShapeType.Compound
+                                : obj.Mesh == "sphere"
+                                    ? MapShapeType.Sphere
+                                    : obj.Mesh == "capsule"
+                                        ? MapShapeType.Capsule
+                                        : MapShapeType.Box;
+                            if (IsGroupObject(obj) && obj.Body.Mass <= 0.0f)
+                                obj.Body.Mass = GetGroupDefaultMass(obj, doc);
+                        }
+                    }
+                    refreshScene = true;
+                }
+            }
+            else
+            {
+                ImGui.TextDisabled("Collision shape is not common for this selection; shared physics values remain available below.");
+            }
+
+            if (allHaveBodies)
+            {
+                bool mixedMass = bodyObjects.Select(obj => obj.Body!.Mass).Distinct().Count() != 1;
+                float mass = bodyObjects[0].Body!.Mass;
+                if (mixedMass)
+                    ImGui.TextDisabled("Mixed values use the first selected object until edited.");
+                if (ImGui.DragFloat("Mass##multiMass", ref mass, 0.1f, 0.0f, 100000.0f, "%.3f"))
+                {
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (MapObject obj in bodyObjects)
+                        obj.Body!.Mass = mass;
+                }
+
+                float commonBuoyancyVolume = bodyObjects.Select(obj => obj.Body!.BuoyancyVolume ?? 0.0f).Distinct().Count() == 1
+                    ? bodyObjects[0].Body!.BuoyancyVolume ?? 0.0f
+                    : 0.0f;
+                float buoyancyVolume = commonBuoyancyVolume;
+                if (ImGui.DragFloat("Buoyancy volume (m³)##multiBuoyancyVolume", ref buoyancyVolume,
+                        0.05f, 0.0f, 100000.0f, "%.3f"))
+                {
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (MapObject obj in bodyObjects)
+                    {
+                        obj.Body!.BuoyancyVolume = buoyancyVolume > 0.0001f
+                            ? buoyancyVolume
+                            : null;
+                    }
+                }
+                ImGui.SameLine();
+                ImGui.TextDisabled("0 = collider volume");
+
+                float friction = bodyObjects[0].Body!.Friction;
+                if (ImGui.DragFloat("Friction##multiFriction", ref friction, 0.05f, 0.0f, 10.0f, "%.2f"))
+                {
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (MapObject obj in bodyObjects)
+                        obj.Body!.Friction = friction;
+                }
+
+                float restitution = bodyObjects[0].Body!.Restitution;
+                if (ImGui.DragFloat("Restitution##multiRestitution", ref restitution, 0.05f, 0.0f, 1.0f, "%.2f"))
+                {
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (MapObject obj in bodyObjects)
+                        obj.Body!.Restitution = restitution;
+                }
+
+                bool commonTrigger = bodyObjects.Select(obj => obj.Body!.IsTrigger).Distinct().Count() == 1
+                    ? bodyObjects[0].Body!.IsTrigger
+                    : false;
+                bool trigger = commonTrigger;
+                if (ImGui.Checkbox("Is Trigger##multiTrigger", ref trigger))
+                {
+                    Undo.TrackItem(_frameBeginState);
+                    foreach (MapObject obj in bodyObjects)
+                    {
+                        obj.Body!.IsTrigger = trigger;
+                        Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                        if (entity != null)
+                            ApplyTriggerPreviewMaterial(obj, entity, trigger, assetService);
+                    }
+                }
+
+            }
+
+            if (allHaveCollision)
+            {
+                MapShapeType commonShape = bodyObjects.Select(obj => obj.Body!.Shape).Distinct().Count() == 1
+                    ? bodyObjects[0].Body!.Shape
+                    : MapShapeType.None;
+                if ((commonShape is MapShapeType.Box or MapShapeType.Trimesh) &&
+                    bodyObjects.All(obj => obj.Body!.HalfExtents.HasValue))
+                {
+                    Vector3 halfExtents = bodyObjects[0].Body!.HalfExtents!.Value;
+                    if (ImGui.DragFloat3("Half Extents##multiHalfExtents", ref halfExtents, 0.05f, 0.0f, 1000.0f, "%.3f"))
+                    {
+                        Undo.TrackItem(_frameBeginState);
+                        foreach (MapObject obj in bodyObjects)
+                        {
+                            Vector3 oldExtents = obj.Body!.HalfExtents!.Value;
+                            obj.Body.HalfExtents = Vector3.Max(new Vector3(0.05f), halfExtents);
+                            if (obj is Brush brush)
+                            {
+                                brush.ScalePlanes(obj.Body.HalfExtents.Value / Vector3.Max(oldExtents, new Vector3(0.05f)));
+                                assetService.InvalidateMesh(brush.Id);
+                            }
+                            Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                            if (entity != null)
+                            {
+                                entity.Transform.Scale = obj is Brush
+                                    ? Vector3.One
+                                    : obj.Body.HalfExtents.Value * 2.0f;
+                                if (obj is Brush brushObject)
+                                    entity.Mesh = assetService.GetOrCreateMesh(brushObject);
+                            }
+                        }
+                        refreshScene = refreshScene || ImGui.IsItemDeactivatedAfterEdit();
+                    }
+                }
+                else if (commonShape == MapShapeType.Sphere &&
+                         bodyObjects.All(obj => obj.Body!.Radius.HasValue))
+                {
+                    float radius = bodyObjects[0].Body!.Radius!.Value;
+                    if (ImGui.DragFloat("Radius##multiRadius", ref radius, 0.05f, 0.0f, 1000.0f, "%.3f"))
+                    {
+                        Undo.TrackItem(_frameBeginState);
+                        foreach (MapObject obj in bodyObjects)
+                        {
+                            obj.Body!.Radius = MathF.Max(0.05f, radius);
+                            Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                            if (entity != null)
+                                entity.Transform.Scale = new Vector3(obj.Body.Radius.Value * 2.0f);
+                        }
+                        refreshScene = refreshScene || ImGui.IsItemDeactivatedAfterEdit();
+                    }
+                }
+                else if (commonShape == MapShapeType.Capsule &&
+                         bodyObjects.All(obj => obj.Body!.Radius.HasValue && obj.Body.Height.HasValue))
+                {
+                    float radius = bodyObjects[0].Body!.Radius!.Value;
+                    if (ImGui.DragFloat("Radius##multiCapsuleRadius", ref radius, 0.05f, 0.0f, 1000.0f, "%.3f"))
+                    {
+                        Undo.TrackItem(_frameBeginState);
+                        foreach (MapObject obj in bodyObjects)
+                        {
+                            obj.Body!.Radius = MathF.Max(0.05f, radius);
+                            Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                            if (entity != null && obj.Body.Height.HasValue)
+                                entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                                    obj.Body.Radius.Value,
+                                    obj.Body.Height.Value);
+                        }
+                        refreshScene = refreshScene || ImGui.IsItemDeactivatedAfterEdit();
+                    }
+
+                    float height = bodyObjects[0].Body!.Height!.Value;
+                    if (ImGui.DragFloat("Height##multiCapsuleHeight", ref height, 0.05f, 0.0f, 1000.0f, "%.3f"))
+                    {
+                        Undo.TrackItem(_frameBeginState);
+                        foreach (MapObject obj in bodyObjects)
+                        {
+                            obj.Body!.Height = MathF.Max(0.05f, height);
+                            Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+                            if (entity != null && obj.Body.Radius.HasValue)
+                                entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                                    obj.Body.Radius.Value,
+                                    obj.Body.Height.Value);
+                        }
+                        refreshScene = refreshScene || ImGui.IsItemDeactivatedAfterEdit();
+                    }
+                }
+            }
+        }
+
+        if (refreshScene)
+            sceneService.PopulateScene(assetService);
+    }
+
+    private void DrawInspectorMultiLightSelection(
+        IReadOnlyList<MapObject> selection,
+        EditorSceneService sceneService)
+    {
+        ImGui.SeparatorText("Light (common options)");
+        Action syncLights = () =>
+        {
+            foreach (MapObject obj in selection)
+                SyncLight(sceneService, obj);
+        };
+
+        string[] lightTypes = ["point", "spot", "directional"];
+        bool commonType = selection.Select(obj => obj.LightType ?? "point").Distinct().Count() == 1;
+        int typeIndex = selection[0].LightType switch
+        {
+            "spot" => 1,
+            "directional" => 2,
+            _ => 0
+        };
+        if (ImGui.Combo("Type##multiLightType", ref typeIndex, lightTypes, lightTypes.Length))
+        {
+            Undo.TrackItem(_frameBeginState);
+            string type = lightTypes[Math.Clamp(typeIndex, 0, lightTypes.Length - 1)];
+            foreach (MapObject obj in selection)
+                obj.LightType = type;
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+        if (!commonType)
+            ImGui.TextDisabled("Mixed values use the first selected light until edited.");
+
+        Vector3 color = selection[0].LightColor;
+        if (ImGui.ColorEdit3("Color##multiLightColor", ref color, ImGuiColorEditFlags.Float))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightColor = color;
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        float intensity = selection[0].LightIntensity;
+        if (ImGui.DragFloat("Intensity##multiLightIntensity", ref intensity, 0.05f, 0.0f, 100.0f))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightIntensity = MathF.Max(0.0f, intensity);
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        float radius = selection[0].LightRadius;
+        if (ImGui.DragFloat("Radius##multiLightRadius", ref radius, 0.1f, 0.1f, 500.0f))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightRadius = MathF.Max(0.1f, radius);
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        if (selection.All(obj => obj.LightType == "spot"))
+        {
+            float innerDegrees = float.RadiansToDegrees(selection[0].LightInnerCone);
+            if (ImGui.DragFloat("Inner Cone##multiLightInner", ref innerDegrees, 0.5f, 0.0f, 90.0f))
+            {
+                Undo.TrackItem(_frameBeginState);
+                float inner = float.DegreesToRadians(innerDegrees);
+                foreach (MapObject obj in selection)
+                    obj.LightInnerCone = inner;
+                syncLights();
+            }
+            else
+            {
+                Undo.TrackItem(_frameBeginState);
+            }
+
+            float outerDegrees = float.RadiansToDegrees(selection[0].LightOuterCone);
+            if (ImGui.DragFloat("Outer Cone##multiLightOuter", ref outerDegrees, 0.5f, 0.0f, 90.0f))
+            {
+                Undo.TrackItem(_frameBeginState);
+                float outer = float.DegreesToRadians(outerDegrees);
+                foreach (MapObject obj in selection)
+                    obj.LightOuterCone = outer;
+                syncLights();
+            }
+            else
+            {
+                Undo.TrackItem(_frameBeginState);
+            }
+        }
+
+        bool castShadows = selection[0].LightCastShadows;
+        if (ImGui.Checkbox("Cast Shadows##multiLightShadows", ref castShadows))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightCastShadows = castShadows;
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        float shadowBias = selection[0].LightShadowBias;
+        if (ImGui.DragFloat("Shadow Bias##multiLightShadowBias", ref shadowBias, 0.0001f, 0.0f, 0.1f, "%.5f"))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightShadowBias = MathF.Max(0.0f, shadowBias);
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        bool dynamic = selection[0].LightDynamic;
+        if (ImGui.Checkbox("Dynamic (Follow Parent)##multiLightDynamic", ref dynamic))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.LightDynamic = dynamic;
+            syncLights();
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+    }
+
+    private void DrawInspectorMultiTerrainSelection(
+        IReadOnlyList<MapObject> selection,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        ImGui.SeparatorText("Terrain (common options)");
+
+        int chunkQuads = selection[0].TerrainChunkQuads;
+        if (ImGui.DragInt("Chunk quads##multiTerrainChunkQuads", ref chunkQuads, 1.0f, 1, 256))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.TerrainChunkQuads = Math.Clamp(chunkQuads, 1, 256);
+            sceneService.PopulateScene(assetService);
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        float pixelError = selection[0].TerrainPixelError;
+        if (ImGui.DragFloat("Pixel error##multiTerrainPixelError", ref pixelError, 0.1f, 0.1f, 100.0f, "%.2f px"))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.TerrainPixelError = MathF.Max(0.1f, pixelError);
+            sceneService.PopulateScene(assetService);
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+
+        int collisionLod = selection[0].TerrainCollisionLod;
+        if (ImGui.DragInt(
+                "Collision LOD##multiTerrainCollisionLod",
+                ref collisionLod,
+                1.0f,
+                0,
+                TerrainMeshGenerator.MaxLodLevels - 1))
+        {
+            Undo.TrackItem(_frameBeginState);
+            foreach (MapObject obj in selection)
+                obj.TerrainCollisionLod = Math.Clamp(
+                    collisionLod,
+                    0,
+                    TerrainMeshGenerator.MaxLodLevels - 1);
+            sceneService.PopulateScene(assetService);
+        }
+        else
+        {
+            Undo.TrackItem(_frameBeginState);
+        }
+    }
+
+    private static Vector3 GetInspectorWorldPosition(MapObject obj, Fuse.Renderer.Scene scene)
+    {
+        Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+        return obj.Body?.Position ?? entity?.Transform.Position ?? Vector3.Zero;
+    }
+
+    private static Quaternion GetInspectorWorldRotation(MapObject obj, Fuse.Renderer.Scene scene)
+    {
+        Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+        return obj.Body?.Rotation ?? entity?.Transform.Rotation ?? Quaternion.Identity;
+    }
+
+    private static void SetInspectorWorldPose(
+        MapObject obj,
+        Vector3 position,
+        Quaternion rotation,
+        Fuse.Renderer.Scene scene,
+        EditorSceneService sceneService)
+    {
+        if (obj.Body != null)
+        {
+            obj.Body.Position = position;
+            obj.Body.Rotation = rotation;
+        }
+
+        Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+        if (entity != null)
+        {
+            entity.Transform.Position = position;
+            entity.Transform.Rotation = rotation;
+        }
+        SyncLight(sceneService, obj);
+    }
+
+    private static bool CanEditInspectorScale(MapObject obj)
+    {
+        if (obj.IsModel)
+            return true;
+        if (obj.Body == null)
+            return false;
+        return obj.Body.Shape switch
+        {
+            MapShapeType.Box or MapShapeType.Trimesh => obj.Body.HalfExtents.HasValue,
+            MapShapeType.Sphere => obj.Body.Radius.HasValue,
+            MapShapeType.Capsule => obj.Body.Radius.HasValue && obj.Body.Height.HasValue,
+            _ => false
+        };
+    }
+
+    private static Vector3 GetInspectorScale(MapObject obj, Fuse.Renderer.Scene scene)
+    {
+        if (obj.IsModel)
+            return obj.ModelScale;
+        if (obj.Body != null)
+        {
+            if ((obj.Body.Shape is MapShapeType.Box or MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
+                return obj.Body.HalfExtents.Value * 2.0f;
+            if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
+                return new Vector3(obj.Body.Radius.Value * 2.0f);
+            if (obj.Body.Shape == MapShapeType.Capsule && obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
+                return new Vector3(obj.Body.Radius.Value * 2.0f, obj.Body.Height.Value, obj.Body.Radius.Value * 2.0f);
+        }
+        return scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id)?.Transform.Scale ?? Vector3.One;
+    }
+
+    private static void ApplyInspectorScale(
+        MapObject obj,
+        Vector3 factor,
+        Fuse.Renderer.Scene scene,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        if (obj.IsModel)
+        {
+            obj.ModelScale = Vector3.Max(new Vector3(0.01f), obj.ModelScale * factor);
+        }
+        else if (obj.Body != null)
+        {
+            switch (obj.Body.Shape)
+            {
+                case MapShapeType.Box:
+                case MapShapeType.Trimesh:
+                    if (obj.Body.HalfExtents.HasValue)
+                    {
+                        Vector3 oldExtents = obj.Body.HalfExtents.Value;
+                        obj.Body.HalfExtents = Vector3.Max(new Vector3(0.05f), oldExtents * factor);
+                        if (obj is Brush brush)
+                        {
+                            brush.ScalePlanes(obj.Body.HalfExtents.Value / Vector3.Max(oldExtents, new Vector3(0.05f)));
+                            assetService.InvalidateMesh(brush.Id);
+                        }
+                    }
+                    break;
+                case MapShapeType.Sphere:
+                    if (obj.Body.Radius.HasValue)
+                    {
+                        float averageFactor = (factor.X + factor.Y + factor.Z) / 3.0f;
+                        obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value * averageFactor);
+                    }
+                    break;
+                case MapShapeType.Capsule:
+                    if (obj.Body.Radius.HasValue)
+                        obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value *
+                            (factor.X + factor.Z) * 0.5f);
+                    if (obj.Body.Height.HasValue)
+                        obj.Body.Height = MathF.Max(0.05f, obj.Body.Height.Value * factor.Y);
+                    break;
+            }
+        }
+
+        Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
+        if (entity != null)
+        {
+            entity.Transform.Scale = GetInspectorScale(obj, scene);
+            SyncPrimitiveVisualScale(obj, entity);
+            if (obj is Brush brushObject)
+                entity.Mesh = assetService.GetOrCreateMesh(brushObject);
+        }
+        SyncLight(sceneService, obj);
+    }
+
+    private static void SyncPrimitiveVisualScale(MapObject obj, Entity entity)
+    {
+        if (obj.IsModel || obj.Body == null)
+            return;
+
+        if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
+        {
+            entity.Transform.Scale = MeshGenerator.GetSphereRenderScale(obj.Body.Radius.Value);
+        }
+        else if (obj.Body.Shape == MapShapeType.Capsule &&
+                 obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
+        {
+            entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                obj.Body.Radius.Value,
+                obj.Body.Height.Value);
+        }
+    }
+
+    private static Vector3 InspectorQuaternionToEuler(Quaternion q)
+    {
+        float t0 = 2.0f * (q.W * q.X + q.Y * q.Z);
+        float t1 = 1.0f - 2.0f * (q.X * q.X + q.Y * q.Y);
+        float pitch = MathF.Atan2(t0, t1);
+        float t2 = float.Clamp(2.0f * (q.W * q.Y - q.Z * q.X), -1.0f, 1.0f);
+        float yaw = MathF.Asin(t2);
+        float t3 = 2.0f * (q.W * q.Z + q.X * q.Y);
+        float t4 = 1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z);
+        float roll = MathF.Atan2(t3, t4);
+        return new Vector3(
+            float.RadiansToDegrees(pitch),
+            float.RadiansToDegrees(yaw),
+            float.RadiansToDegrees(roll));
+    }
+
+    private static Quaternion InspectorEulerToQuaternion(Vector3 euler)
+    {
+        Quaternion pitch = Quaternion.CreateFromAxisAngle(Vector3.UnitX, float.DegreesToRadians(euler.X));
+        Quaternion yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, float.DegreesToRadians(euler.Y));
+        Quaternion roll = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, float.DegreesToRadians(euler.Z));
+        return Quaternion.Normalize(roll * yaw * pitch);
+    }
+
+    private List<MapObject> GetHierarchyDragObjects(MapObject source, MapDocument doc)
+    {
+        IEnumerable<MapObject> candidates = _selectedObjects.Contains(source)
+            ? _selectedObjects.Where(doc.Objects.Contains)
+            : [source];
+
+        List<MapObject> selected = candidates
+            .Distinct()
+            .ToList();
+
+        // If a parent and one of its children are both selected, moving the
+        // parent already moves the complete subtree. Drag only the selected
+        // roots so the operation cannot create redundant or cyclic parenting.
+        return selected
+            .Where(candidate => !selected.Any(other =>
+                other != candidate && IsDescendantOf(candidate, other, doc)))
+            .OrderBy(candidate => doc.Objects.IndexOf(candidate))
+            .ToList();
+    }
+
+    private static void UpdateEntityParent(
+        Fuse.Renderer.Scene scene,
+        MapObject obj,
+        string? parentId)
+    {
+        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
+        if (entity == null)
+            return;
+
+        entity.ParentId = parentId ?? "";
+        var parentEntity = string.IsNullOrEmpty(parentId)
+            ? null
+            : scene.Entities.FirstOrDefault(e => e.Id == parentId);
+        if (parentEntity != null)
+        {
+            entity.InitialRelativePosition = entity.Transform.Position - parentEntity.Transform.Position;
+            entity.InitialRelativeRotation = Quaternion.Inverse(parentEntity.Transform.Rotation) * entity.Transform.Rotation;
+        }
+    }
+
+    private bool CanDropHierarchyObjects(
+        IReadOnlyCollection<MapObject> draggedObjects,
+        MapObject target,
+        MapDocument doc)
+    {
+        return draggedObjects.Count > 0 &&
+            !draggedObjects.Any(dragged =>
+                dragged == target || IsDescendantOf(target, dragged, doc));
+    }
+
     private void DrawObjectNode(MapObject obj, MapDocument doc, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history, EditorViewport viewport3D, EditorViewport viewportTop, EditorViewport viewportFront, EditorViewport viewportSide, string filter, ref MapObject? objectToDelete, ref MapObject? objectToDuplicate)
     {
         if (!HierarchyMatchesFilter(obj, doc, filter))
@@ -1060,7 +1997,11 @@ public unsafe class EditorUI : IDisposable
         if (ImGui.BeginDragDropSource())
         {
             _draggedObject = obj;
-            ImGui.Text($"Moving/Grouping: {obj.Id}");
+            _draggedObjects = GetHierarchyDragObjects(obj, doc);
+            if (_draggedObjects.Count > 1)
+                ImGui.Text($"Moving/Grouping: {_draggedObjects.Count} objects");
+            else
+                ImGui.Text($"Moving/Grouping: {obj.Id}");
             ImGui.SetDragDropPayload("HIERARCHY_NODE", IntPtr.Zero, 0);
             ImGui.EndDragDropSource();
         }
@@ -1097,48 +2038,41 @@ public unsafe class EditorUI : IDisposable
 
             if (payload.NativePtr != null)
             {
-                if (_draggedObject != null && _draggedObject != obj && !IsDescendantOf(obj, _draggedObject, doc))
+                List<MapObject> draggedObjects = _draggedObjects.Count > 0
+                    ? _draggedObjects
+                    : _draggedObject != null ? [_draggedObject] : [];
+
+                if (CanDropHierarchyObjects(draggedObjects, obj, doc))
                 {
                     var pre = doc.Serialize();
-                    
+
                     if (isReorderAbove || isReorderBelow)
                     {
                         // REORDER
-                        _draggedObject.ParentId = obj.ParentId;
-                        doc.Objects.Remove(_draggedObject);
+                        foreach (MapObject draggedObject in draggedObjects)
+                        {
+                            draggedObject.ParentId = obj.ParentId;
+                            doc.Objects.Remove(draggedObject);
+                        }
+
                         int insertIndex = doc.Objects.IndexOf(obj);
                         if (isReorderBelow) insertIndex++;
                         if (insertIndex < 0) insertIndex = 0;
                         if (insertIndex > doc.Objects.Count) insertIndex = doc.Objects.Count;
-                        doc.Objects.Insert(insertIndex, _draggedObject);
-                        
-                        var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == _draggedObject.Id);
-                        var parentEntity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == obj.ParentId);
-                        if (entity != null)
+
+                        foreach (MapObject draggedObject in draggedObjects)
                         {
-                            entity.ParentId = obj.ParentId ?? "";
-                            if (parentEntity != null)
-                            {
-                                entity.InitialRelativePosition = entity.Transform.Position - parentEntity.Transform.Position;
-                                entity.InitialRelativeRotation = Quaternion.Inverse(parentEntity.Transform.Rotation) * entity.Transform.Rotation;
-                            }
+                            doc.Objects.Insert(insertIndex++, draggedObject);
+                            UpdateEntityParent(sceneService.Scene, draggedObject, obj.ParentId);
                         }
                     }
                     else
                     {
                         // REPARENT
-                        _draggedObject.ParentId = obj.Id;
-                        
-                        var entity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == _draggedObject.Id);
-                        var parentEntity = sceneService.Scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null)
+                        foreach (MapObject draggedObject in draggedObjects)
                         {
-                            entity.ParentId = obj.Id;
-                            if (parentEntity != null)
-                            {
-                                entity.InitialRelativePosition = entity.Transform.Position - parentEntity.Transform.Position;
-                                entity.InitialRelativeRotation = Quaternion.Inverse(parentEntity.Transform.Rotation) * entity.Transform.Rotation;
-                            }
+                            draggedObject.ParentId = obj.Id;
+                            UpdateEntityParent(sceneService.Scene, draggedObject, obj.Id);
                         }
                     }
 
@@ -1148,6 +2082,7 @@ public unsafe class EditorUI : IDisposable
                     sceneService.PopulateScene(assetService);
                 }
                 _draggedObject = null;
+                _draggedObjects.Clear();
             }
             ImGui.EndDragDropTarget();
         }
@@ -1170,8 +2105,14 @@ public unsafe class EditorUI : IDisposable
             }
             else
             {
-                _selectedObjects.Clear();
-                _selectedObjects.Add(obj);
+                // Clicking an already selected row is also the beginning of
+                // a possible drag. Keep the rest of the selection intact so
+                // dragging one selected object can move the whole selection.
+                if (!_selectedObjects.Contains(obj))
+                {
+                    _selectedObjects.Clear();
+                    _selectedObjects.Add(obj);
+                }
                 _selectedObject = obj;
             }
             _lastSelectionTime = ImGui.GetTime();
@@ -1179,7 +2120,7 @@ public unsafe class EditorUI : IDisposable
 
         if (ImGui.IsItemHovered() && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
         {
-            FocusCameraOnObject(obj, viewport3D, viewportTop, viewportFront, viewportSide);
+            FocusCameraOnObject(obj, sceneService, viewport3D, viewportTop, viewportFront, viewportSide);
         }
 
         if (ImGui.BeginPopupContextItem($"context_{obj.Id}"))
@@ -1193,7 +2134,7 @@ public unsafe class EditorUI : IDisposable
 
             if (ImGui.MenuItem("Focus Camera"))
             {
-                FocusCameraOnObject(obj, viewport3D, viewportTop, viewportFront, viewportSide);
+                FocusCameraOnObject(obj, sceneService, viewport3D, viewportTop, viewportFront, viewportSide);
             }
             if (ImGui.MenuItem("Toggle Visibility"))
             {
@@ -2800,6 +3741,8 @@ public unsafe class EditorUI : IDisposable
                     Vector3 currentScale = Vector3.One;
                     if ((body.Shape == MapShapeType.Box || body.Shape == MapShapeType.Trimesh) && body.HalfExtents.HasValue) currentScale = body.HalfExtents.Value * 2.0f;
                     else if (body.Shape == MapShapeType.Sphere && body.Radius.HasValue) currentScale = new Vector3(body.Radius.Value * 2.0f);
+                    else if (body.Shape == MapShapeType.Capsule && body.Radius.HasValue && body.Height.HasValue)
+                        currentScale = new Vector3(body.Radius.Value * 2.0f, body.Height.Value, body.Radius.Value * 2.0f);
                     else currentScale = _selectedObject.ModelScale;
 
                     if (EditorGizmo.ManipulateScale(body.Position, currentScale, view, proj, vpPos, vpSize, out Vector3 newScale, snapVal, !selectionDelayActive))
@@ -2832,6 +3775,13 @@ public unsafe class EditorUI : IDisposable
                                 {
                                     float avgMult = (scaleMult.X + scaleMult.Y + scaleMult.Z) / 3.0f;
                                     obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value * avgMult);
+                                }
+                                else if (obj.Body.Shape == MapShapeType.Capsule &&
+                                         obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
+                                {
+                                    obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value *
+                                        (scaleMult.X + scaleMult.Z) * 0.5f);
+                                    obj.Body.Height = MathF.Max(0.05f, obj.Body.Height.Value * scaleMult.Y);
                                 }
                                 else
                                 {
@@ -2870,6 +3820,11 @@ public unsafe class EditorUI : IDisposable
                                 entity.Transform.Scale = obj.Body.HalfExtents.Value * 2.0f;
                             else if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
                                 entity.Transform.Scale = new Vector3(obj.Body.Radius.Value * 2.0f);
+                            else if (obj.Body.Shape == MapShapeType.Capsule &&
+                                     obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
+                                entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                                    obj.Body.Radius.Value,
+                                    obj.Body.Height.Value);
                             else
                                 entity.Transform.Scale = obj.ModelScale;
                         }
@@ -2965,6 +3920,18 @@ public unsafe class EditorUI : IDisposable
                     hitPoint = ApplySnap(hitPoint, _snapGrid);
 
                     bool isMouseClicked = ImGui.IsMouseClicked(ImGuiMouseButton.Left);
+
+                    // The top view only gives the brush tool an X/Z position.
+                    // When a new brush starts over an existing brush, use the
+                    // highest vertical surface under the cursor as its base
+                    // instead of placing the new brush around world Y=0.
+                    if (isMouseClicked && !_previewManager.HasPreview &&
+                        viewport.Camera.ViewType == CameraViewType.Top)
+                    {
+                        hitPoint.Y = FindTopBrushSupportHeight(
+                            hitPoint,
+                            sceneService.Document);
+                    }
                     
                     if (isMouseClicked && !_previewManager.HasPreview)
                     {
@@ -3872,14 +4839,160 @@ public unsafe class EditorUI : IDisposable
         return new Vector3(ApplySnap(val.X, snap), ApplySnap(val.Y, snap), ApplySnap(val.Z, snap));
     }
 
-    private void FocusCameraOnObject(MapObject obj, EditorViewport vp3D, EditorViewport vpTop, EditorViewport vpFront, EditorViewport vpSide)
+    private static void FocusCameraOnObject(
+        MapObject obj,
+        EditorSceneService sceneService,
+        EditorViewport vp3D,
+        EditorViewport vpTop,
+        EditorViewport vpFront,
+        EditorViewport vpSide)
     {
-        if (obj.Body == null) return;
-        Vector3 pos = obj.Body.Position;
-        vp3D.Camera.Position = pos;
-        vpTop.Camera.Position = pos;
-        vpFront.Camera.Position = pos;
-        vpSide.Camera.Position = pos;
+        if (!TryGetFocusSphere(obj, sceneService, out Vector3 center, out float radius))
+            return;
+
+        FrameCameraOnSphere(vp3D, center, radius);
+        FrameCameraOnSphere(vpTop, center, radius);
+        FrameCameraOnSphere(vpFront, center, radius);
+        FrameCameraOnSphere(vpSide, center, radius);
+    }
+
+    private static bool TryGetFocusSphere(
+        MapObject obj,
+        EditorSceneService sceneService,
+        out Vector3 center,
+        out float radius)
+    {
+        center = obj.Body?.Position ?? Vector3.Zero;
+        radius = 1.0f;
+
+        // Prefer the rendered bounds. This includes imported models, editable
+        // brushes and primitive meshes after their authored transform/scale is
+        // applied, so the focus target is the visual object rather than merely
+        // the physics origin.
+        var combinedBounds = new Fuse.Math.AABB();
+        bool hasVisualBounds = false;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void IncludeObjectBounds(MapObject candidate)
+        {
+            if (!visited.Add(candidate.Id))
+                return;
+
+            Entity? entity = sceneService.Scene.Entities.FirstOrDefault(
+                item => item.Id.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase));
+            if (entity != null)
+            {
+                Fuse.Math.AABB bounds = entity.GetWorldRenderBounds();
+                if (bounds.IsValid)
+                {
+                    if (!hasVisualBounds)
+                    {
+                        combinedBounds = bounds;
+                        hasVisualBounds = true;
+                    }
+                    else
+                    {
+                        combinedBounds.Grow(bounds);
+                    }
+                }
+            }
+
+            // A group has no mesh of its own. Include all descendants so F on
+            // a group frames the complete composition, as in Unity/Godot.
+            foreach (MapObject child in sceneService.Document.Objects.Where(
+                         item => string.Equals(item.ParentId, candidate.Id,
+                             StringComparison.OrdinalIgnoreCase)))
+            {
+                IncludeObjectBounds(child);
+            }
+        }
+
+        IncludeObjectBounds(obj);
+        if (hasVisualBounds)
+        {
+            center = combinedBounds.GetCenter();
+            radius = Vector3.Distance(center, combinedBounds.GetBoundsMax());
+            if (float.IsFinite(radius) && radius > 0.0001f)
+                return true;
+        }
+
+        // Collision fallback keeps focus useful for invisible/collision-only
+        // objects and lights, which do not have render bounds.
+        if (TryGetBodyFocusSphere(obj.Body, out center, out radius))
+            return true;
+
+        if (obj.IsLight)
+        {
+            center = obj.Body?.Position ?? Vector3.Zero;
+            radius = 1.0f;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetBodyFocusSphere(
+        MapBody? body,
+        out Vector3 center,
+        out float radius)
+    {
+        center = body?.Position ?? Vector3.Zero;
+        radius = 1.0f;
+        if (body == null)
+            return false;
+
+        switch (body.Shape)
+        {
+            case MapShapeType.Box when body.HalfExtents.HasValue:
+                radius = body.HalfExtents.Value.Length();
+                break;
+            case MapShapeType.Sphere when body.Radius.HasValue:
+                radius = MathF.Abs(body.Radius.Value);
+                break;
+            case MapShapeType.Capsule when body.Radius.HasValue && body.Height.HasValue:
+                radius = MathF.Abs(body.Height.Value) * 0.5f + MathF.Abs(body.Radius.Value);
+                break;
+            default:
+                return false;
+        }
+
+        return float.IsFinite(radius) && radius > 0.0001f &&
+               float.IsFinite(center.X) && float.IsFinite(center.Y) && float.IsFinite(center.Z);
+    }
+
+    private static void FrameCameraOnSphere(
+        EditorViewport viewport,
+        Vector3 center,
+        float radius)
+    {
+        ViewportCamera camera = viewport.Camera;
+        float safeRadius = MathF.Max(MathF.Abs(radius), 0.5f);
+
+        if (camera.IsOrthographic)
+        {
+            camera.Position = center;
+            camera.OrthoSize = Math.Clamp(safeRadius * 2.0f * 1.25f, 0.1f, 10000.0f);
+            return;
+        }
+
+        float aspect = MathF.Max(0.01f, (float)viewport.Width / MathF.Max(viewport.Height, 1));
+        float verticalHalfFov = float.DegreesToRadians(
+            float.Clamp(camera.FieldOfView, 1.0f, 170.0f)) * 0.5f;
+        float horizontalHalfFov = MathF.Atan(MathF.Tan(verticalHalfFov) * aspect);
+        float limitingHalfFov = MathF.Min(verticalHalfFov, horizontalHalfFov);
+        float visibleSin = MathF.Max(MathF.Sin(limitingHalfFov), 0.01f);
+        float distance = safeRadius / visibleSin * 1.15f;
+        distance = MathF.Max(distance, safeRadius + camera.NearClipPlane + 0.05f);
+
+        Vector3 front = camera.Front;
+        if (front.LengthSquared() <= 0.000001f)
+            front = -Vector3.UnitZ;
+        else
+            front = Vector3.Normalize(front);
+
+        // Keep the current orbit direction and place the object at the center
+        // of the view, instead of putting the camera inside the object.
+        camera.Position = center - front * distance;
     }
 
     private void DrawMapWindow(
@@ -5347,14 +6460,20 @@ public unsafe class EditorUI : IDisposable
             var payload = ImGui.AcceptDragDropPayload("HIERARCHY_NODE");
             if (payload.NativePtr != null)
             {
-                if (_draggedObject != null && !string.IsNullOrEmpty(_draggedObject.ParentId))
+                List<MapObject> draggedObjects = _draggedObjects.Count > 0
+                    ? _draggedObjects
+                    : _draggedObject != null ? [_draggedObject] : [];
+                List<MapObject> objectsToUnparent = draggedObjects
+                    .Where(draggedObject => !string.IsNullOrEmpty(draggedObject.ParentId))
+                    .ToList();
+
+                if (objectsToUnparent.Count > 0)
                 {
                     var pre = doc.Serialize();
-                    _draggedObject.ParentId = null;
-                    var entity = scene.Entities.FirstOrDefault(e => e.Id == _draggedObject.Id);
-                    if (entity != null)
+                    foreach (MapObject draggedObject in objectsToUnparent)
                     {
-                        entity.ParentId = "";
+                        draggedObject.ParentId = null;
+                        UpdateEntityParent(scene, draggedObject, null);
                     }
                     var post = doc.Serialize();
                     sceneService.MarkModified(post);
@@ -5362,6 +6481,7 @@ public unsafe class EditorUI : IDisposable
                     sceneService.PopulateScene(assetService);
                 }
                 _draggedObject = null;
+                _draggedObjects.Clear();
             }
             ImGui.EndDragDropTarget();
         }
@@ -5390,136 +6510,13 @@ public unsafe class EditorUI : IDisposable
         }
         else if (_selectedObjects.Count > 1)
         {
-            DrawInspectorMultiHeader(_selectedObjects.Count);
-
-            bool allVisible = _selectedObjects.All(o => o.Visible);
-            bool multiVis = allVisible;
-            if (ImGui.Checkbox("Visible##multiVis", ref multiVis))
-            {
-                Undo.RecordState(_frameBeginState);
-                foreach (var obj in _selectedObjects)
-                {
-                    obj.Visible = multiVis;
-                    var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                    if (entity != null) entity.Visible = multiVis;
-                    UpdateEntitiesVisibilityRecursive(doc, scene, obj);
-                }
-                Undo.ForceEnd(history, sceneService, assetService);
-            }
-
-            string commonMaterial = _selectedObjects.Select(o => o.MaterialPath).Distinct().Count() == 1
-                ? (_selectedObjects.First().MaterialPath ?? "")
-                : "";
-            if (DrawMaterialPicker("Material##multiMaterial", commonMaterial, assetService, out string multiMaterial))
-            {
-                Undo.RecordState(_frameBeginState);
-                foreach (var obj in _selectedObjects)
-                    AssignMaterial(obj, multiMaterial, sceneService, assetService);
-                Undo.ForceEnd(history, sceneService, assetService);
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("New##multiMaterial"))
-                RequestNewMaterial(_selectedObjects);
-
-            if (ImGui.TreeNode("Legacy Texture Compatibility##multiLegacyTexture"))
-            {
-                string commonTex = _selectedObjects.Select(o => o.Texture).Distinct().Count() == 1 ? (_selectedObjects.First().Texture ?? "") : "";
-                string multiTex = commonTex;
-                if (ImGui.InputText("Texture##multiTex", ref multiTex, 256))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.Texture = multiTex;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null)
-                        {
-                            entity.TexturePath = multiTex;
-                            if (string.IsNullOrWhiteSpace(entity.MaterialPath) && !string.IsNullOrWhiteSpace(multiTex))
-                                entity.Material = assetService.AssetManager.GetLegacyMaterial(multiTex);
-                        }
-                    }
-                }
-                ImGui.TreePop();
-            }
-
-            if (_selectedObjects.All(o => !o.IsModel))
-            {
-                Vector2 commonUv = _selectedObjects.Select(o => o.UvScale).Distinct().Count() == 1 ? _selectedObjects.First().UvScale : Vector2.One;
-                Vector2 multiUv = commonUv;
-                if (ImGui.DragFloat2("UV Scale##multiUv", ref multiUv, 0.05f))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.UvScale = multiUv;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null) entity.UvScale = multiUv;
-                    }
-                    
-                }
-
-                Vector2 commonUvOff = _selectedObjects.Select(o => o.UvOffset).Distinct().Count() == 1 ? _selectedObjects.First().UvOffset : Vector2.Zero;
-                Vector2 multiUvOff = commonUvOff;
-                if (ImGui.DragFloat2("UV Offset##multiUvOff", ref multiUvOff, 0.01f))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.UvOffset = multiUvOff;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null) entity.UvOffset = multiUvOff;
-                    }
-                    
-                }
-
-                float commonUvRot = _selectedObjects.Select(o => o.UvRotation).Distinct().Count() == 1 ? _selectedObjects.First().UvRotation : 0f;
-                float multiUvRotDeg = commonUvRot * (180f / MathF.PI);
-                if (ImGui.DragFloat("UV Rotation##multiUvRot", ref multiUvRotDeg, 0.5f, -360f, 360f, "%.1f deg"))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    float multiUvRot = multiUvRotDeg * (MathF.PI / 180f);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.UvRotation = multiUvRot;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null) entity.UvRotation = multiUvRot;
-                    }
-                    
-                }
-            }
-
-            if (_selectedObjects.All(o => o.Body != null))
-            {
-                float commonMass = _selectedObjects.Select(o => o.Body!.Mass).Distinct().Count() == 1 ? _selectedObjects.First().Body!.Mass : 0f;
-                float multiMass = commonMass;
-                if (ImGui.DragFloat("Mass##multiMass", ref multiMass, 0.1f, 0.0f, 100000.0f, "%.3f"))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.Body!.Mass = multiMass;
-                    }
-                    
-                }
-
-                // Is Trigger
-                bool commonTrigger = _selectedObjects.Select(o => o.Body!.IsTrigger).Distinct().Count() == 1
-                    ? _selectedObjects.First().Body!.IsTrigger : false;
-                bool multiTrigger = commonTrigger;
-                if (ImGui.Checkbox("Is Trigger##multiTrigger", ref multiTrigger))
-                {
-                    Undo.TrackItem(_frameBeginState);
-                    foreach (var obj in _selectedObjects)
-                    {
-                        obj.Body!.IsTrigger = multiTrigger;
-                        var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
-                        if (entity != null)
-                            ApplyTriggerPreviewMaterial(obj, entity, multiTrigger, assetService);
-                    }
-                    
-                }
-            }
+            DrawInspectorMultiSelection(
+                _selectedObjects.ToList(),
+                doc,
+                scene,
+                sceneService,
+                assetService,
+                history);
         }
         else
         {
@@ -6144,7 +7141,8 @@ public unsafe class EditorUI : IDisposable
                         }
                         else
                         {
-                            string[] shapes = { "Default", "No Collision" };
+                            bool isGroup = IsGroupObject(obj);
+                            string[] shapes = { isGroup ? "Compound Group" : "Default", "No Collision" };
                             int shapeIdx = body.Shape == MapShapeType.None ? 1 : 0;
                             bool shapeChanged = ImGui.Combo("Collision", ref shapeIdx, shapes, shapes.Length);
                             Undo.TrackItem(_frameBeginState);
@@ -6153,11 +7151,17 @@ public unsafe class EditorUI : IDisposable
                                 if (shapeIdx == 1) body.Shape = MapShapeType.None;
                                 else 
                                 {
-                                    if (obj is Fuse.Scene.Model.Brush) body.Shape = MapShapeType.Box;
+                                    if (isGroup) body.Shape = MapShapeType.Compound;
+                                    else if (obj is Fuse.Scene.Model.Brush) body.Shape = MapShapeType.Box;
                                     else if (obj.Mesh == "sphere") body.Shape = MapShapeType.Sphere;
+                                    else if (obj.Mesh == "capsule") body.Shape = MapShapeType.Capsule;
                                     else body.Shape = MapShapeType.Box;
+                                    if (isGroup && body.Mass <= 0.0f)
+                                        body.Mass = GetGroupDefaultMass(obj, sceneService.Document);
                                 }
                             }
+                            if (isGroup && body.Shape == MapShapeType.Compound)
+                                ImGui.TextDisabled("Children are solved as one compound body; child masses are ignored.");
                         }
 
                         Vector3 pos = body.Position;
@@ -6347,6 +7351,17 @@ public unsafe class EditorUI : IDisposable
                                 bool capHChanged = ImGui.DragFloat("Height##inspectCapH", ref capH, 0.05f, 0.0f, 1000.0f, "%.3f");
                                 Undo.TrackItem(_frameBeginState);
                                 if (capHChanged) body.Height = ApplySnap(capH, _snapGrid);
+
+                                if (capRadChanged || capHChanged)
+                                {
+                                    var entity = scene.Entities.FirstOrDefault(e => e.Id == obj.Id);
+                                    if (entity != null && body.Radius.HasValue && body.Height.HasValue)
+                                    {
+                                        entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                                            body.Radius.Value,
+                                            body.Height.Value);
+                                    }
+                                }
                                 
                                 break;
                         }
@@ -6906,6 +7921,7 @@ public unsafe class EditorUI : IDisposable
         light.OuterConeAngle = obj.LightOuterCone;
         light.CastShadows = obj.LightCastShadows;
         light.ShadowBias = obj.LightShadowBias;
+        light.Dynamic = obj.LightDynamic;
     }
 
     private void CommitBrush(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
@@ -8898,6 +9914,190 @@ public unsafe class EditorUI : IDisposable
         else if (viewType == CameraViewType.Side && MathF.Abs(rayDir.X) > 0.001f)
             hit = rayOrigin + rayDir * (-rayOrigin.X / rayDir.X);
         return hit;
+    }
+
+    private static float FindTopBrushSupportHeight(Vector3 topPoint, MapDocument document)
+    {
+        float supportHeight = 0.0f;
+        bool foundSupport = false;
+        Vector3 rayDirection = -Vector3.UnitY;
+
+        foreach (Brush brush in document.Objects.OfType<Brush>())
+        {
+            MapBody? body = brush.Body;
+            if (body == null || !brush.IsGloballyVisible(document))
+                continue;
+
+            if (!TryGetBrushWorldYBounds(brush, out _, out float maxY))
+                continue;
+
+            // Starting just above this brush is sufficient and avoids making
+            // assumptions about the world's global height range.
+            Vector3 rayOrigin = new(
+                topPoint.X,
+                MathF.Max(maxY + 1.0f, topPoint.Y + 1.0f),
+                topPoint.Z);
+
+            if (!TryIntersectBrushFromAbove(
+                    brush,
+                    rayOrigin,
+                    rayDirection,
+                    out float hitHeight))
+                continue;
+
+            if (!foundSupport || hitHeight > supportHeight)
+            {
+                supportHeight = hitHeight;
+                foundSupport = true;
+            }
+        }
+
+        return foundSupport ? supportHeight : 0.0f;
+    }
+
+    private static bool TryGetBrushWorldYBounds(
+        Brush brush,
+        out float minY,
+        out float maxY)
+    {
+        minY = float.MaxValue;
+        maxY = float.MinValue;
+        MapBody? body = brush.Body;
+        if (body == null)
+            return false;
+
+        if (brush.IsEditableMesh && brush.EditableMesh != null &&
+            brush.EditableMesh.Vertices.Count > 0)
+        {
+            foreach (EditableBrushVertex vertex in brush.EditableMesh.Vertices)
+            {
+                float worldY = body.Position.Y +
+                    Vector3.Transform(vertex.Position, body.Rotation).Y;
+                minY = MathF.Min(minY, worldY);
+                maxY = MathF.Max(maxY, worldY);
+            }
+
+            return minY <= maxY;
+        }
+
+        if (!body.HalfExtents.HasValue)
+            return false;
+
+        Vector3 halfExtents = body.HalfExtents.Value;
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int y = -1; y <= 1; y += 2)
+            {
+                for (int z = -1; z <= 1; z += 2)
+                {
+                    Vector3 localCorner = new(
+                        halfExtents.X * x,
+                        halfExtents.Y * y,
+                        halfExtents.Z * z);
+                    float worldY = body.Position.Y +
+                        Vector3.Transform(localCorner, body.Rotation).Y;
+                    minY = MathF.Min(minY, worldY);
+                    maxY = MathF.Max(maxY, worldY);
+                }
+            }
+        }
+
+        return minY <= maxY;
+    }
+
+    private static bool TryIntersectBrushFromAbove(
+        Brush brush,
+        Vector3 rayOrigin,
+        Vector3 rayDirection,
+        out float worldY)
+    {
+        worldY = 0.0f;
+        MapBody? body = brush.Body;
+        if (body == null)
+            return false;
+
+        Matrix4x4 transform =
+            Matrix4x4.CreateFromQuaternion(body.Rotation) *
+            Matrix4x4.CreateTranslation(body.Position);
+        if (!Matrix4x4.Invert(transform, out Matrix4x4 inverse))
+            return false;
+
+        Vector3 localOrigin = Vector3.Transform(rayOrigin, inverse);
+        Vector3 localDirection = Vector3.TransformNormal(rayDirection, inverse);
+        if (localDirection.LengthSquared() < 0.0000001f)
+            return false;
+        localDirection = Vector3.Normalize(localDirection);
+
+        if (brush.IsEditableMesh && brush.EditableMesh != null &&
+            brush.EditableMesh.TryRaycastFace(
+                localOrigin,
+                localDirection,
+                out _,
+                out Vector3 localHit,
+                out _))
+        {
+            worldY = Vector3.Transform(localHit, transform).Y;
+            return true;
+        }
+
+        if (!body.HalfExtents.HasValue)
+            return false;
+
+        bool supportedShape = body.Shape == MapShapeType.Box ||
+            body.Shape == MapShapeType.Trimesh ||
+            body.Shape == MapShapeType.ConvexHull;
+        if (!supportedShape ||
+            !TryRayAabbEntry(
+                localOrigin,
+                localDirection,
+                -body.HalfExtents.Value,
+                body.HalfExtents.Value,
+                out float distance))
+            return false;
+
+        Vector3 localIntersection = localOrigin + localDirection * distance;
+        worldY = Vector3.Transform(localIntersection, transform).Y;
+        return true;
+    }
+
+    private static bool TryRayAabbEntry(
+        Vector3 origin,
+        Vector3 direction,
+        Vector3 min,
+        Vector3 max,
+        out float distance)
+    {
+        const float epsilon = 0.000001f;
+        float near = 0.0f;
+        float far = float.MaxValue;
+
+        bool TestAxis(float originAxis, float directionAxis, float minAxis, float maxAxis)
+        {
+            if (MathF.Abs(directionAxis) < epsilon)
+                return originAxis >= minAxis - epsilon &&
+                       originAxis <= maxAxis + epsilon;
+
+            float first = (minAxis - originAxis) / directionAxis;
+            float second = (maxAxis - originAxis) / directionAxis;
+            if (first > second)
+                (first, second) = (second, first);
+
+            near = MathF.Max(near, first);
+            far = MathF.Min(far, second);
+            return near <= far;
+        }
+
+        if (!TestAxis(origin.X, direction.X, min.X, max.X) ||
+            !TestAxis(origin.Y, direction.Y, min.Y, max.Y) ||
+            !TestAxis(origin.Z, direction.Z, min.Z, max.Z) ||
+            far < 0.0f)
+        {
+            distance = 0.0f;
+            return false;
+        }
+
+        distance = MathF.Max(near, 0.0f);
+        return true;
     }
 
     private void UpdateBoundsFromDrag(CameraViewType viewType, HandleType handle, Vector3 hitPoint, ref Vector3 min, ref Vector3 max)

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Silk.NET.OpenGL;
 using Fuse.Core;
 using Fuse.Renderer.Materials;
+using Fuse.Scene.Model;
 
 namespace Fuse.AssetManagement;
 
@@ -557,10 +558,15 @@ public class AssetManager
         if (_meshes.TryGetValue(key, out var mesh))
             return mesh;
 
-        mesh = key switch
+        mesh = key.ToLowerInvariant() switch
         {
             "cube" => Renderer.Mesh.CreateCube(_gl),
             "ground" => Renderer.Mesh.CreateGround(_gl, 1.0f, 1.0f),
+            // Primitive sphere/capsule objects are stored as normalized
+            // meshes. Their authored dimensions are applied by the entity's
+            // transform, while this cache keeps one GPU mesh per primitive.
+            "sphere" => CreateGeneratedMesh(MeshGenerator.GenerateSphere(0.5f, 24, 16)),
+            "capsule" => CreateGeneratedMesh(MeshGenerator.GenerateCapsule(0.5f, 1.0f, 16)),
             _ => null
         };
 
@@ -568,6 +574,9 @@ public class AssetManager
             _meshes[key] = mesh;
         return mesh;
     }
+
+    private Renderer.Mesh CreateGeneratedMesh(MeshData data) =>
+        new(_gl, data.Vertices, data.Indices, data.LineIndices, data.Parts);
 
     public Renderer.LoadedModel? GetModel(string path)
     {

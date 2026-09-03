@@ -326,6 +326,34 @@ private void ClearCurrentMap()
                     if (b.TrimeshVertices != null && b.TrimeshIndices != null)
                         debugDrawer.DrawTrimesh(pos, rot, b.TrimeshVertices, b.TrimeshIndices, color, b.TrimeshScale);
                     break;
+                case RigidBody.ShapeType.Compound:
+                    foreach (RigidBody.CompoundChild child in b.CompoundChildren)
+                    {
+                        Vector3 childPosition = pos + Vector3.Transform(child.Position, rot);
+                        Quaternion childRotation = Quaternion.Normalize(rot * child.Rotation);
+                        switch (child.Type)
+                        {
+                            case RigidBody.ShapeType.Box:
+                                debugDrawer.DrawBox(childPosition, childRotation, child.BoxHalfExtents, color);
+                                break;
+                            case RigidBody.ShapeType.Sphere:
+                                debugDrawer.DrawSphere(childPosition, childRotation, child.SphereRadius, color);
+                                break;
+                            case RigidBody.ShapeType.Capsule:
+                                debugDrawer.DrawCapsule(childPosition, childRotation,
+                                    child.CapsuleHeight * 0.5f, child.CapsuleRadius, color);
+                                break;
+                            case RigidBody.ShapeType.ConvexHull:
+                            case RigidBody.ShapeType.Trimesh:
+                                if (child.Vertices != null && child.Indices != null)
+                                {
+                                    debugDrawer.DrawTrimesh(childPosition, childRotation,
+                                        child.Vertices, child.Indices, color, child.Scale);
+                                }
+                                break;
+                        }
+                    }
+                    break;
             }
         }
     }

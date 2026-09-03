@@ -15,7 +15,52 @@ public class RigidBody
         Capsule,
         Trimesh,
         ConvexHull,
+        Compound,
         HeightField
+    }
+
+    /// <summary>
+    /// One collider placed in a compound body. Position and rotation are
+    /// expressed in the parent body's local space. Mesh data is only used by
+    /// mesh and convex-hull children; primitive children keep their compact
+    /// parameters instead of allocating a mesh.
+    /// </summary>
+    public readonly struct CompoundChild
+    {
+        public CompoundChild(
+            ShapeType type,
+            Vector3 position,
+            Quaternion rotation,
+            Vector3 boxHalfExtents,
+            float sphereRadius,
+            float capsuleRadius,
+            float capsuleHeight,
+            Vector3[]? vertices,
+            uint[]? indices,
+            Vector3 scale)
+        {
+            Type = type;
+            Position = position;
+            Rotation = rotation;
+            BoxHalfExtents = boxHalfExtents;
+            SphereRadius = sphereRadius;
+            CapsuleRadius = capsuleRadius;
+            CapsuleHeight = capsuleHeight;
+            Vertices = vertices;
+            Indices = indices;
+            Scale = scale;
+        }
+
+        public ShapeType Type { get; }
+        public Vector3 Position { get; }
+        public Quaternion Rotation { get; }
+        public Vector3 BoxHalfExtents { get; }
+        public float SphereRadius { get; }
+        public float CapsuleRadius { get; }
+        public float CapsuleHeight { get; }
+        public Vector3[]? Vertices { get; }
+        public uint[]? Indices { get; }
+        public Vector3 Scale { get; }
     }
 
     private Shape? _shape;
@@ -48,6 +93,8 @@ public class RigidBody
     private uint _heightFieldSampleCount;
     private float _cachedBuoyancyVolume = float.NaN;
     private Vector3 _cachedBuoyancyHalfExtents = new(float.NaN);
+    private List<CompoundChild> _compoundChildren = [];
+    private readonly List<Shape> _compoundChildShapes = [];
 
     public RigidBody SetBox(Vector3 halfExtents)
     {
@@ -159,6 +206,42 @@ public class RigidBody
         }
 
         return this;
+    }
+
+    public RigidBody SetCompound(IEnumerable<CompoundChild> children)
+    {
+        _shapeType = ShapeType.Compound;
+        _compoundChildren = children
+            .Where(child => child.Type != ShapeType.None)
+            .ToList();
+        InvalidateBuoyancyGeometryCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Converts this body's authored world pose into a child transform for a
+    /// compound parent. The child body itself does not need to be built.
+    /// </summary>
+    public CompoundChild CreateCompoundChild(Vector3 parentPosition, Quaternion parentRotation)
+    {
+        Quaternion inverseParentRotation = Quaternion.Inverse(parentRotation);
+        Vector3 localPosition = Vector3.Transform(
+            GetPosition() - parentPosition,
+            inverseParentRotation);
+        Quaternion localRotation = Quaternion.Normalize(
+            inverseParentRotation * GetRotation());
+
+        return new CompoundChild(
+            Type,
+            localPosition,
+            localRotation,
+            _boxHalfExtents,
+            _sphereRadius,
+            _capsuleRadius,
+            _capsuleHeight,
+            _trimeshVerts,
+            _trimeshIndices,
+            _trimeshScale);
     }
 
     public RigidBody SetPosition(Vector3 pos) { _position = pos; return this; }
@@ -320,6 +403,20 @@ public class RigidBody
                 break;
             }
 
+            case ShapeType.Compound:
+            {
+                if (_compoundChildren.Count == 0)
+                {
+                    Logger.Error("RigidBody.Build COMPOUND with no child shapes, skipping");
+                    return;
+                }
+
+                _shape = BuildCompoundShape();
+                if (_shape == null)
+                    return;
+                break;
+            }
+
             default:
                 return;
         }
@@ -363,8 +460,144 @@ public class RigidBody
     {
         _shape?.Dispose();
         _shape = null;
+        ClearCompoundChildShapes();
         _bodyID = BodyID.Invalid;
         _built = false;
+    }
+
+    private Shape? BuildCompoundShape()
+    {
+        bool dynamic = _isKinematic || _mass > 0.0f;
+        var childShapes = new List<(CompoundChild Child, Shape Shape)>();
+
+        try
+        {
+            foreach (CompoundChild child in _compoundChildren)
+            {
+                Shape? shape = BuildCompoundChildShape(child, dynamic);
+                if (shape == null)
+                    continue;
+
+                childShapes.Add((child, shape));
+                _compoundChildShapes.Add(shape);
+            }
+
+            if (childShapes.Count == 0)
+            {
+                Logger.Error("RigidBody.Build COMPOUND could not create any child shapes");
+                ClearCompoundChildShapes();
+                return null;
+            }
+
+            Shape? compound;
+            if (dynamic)
+            {
+                using var settings = new MutableCompoundShapeSettings();
+                foreach ((CompoundChild child, Shape shape) in childShapes)
+                {
+                    Vector3 position = child.Position;
+                    Quaternion rotation = child.Rotation;
+                    settings.AddShape(in position, in rotation, shape, 0);
+                }
+                compound = settings.Create();
+            }
+            else
+            {
+                using var settings = new StaticCompoundShapeSettings();
+                foreach ((CompoundChild child, Shape shape) in childShapes)
+                {
+                    Vector3 position = child.Position;
+                    Quaternion rotation = child.Rotation;
+                    settings.AddShape(in position, in rotation, shape, 0);
+                }
+                compound = settings.Create();
+            }
+
+            if (compound == null)
+                ClearCompoundChildShapes();
+            return compound;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"RigidBody.Build COMPOUND failed: {ex.Message}");
+            foreach ((_, Shape shape) in childShapes)
+            {
+                if (!_compoundChildShapes.Contains(shape))
+                    shape.Dispose();
+            }
+            ClearCompoundChildShapes();
+            return null;
+        }
+    }
+
+    private static Shape? BuildCompoundChildShape(CompoundChild child, bool dynamic)
+    {
+        switch (child.Type)
+        {
+            case ShapeType.Box:
+            {
+                Vector3 halfExtents = child.BoxHalfExtents;
+                return new BoxShape(halfExtents);
+            }
+            case ShapeType.Sphere:
+                return new SphereShape(MathF.Max(MathF.Abs(child.SphereRadius), 0.001f));
+            case ShapeType.Capsule:
+                return new CapsuleShape(
+                    MathF.Max(MathF.Abs(child.CapsuleHeight) * 0.5f, 0.001f),
+                    MathF.Max(MathF.Abs(child.CapsuleRadius), 0.001f));
+            case ShapeType.ConvexHull:
+            case ShapeType.Trimesh:
+            {
+                if (child.Vertices == null || child.Vertices.Length < 4)
+                    return null;
+
+                Vector3[] vertices = ScaleVertices(child.Vertices, child.Scale);
+                if (dynamic || child.Type == ShapeType.ConvexHull ||
+                    child.Indices == null || child.Indices.Length < 3)
+                {
+                    using var settings = new ConvexHullShapeSettings(new Span<Vector3>(vertices));
+                    return settings.Create();
+                }
+
+                int triangleCount = child.Indices.Length / 3;
+                var triangles = new IndexedTriangle[triangleCount];
+                for (int i = 0; i < triangleCount; i++)
+                {
+                    uint a = child.Indices[i * 3];
+                    uint b = child.Indices[i * 3 + 1];
+                    uint c = child.Indices[i * 3 + 2];
+                    if (a >= vertices.Length || b >= vertices.Length || c >= vertices.Length)
+                        return null;
+                    triangles[i] = new IndexedTriangle(a, b, c, 0, 0);
+                }
+
+                using var meshSettings = new MeshShapeSettings(
+                    new Span<Vector3>(vertices),
+                    new Span<IndexedTriangle>(triangles));
+                meshSettings.ActiveEdgeCosThresholdAngle = MathF.Cos(50.0f * MathF.PI / 180.0f);
+                return meshSettings.Create();
+            }
+            default:
+                return null;
+        }
+    }
+
+    private static Vector3[] ScaleVertices(Vector3[] vertices, Vector3 scale)
+    {
+        if (scale == Vector3.One)
+            return vertices;
+
+        var result = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            result[i] = vertices[i] * scale;
+        return result;
+    }
+
+    private void ClearCompoundChildShapes()
+    {
+        foreach (Shape shape in _compoundChildShapes)
+            shape.Dispose();
+        _compoundChildShapes.Clear();
     }
 
     public Vector3 Position(PhysicsWorld world)
@@ -480,6 +713,7 @@ public class RigidBody
     public Vector3 HeightFieldScale => _heightFieldScale;
     public uint HeightFieldSampleCount => _heightFieldSampleCount;
     public bool IsTrigger => _isTrigger;
+    public IReadOnlyList<CompoundChild> CompoundChildren => _compoundChildren;
 
     /// <summary>
     /// Returns the collider volume in world units. Dynamic model hulls keep
@@ -510,6 +744,7 @@ public class RigidBody
                     MathF.Pow(MathF.Abs(_capsuleRadius), 2.0f) * MathF.Abs(_capsuleHeight) +
                     4.0f / 3.0f * MathF.PI * MathF.Pow(MathF.Abs(_capsuleRadius), 3.0f),
                 ShapeType.Trimesh or ShapeType.ConvexHull => ComputeMeshVolume(),
+                ShapeType.Compound => ComputeCompoundVolume(),
                 _ => 0.0f
             };
 
@@ -545,6 +780,7 @@ public class RigidBody
                     MathF.Abs(_capsuleHeight) * 0.5f + MathF.Abs(_capsuleRadius),
                     MathF.Abs(_capsuleRadius)),
                 ShapeType.Trimesh or ShapeType.ConvexHull => ComputeMeshHalfExtents(),
+                ShapeType.Compound => ComputeCompoundHalfExtents(),
                 _ => Vector3.Zero
             };
 
@@ -562,20 +798,101 @@ public class RigidBody
         _cachedBuoyancyHalfExtents = new Vector3(float.NaN);
     }
 
+    private float ComputeCompoundVolume()
+    {
+        float volume = 0.0f;
+        foreach (CompoundChild child in _compoundChildren)
+        {
+            float childVolume = child.Type switch
+            {
+                ShapeType.Box => 8.0f * MathF.Abs(
+                    child.BoxHalfExtents.X * child.BoxHalfExtents.Y * child.BoxHalfExtents.Z),
+                ShapeType.Sphere => 4.0f / 3.0f * MathF.PI *
+                    MathF.Pow(MathF.Abs(child.SphereRadius), 3.0f),
+                ShapeType.Capsule => MathF.PI * MathF.Pow(
+                    MathF.Abs(child.CapsuleRadius), 2.0f) * MathF.Abs(child.CapsuleHeight) +
+                    4.0f / 3.0f * MathF.PI * MathF.Pow(
+                        MathF.Abs(child.CapsuleRadius), 3.0f),
+                ShapeType.Trimesh or ShapeType.ConvexHull => ComputeMeshVolume(
+                    child.Vertices, child.Indices, child.Scale),
+                _ => 0.0f
+            };
+            if (float.IsFinite(childVolume) && childVolume > 0.0f)
+                volume += childVolume;
+        }
+        return volume;
+    }
+
+    private Vector3 ComputeCompoundHalfExtents()
+    {
+        Vector3 minimum = new(float.PositiveInfinity);
+        Vector3 maximum = new(float.NegativeInfinity);
+        bool hasBounds = false;
+
+        foreach (CompoundChild child in _compoundChildren)
+        {
+            Vector3 childExtents = child.Type switch
+            {
+                ShapeType.Box => child.BoxHalfExtents,
+                ShapeType.Sphere => new Vector3(MathF.Abs(child.SphereRadius)),
+                ShapeType.Capsule => new Vector3(
+                    MathF.Abs(child.CapsuleRadius),
+                    MathF.Abs(child.CapsuleHeight) * 0.5f + MathF.Abs(child.CapsuleRadius),
+                    MathF.Abs(child.CapsuleRadius)),
+                ShapeType.Trimesh or ShapeType.ConvexHull => ComputeMeshHalfExtents(
+                    ScaleVertices(child.Vertices ?? [], child.Scale)),
+                _ => Vector3.Zero
+            };
+            if (childExtents.LengthSquared() <= 0.0f)
+                continue;
+
+            Vector3[] corners =
+            [
+                new(-childExtents.X, -childExtents.Y, -childExtents.Z),
+                new( childExtents.X, -childExtents.Y, -childExtents.Z),
+                new( childExtents.X, -childExtents.Y,  childExtents.Z),
+                new(-childExtents.X, -childExtents.Y,  childExtents.Z),
+                new(-childExtents.X,  childExtents.Y, -childExtents.Z),
+                new( childExtents.X,  childExtents.Y, -childExtents.Z),
+                new( childExtents.X,  childExtents.Y,  childExtents.Z),
+                new(-childExtents.X,  childExtents.Y,  childExtents.Z)
+            ];
+            foreach (Vector3 corner in corners)
+            {
+                Vector3 point = child.Position + Vector3.Transform(corner, child.Rotation);
+                minimum = Vector3.Min(minimum, point);
+                maximum = Vector3.Max(maximum, point);
+                hasBounds = true;
+            }
+        }
+
+        return hasBounds
+            ? Vector3.Max(Vector3.Abs(minimum), Vector3.Abs(maximum))
+            : Vector3.Zero;
+    }
+
     private float ComputeMeshVolume()
     {
-        if (_trimeshVerts == null || _trimeshVerts.Length == 0)
+        return ComputeMeshVolume(_trimeshVerts, _trimeshIndices, _trimeshScale);
+    }
+
+    private static float ComputeMeshVolume(
+        Vector3[]? sourceVertices,
+        uint[]? sourceIndices,
+        Vector3 scale)
+    {
+        if (sourceVertices == null || sourceVertices.Length == 0)
             return 0.0f;
 
-        Vector3[] vertices = GetScaledMeshVertices();
+        Vector3[] vertices = ScaleVertices(sourceVertices, scale);
         float volume = 0.0f;
-        if (_trimeshIndices != null && _trimeshIndices.Length >= 3)
+        if (sourceIndices != null && sourceIndices.Length >= 3)
         {
-            for (int i = 0; i + 2 < _trimeshIndices.Length; i += 3)
+            for (int i = 0; i + 2 < sourceIndices.Length; i += 3)
             {
-                uint ia = _trimeshIndices[i];
-                uint ib = _trimeshIndices[i + 1];
-                uint ic = _trimeshIndices[i + 2];
+                uint ia = sourceIndices[i];
+                uint ib = sourceIndices[i + 1];
+                uint ic = sourceIndices[i + 2];
                 if (ia >= vertices.Length || ib >= vertices.Length || ic >= vertices.Length)
                     continue;
 

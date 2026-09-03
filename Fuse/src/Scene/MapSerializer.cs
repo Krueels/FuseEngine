@@ -55,6 +55,8 @@ public static class MapSerializer
         RigidBody.ShapeType.Sphere => "sphere",
         RigidBody.ShapeType.Capsule => "capsule",
         RigidBody.ShapeType.Trimesh => "trimesh",
+        RigidBody.ShapeType.ConvexHull => "convexhull",
+        RigidBody.ShapeType.Compound => "compound",
         _ => "none"
     };
 
@@ -65,6 +67,8 @@ public static class MapSerializer
         "sphere" => RigidBody.ShapeType.Sphere,
         "capsule" => RigidBody.ShapeType.Capsule,
         "trimesh" => RigidBody.ShapeType.Trimesh,
+        "convexhull" => RigidBody.ShapeType.ConvexHull,
+        "compound" => RigidBody.ShapeType.Compound,
         _ => RigidBody.ShapeType.None
     };
 
@@ -100,6 +104,12 @@ public static class MapSerializer
             case RigidBody.ShapeType.Capsule:
                 bj["radius"] = e.Body.CapsuleRadius;
                 bj["height"] = e.Body.CapsuleHeight;
+                break;
+            case RigidBody.ShapeType.ConvexHull:
+            case RigidBody.ShapeType.Trimesh:
+                // The vertex buffer is owned by the model/brush entry and is
+                // rebuilt when the map is loaded. The shape marker is enough
+                // here; the loader resolves the actual geometry again.
                 break;
             case RigidBody.ShapeType.Plane:
                 bj["normal"] = Vec3ToJson(e.Body.PlaneNormal);
@@ -203,7 +213,22 @@ public static class MapSerializer
             }
 
             if (e.Body != null && e.Body.IsBuilt)
+            {
                 obj["body"] = SerializeBody(e, physics);
+            }
+            else if (e.MapData != null &&
+                     e.MapData.TryGetPropertyValue("body", out var preservedBodyNode) &&
+                     preservedBodyNode is JsonObject preservedBody)
+            {
+                // Compound groups deliberately remove child RigidBody
+                // wrappers from the runtime scene. Keep their authored body
+                // definitions when a running scene is serialized, otherwise
+                // reloading that file would lose the compound children.
+                var bodyCopy = (JsonObject)JsonNode.Parse(preservedBody.ToJsonString())!;
+                bodyCopy["position"] = Vec3ToJson(e.Transform.Position);
+                bodyCopy["rotation"] = QuatToJson(e.Transform.Rotation);
+                obj["body"] = bodyCopy;
+            }
 
             if (e.AttachedLight != null)
             {
@@ -364,11 +389,13 @@ public static class MapSerializer
         var parentMap = new Dictionary<string, string>();
         var visibleMap = new Dictionary<string, bool>();
         var objects = root["objects"]!.AsArray();
+        var objectNodesById = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
         foreach (var objNode in objects)
         {
             if (objNode == null) continue;
             var obj = objNode.AsObject();
             string id = obj.TryGetPropertyValue("id", out var idNode) ? (string)idNode! : "unnamed";
+            objectNodesById[id] = obj;
             bool visible = obj.TryGetPropertyValue("visible", out var visNode) ? (bool)visNode! : true;
             string? parent = obj.TryGetPropertyValue("parent", out var pNode) ? (string)pNode! : null;
             visibleMap[id] = visible;
@@ -384,6 +411,108 @@ public static class MapSerializer
             }
             return true;
         }
+
+        bool HasVisualPayload(JsonObject obj)
+        {
+            if (obj.TryGetPropertyValue("model", out var modelToken) &&
+                !string.IsNullOrWhiteSpace((string?)modelToken))
+            {
+                return true;
+            }
+
+            if (obj.TryGetPropertyValue("mesh", out var meshToken) &&
+                !string.IsNullOrWhiteSpace((string?)meshToken))
+            {
+                return true;
+            }
+
+            if (obj.TryGetPropertyValue("geometry_graph", out var graphToken) &&
+                !string.IsNullOrWhiteSpace((string?)graphToken))
+            {
+                return true;
+            }
+
+            if (obj.TryGetPropertyValue("terrain_asset", out var terrainToken) &&
+                !string.IsNullOrWhiteSpace((string?)terrainToken))
+            {
+                return true;
+            }
+
+            if (obj.TryGetPropertyValue("type", out var typeToken) &&
+                string.Equals((string?)typeToken, "brush", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return obj.TryGetPropertyValue("light_type", out var lightToken) &&
+                   !string.IsNullOrWhiteSpace((string?)lightToken);
+        }
+
+        bool IsDescendantOf(string potentialDescendant, string potentialAncestor)
+        {
+            string current = potentialDescendant;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (parentMap.TryGetValue(current, out string? parentId) &&
+                   !string.IsNullOrEmpty(parentId))
+            {
+                if (!visited.Add(current))
+                    return false;
+                if (parentId.Equals(potentialAncestor, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                current = parentId;
+            }
+            return false;
+        }
+
+        bool IsCompoundCandidate(JsonObject obj, string id)
+        {
+            if (HasVisualPayload(obj) ||
+                !obj.TryGetPropertyValue("body", out var bodyToken) ||
+                bodyToken is not JsonObject bodyObject)
+            {
+                return false;
+            }
+
+            string shape = bodyObject.TryGetPropertyValue("shape", out var shapeToken)
+                ? (string?)shapeToken ?? "none"
+                : "none";
+            if (shape.Equals("none", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return objectNodesById.Keys.Any(childId =>
+                !childId.Equals(id, StringComparison.OrdinalIgnoreCase) &&
+                IsDescendantOf(childId, id));
+        }
+
+        // A group is an invisible hierarchy node with a collider authored on
+        // it. Its descendants must be held back until the group body can be
+        // assembled, otherwise Jolt creates one independent dynamic body per
+        // child and the group itself has no physical effect.
+        var physicalGroupIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string id, JsonObject obj) in objectNodesById)
+        {
+            if (IsCompoundCandidate(obj, id))
+                physicalGroupIds.Add(id);
+        }
+
+        string? FindPhysicalGroupOwner(string id)
+        {
+            string current = id;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (parentMap.TryGetValue(current, out string? parentId) &&
+                   !string.IsNullOrEmpty(parentId))
+            {
+                if (!visited.Add(current))
+                    return null;
+                if (physicalGroupIds.Contains(parentId))
+                    return parentId;
+                current = parentId;
+            }
+            return null;
+        }
+
+        var pendingChildBodies = new Dictionary<string, RigidBody>(StringComparer.OrdinalIgnoreCase);
+        var pendingGroupBodies = new Dictionary<string, RigidBody>(StringComparer.OrdinalIgnoreCase);
 
         int totalEntities = objects.Count;
         int processedEntities = 0;
@@ -850,22 +979,54 @@ public static class MapSerializer
                     }
                 }
 
-                body.Build(physics);
-                entity.Body = body;
-                entity.Transform.Position = body.Position(physics);
-                entity.Transform.Rotation = body.Rotation(physics);
-                scene.RegisterBody(entity);
-                
+                // Keep the authored pose on entities whose body will become a
+                // child shape of a compound. Scene.UpdateTransforms will later
+                // derive their world pose from the single group body.
+                entity.Transform.Position = body.GetPosition();
+                entity.Transform.Rotation = body.GetRotation();
+
                 if (isBrush)
                     entity.Transform.Scale = Vector3.One;
                 else if (!isModel && body.Type == RigidBody.ShapeType.Box)
                     entity.Transform.Scale = body.BoxHalfExtents * 2.0f;
                 else if (!isModel && body.Type == RigidBody.ShapeType.Sphere)
-                    entity.Transform.Scale = new Vector3(body.SphereRadius * 2.0f);
+                    entity.Transform.Scale = MeshGenerator.GetSphereRenderScale(body.SphereRadius);
+                else if (!isModel && body.Type == RigidBody.ShapeType.Capsule)
+                    entity.Transform.Scale = MeshGenerator.GetCapsuleRenderScale(
+                        body.CapsuleRadius,
+                        body.CapsuleHeight);
                 else
                     entity.Transform.Scale = modelScale;
-                    
-                createdBodies.Add(body);
+
+                bool isPhysicalGroup = physicalGroupIds.Contains(id);
+                string? physicalGroupOwner = isPhysicalGroup
+                    ? null
+                    : FindPhysicalGroupOwner(id);
+
+                if (isPhysicalGroup)
+                {
+                    pendingGroupBodies[id] = body;
+                }
+                else if (physicalGroupOwner != null)
+                {
+                    if (body.Type != RigidBody.ShapeType.None && !body.IsTrigger)
+                    {
+                        pendingChildBodies[id] = body;
+                    }
+                    else if (body.IsTrigger)
+                    {
+                        Logger.Warn($"Map load: trigger child '{id}' is not included in physical group '{physicalGroupOwner}'.");
+                    }
+                }
+                else
+                {
+                    body.Build(physics);
+                    entity.Body = body;
+                    entity.Transform.Position = body.Position(physics);
+                    entity.Transform.Rotation = body.Rotation(physics);
+                    scene.RegisterBody(entity);
+                    createdBodies.Add(body);
+                }
             }
             else
             {
@@ -874,6 +1035,65 @@ public static class MapSerializer
 
             processedEntities++;
             onProgress?.Invoke((float)processedEntities / totalEntities, $"Processing {id}...");
+        }
+
+        // Build each physical group as one Jolt body. Child render entities
+        // remain in the scene for hierarchy transforms, but deliberately do
+        // not receive their own RigidBody, so collision, mass and impulses are
+        // solved for the complete compound shape.
+        foreach ((string groupId, RigidBody groupBody) in pendingGroupBodies)
+        {
+            Renderer.Entity? groupEntity = scene.Entities.FirstOrDefault(entity =>
+                entity.Id.Equals(groupId, StringComparison.OrdinalIgnoreCase));
+            if (groupEntity == null)
+                continue;
+
+            var children = new List<RigidBody.CompoundChild>();
+            foreach ((string childId, RigidBody childBody) in pendingChildBodies)
+            {
+                if (!string.Equals(
+                        FindPhysicalGroupOwner(childId),
+                        groupId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                children.Add(childBody.CreateCompoundChild(
+                    groupBody.GetPosition(),
+                    groupBody.GetRotation()));
+            }
+
+            if (children.Count == 0)
+            {
+                // Keep a useful fallback for a malformed/empty compound
+                // group. An explicitly authored primitive can still behave as
+                // a normal body; an empty "compound" remains disabled.
+                if (groupBody.Type == RigidBody.ShapeType.Compound)
+                {
+                    Logger.Warn($"Map load: physical group '{groupId}' has no valid child colliders.");
+                    continue;
+                }
+
+                groupBody.Build(physics);
+            }
+            else
+            {
+                groupBody.SetCompound(children);
+                groupBody.Build(physics);
+            }
+
+            if (!groupBody.IsBuilt)
+            {
+                Logger.Warn($"Map load: physical group '{groupId}' could not build its compound collider.");
+                continue;
+            }
+
+            groupEntity.Body = groupBody;
+            groupEntity.Transform.Position = groupBody.Position(physics);
+            groupEntity.Transform.Rotation = groupBody.Rotation(physics);
+            scene.RegisterBody(groupEntity);
+            createdBodies.Add(groupBody);
         }
 
         // Compute initial relative transforms for children
@@ -917,6 +1137,12 @@ public static class MapSerializer
                 body.SetPlane(
                     Vec3FromJson(bj["normal"]!.AsArray()),
                     (float)bj["distance"]!);
+                break;
+            case RigidBody.ShapeType.Compound:
+                // The child list is assembled from the hierarchy after all
+                // objects have been parsed. Mark the body as compound now so
+                // an explicit "compound" map value is not lost.
+                body.SetCompound([]);
                 break;
         }
 
