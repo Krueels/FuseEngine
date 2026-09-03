@@ -184,17 +184,26 @@ public unsafe class EditorViewport : IDisposable
         _gl.Viewport(0, 0, (uint)windowWidth, (uint)windowHeight);
     }
 
-    public void RenderScene(EditorAssetService assetService, EditorSceneService sceneService, float snapGrid = 1.0f)
+    public void RenderScene(
+        EditorAssetService assetService,
+        EditorSceneService sceneService,
+        float snapGrid = 1.0f,
+        Fuse.Renderer.Scene? sceneOverride = null,
+        bool drawAtmosphere = true,
+        bool drawGrid = true)
     {
         var shader = assetService.DefaultShader;
         if (shader.ID == 0) return;
 
-        var scene = sceneService.Scene;
+        var scene = sceneOverride ?? sceneService.Scene;
+        IReadOnlyList<Light> skyLights = scene.Lights.Count > 0
+            ? scene.Lights
+            : sceneService.Scene.Lights;
         var view = _camera.ViewMatrix;
         var proj = _camera.ProjectionMatrix((float)_width / _height);
         var frustum = new ViewFrustum(view * proj);
         bool isWireframe = _camera.IsOrthographic;
-        assetService.UpdateProceduralSkybox(scene.Lights);
+        assetService.UpdateProceduralSkybox(skyLights);
         // Terrain is intentionally rendered only by the perspective viewport.
         // Besides avoiding work in the 2D editor views, this keeps their
         // orthographic cameras from changing the shared terrain LOD state
@@ -225,7 +234,8 @@ public unsafe class EditorViewport : IDisposable
             assetService.ShadowShader,
             assetService.PointShadowShader,
             assetService.SkyboxSettings,
-            forceDirectionalShadows: sceneService.Document.Fog.Enabled &&
+            forceDirectionalShadows: drawAtmosphere &&
+                                     sceneService.Document.Fog.Enabled &&
                                      sceneService.Document.Fog.LightShaftsEnabled);
         assetService.FogRenderer?.SetDirectionalShadowMap(
             _lightingSystem.DirectionalShadowMap);
@@ -234,10 +244,10 @@ public unsafe class EditorViewport : IDisposable
             _lightingSystem.PointShadowMaps);
 
         ProceduralSky.ResolveSun(
-            scene.Lights,
+            skyLights,
             out Vector3 cloudSunDirection,
             out Vector3 cloudSunColor);
-        if (!_camera.IsOrthographic)
+        if (drawAtmosphere && !_camera.IsOrthographic)
         {
             assetService.CloudRenderer?.UpdateShadow(
                 _camera.Position,
@@ -271,12 +281,13 @@ public unsafe class EditorViewport : IDisposable
             target.SetFloat("uEmissiveStrength", 0.0f);
             _lightingSystem.BindShadowMaps(target);
             _lightingSystem.BindImageBasedLighting(target);
-            assetService.CloudRenderer?.BindWorldShadow(target, sceneService.Document.Clouds);
+            if (drawAtmosphere)
+                assetService.CloudRenderer?.BindWorldShadow(target, sceneService.Document.Clouds);
         }
 
         PrepareMaterialShader(shader);
 
-        DrawSkybox(assetService, scene, view, proj);
+        DrawSkybox(assetService, scene, skyLights, view, proj);
 
         // Draw Entities
         if (isWireframe)
@@ -418,7 +429,8 @@ public unsafe class EditorViewport : IDisposable
         // snapshots this viewport's color/depth first, which keeps the
         // reflection/refraction pass from sampling the attachment it writes.
         bool underwater = false;
-        if (!_camera.IsOrthographic &&
+        if (drawAtmosphere &&
+            !_camera.IsOrthographic &&
             sceneService.Document.Ocean.Enabled &&
             assetService.OceanRenderer != null)
         {
@@ -453,7 +465,8 @@ public unsafe class EditorViewport : IDisposable
             underwater = assetService.OceanRenderer.LastFrameUnderwater;
         }
 
-        if (!_camera.IsOrthographic &&
+        if (drawAtmosphere &&
+            !_camera.IsOrthographic &&
             sceneService.Document.Clouds.Enabled &&
             assetService.CloudRenderer != null &&
             !underwater)
@@ -495,7 +508,8 @@ public unsafe class EditorViewport : IDisposable
         // Apply fog after the cloud composite so both the opaque scene and
         // the visible cloud layer share the same aerial attenuation. The
         // underwater fullscreen pass is applied after this compositor below.
-        if (!_camera.IsOrthographic &&
+        if (drawAtmosphere &&
+            !_camera.IsOrthographic &&
             sceneService.Document.Fog.Enabled &&
             assetService.FogRenderer != null)
         {
@@ -543,7 +557,8 @@ public unsafe class EditorViewport : IDisposable
         // Fog is a fullscreen compositor. Applying it after the underwater
         // pass would overwrite the water tint and distortion that the ocean
         // produced, so finish the ocean effect after all atmospheric passes.
-        if (!_camera.IsOrthographic &&
+        if (drawAtmosphere &&
+            !_camera.IsOrthographic &&
             sceneService.Document.Ocean.Enabled &&
             assetService.OceanRenderer != null &&
             assetService.OceanRenderer.UnderwaterPassPending)
@@ -566,7 +581,8 @@ public unsafe class EditorViewport : IDisposable
         // Draw the grid after opaque scene geometry. This lets the ground
         // depth already be present while the negative polygon offset makes a
         // coplanar floor grid pass consistently instead of flickering.
-        DrawGrid(assetService, view, proj, snapGrid);
+        if (drawGrid)
+            DrawGrid(assetService, view, proj, snapGrid);
 
         if (isWireframe)
         {
@@ -634,6 +650,7 @@ public unsafe class EditorViewport : IDisposable
     private void DrawSkybox(
         EditorAssetService assetService,
         Fuse.Renderer.Scene scene,
+        IReadOnlyList<Light> skyLights,
         Matrix4x4 view,
         Matrix4x4 proj)
     {
@@ -657,7 +674,7 @@ public unsafe class EditorViewport : IDisposable
         skyboxShader.SetMat4("uProj", proj);
         skyboxShader.SetBool("uOutputSrgb", true);
         ProceduralSky.ResolveSun(
-            scene.Lights,
+            skyLights,
             out Vector3 sunDirection,
             out Vector3 directionalLightColor);
         ProceduralSky.ApplyShaderParameters(

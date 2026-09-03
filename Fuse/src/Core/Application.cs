@@ -425,6 +425,7 @@ public unsafe class Application : IDisposable
 
         _impactSound.Update(fixedDt);
         _sceneManager.Update(fixedDt);
+        _sceneManager.UpdateTerrainStreaming(_player.Position);
         _weaponSystem?.Update(fixedDt);
 
         using (var weaponPhysicsScope = _renderer.Profiler.Measure(ProfilerSection.Physics))

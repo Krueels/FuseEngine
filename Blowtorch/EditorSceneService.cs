@@ -12,8 +12,13 @@ namespace Blowtorch;
 
 public class EditorSceneService
 {
+    private const string ProceduralPreviewGroupId = "__blowtorch_procedural_preview__";
     private MapDocument _doc = null!;
     private Scene _scene = null!;
+    // The terrain generator preview must not become part of the open map. It
+    // owns a separate transient scene so the modal can render it to its own
+    // framebuffer without changing the main editor viewports.
+    private readonly Scene _proceduralPreviewScene = new();
     private string _mapPath = "";
     private string _cachedSnapshot = "";
     private ulong _cachedSnapshotRevision = ulong.MaxValue;
@@ -21,9 +26,11 @@ public class EditorSceneService
     private bool _isDirty;
     private readonly Dictionary<string, (TerrainTileSetAsset Asset, DateTime LastWriteUtc, long Length)> _terrainCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _terrainEditorForceLod0 = new(StringComparer.OrdinalIgnoreCase);
+    private bool _proceduralPreviewActive;
 
     public MapDocument Document => _doc;
     public Scene Scene => _scene;
+    public Scene ProceduralPreviewScene => _proceduralPreviewScene;
     public string MapPath => _mapPath;
     public ulong Revision => _revision;
     public bool IsDirty => _isDirty;
@@ -37,6 +44,7 @@ public class EditorSceneService
         {
             _doc = CreateEmptyDocument();
             _scene = new Scene();
+            _proceduralPreviewScene.Clear();
             _mapPath = "";
             _terrainEditorForceLod0.Clear();
             _revision++;
@@ -57,6 +65,7 @@ public class EditorSceneService
 
         _doc = document;
         _scene = new Scene();
+        _proceduralPreviewScene.Clear();
         _terrainCache.Clear();
         _terrainEditorForceLod0.Clear();
         _mapPath = Path.GetFullPath(path);
@@ -75,6 +84,7 @@ public class EditorSceneService
     public void SetDocument(MapDocument doc, bool markClean = false)
     {
         _doc = doc ?? throw new ArgumentNullException(nameof(doc));
+        _proceduralPreviewScene.Clear();
         _terrainCache.Clear();
         _terrainEditorForceLod0.Clear();
         SceneNameManager.EnsureAllUnique(_doc);
@@ -124,6 +134,7 @@ public class EditorSceneService
     {
         _scene?.Clear();
         _scene = new Scene();
+        ClearProceduralTerrainPreview();
 
         foreach (var mapObj in _doc.Objects)
         {
@@ -284,6 +295,61 @@ public class EditorSceneService
             entity.InitialRelativePosition = Vector3.Transform(globalOffset, inverseParentRotation);
             entity.InitialRelativeRotation = Quaternion.Normalize(inverseParentRotation * entity.Transform.Rotation);
         }
+    }
+
+    /// <summary>
+    /// Replaces the transient procedural preview in the editor scene. The
+    /// preview is intentionally not a MapObject and is never serialized; it
+    /// uses the same generator and terrain chunk builder as the runtime.
+    /// </summary>
+    public int UpdateProceduralTerrainPreview(
+        ProceduralTerrainSettings settings,
+        int chunkQuads,
+        string materialPath,
+        IReadOnlyList<string>? materialPaths,
+        string texturePath,
+        Vector2 uvScale,
+        Vector2 uvOffset,
+        float uvRotation,
+        EditorAssetService assetService)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(assetService);
+
+        ClearProceduralTerrainPreview();
+        var procedural = new ProceduralTerrainAsset(settings);
+        TerrainTileSetAsset preview = TerrainTileSetAsset.FromProcedural(procedural);
+        int chunkCount = TerrainSceneBuilder.AddToScene(
+            _proceduralPreviewScene,
+            preview,
+            ProceduralPreviewGroupId,
+            Vector3.Zero,
+            Quaternion.Identity,
+            true,
+            chunkQuads,
+            materialPath ?? "",
+            materialPaths,
+            texturePath ?? "",
+            uvScale,
+            uvOffset,
+            uvRotation,
+            assetService.AssetManager,
+            null,
+            null,
+            "",
+            0.5f,
+            0.0f,
+            settings.LodPixelError,
+            TerrainSceneBuilder.DefaultCollisionLod,
+            false);
+        _proceduralPreviewActive = chunkCount > 0;
+        return chunkCount;
+    }
+
+    public void ClearProceduralTerrainPreview()
+    {
+        _proceduralPreviewScene.Clear();
+        _proceduralPreviewActive = false;
     }
 
     public TerrainTileSetAsset? TryLoadTerrainTileSet(MapObject mapObj, EditorAssetService assetService)

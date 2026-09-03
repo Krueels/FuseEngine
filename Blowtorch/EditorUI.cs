@@ -17,6 +17,7 @@ public unsafe class EditorUI : IDisposable
 {
     private const string DefaultMaterialPath = "Materials/Default.fmat";
     private const string DevBrushMaterialPath = "Materials/DevMeasureCrate.fmat";
+    private const string ProceduralTerrainPreviewMaterialPath = "Materials/GRASS.fmat";
 
     private readonly BlowtorchSettings _settings = BlowtorchSettings.Load();
     private bool _showOpenDialog;
@@ -90,12 +91,56 @@ public unsafe class EditorUI : IDisposable
     private bool _showTerrainCreateDialog;
     private bool _terrainCreateWaitingForHeightmap;
     private string _terrainName = "terrain";
+    private int _terrainSourceMode;
     private int _terrainWidth = 65;
     private int _terrainDepth = 65;
     private float _terrainCellSize = 1.0f;
     private float _terrainHeightScale = 8.0f;
     private string _terrainHeightmapPath = "";
     private int _terrainChunkQuads = TerrainSceneBuilder.DefaultChunkQuads;
+    private int _terrainProceduralSeed = 1337;
+    private float _terrainProceduralWorldSizeKm = 80_000.0f;
+    private float _terrainProceduralTileSize = 2048.0f;
+    private int _terrainProceduralResolution = 65;
+    private float _terrainProceduralMinHeight = -512.0f;
+    private float _terrainProceduralMaxHeight = 4096.0f;
+    private float _terrainProceduralSeaLevel;
+    private float _terrainProceduralBaseHeight = 32.0f;
+    private float _terrainProceduralContinentalAmplitude = 420.0f;
+    private float _terrainProceduralContinentalScale = 0.000004f;
+    private int _terrainProceduralContinentalOctaves = 5;
+    private float _terrainProceduralNoiseLacunarity = 2.03f;
+    private float _terrainProceduralNoiseGain = 0.5f;
+    private float _terrainProceduralMountainHeight = 1800.0f;
+    private float _terrainProceduralMountainScale = 0.000028f;
+    private int _terrainProceduralMountainOctaves = 5;
+    private float _terrainProceduralMountainMaskStart = 0.48f;
+    private float _terrainProceduralMountainMaskEnd = 0.76f;
+    private float _terrainProceduralValleyDepth = 180.0f;
+    private float _terrainProceduralValleyScale = 0.000075f;
+    private int _terrainProceduralValleyOctaves = 4;
+    private float _terrainProceduralDetailHeight = 28.0f;
+    private float _terrainProceduralDetailScale = 0.00035f;
+    private int _terrainProceduralDetailOctaves = 4;
+    private float _terrainProceduralWarpStrength = 0.28f;
+    private float _terrainProceduralWarpScale = 0.000018f;
+    private int _terrainProceduralWarpOctaves = 3;
+    private float _terrainProceduralErosion = 0.32f;
+    private float _terrainProceduralRiverDepth;
+    private float _terrainProceduralRiverScale = 0.000085f;
+    private int _terrainProceduralRiverOctaves = 3;
+    private int _terrainProceduralPreviewRadius = 1;
+    private int _terrainProceduralStreamingRadius = 2;
+    private int _terrainProceduralCollisionRadius = 1;
+    private int _terrainProceduralMaxResidentTiles = 25;
+    private int _terrainProceduralMaxGenerationTasks = 2;
+    private int _terrainProceduralMaxUploadsPerFrame = 1;
+    private float _terrainProceduralLodPixelError = 5.0f;
+    private bool _terrainProceduralPreviewDirty;
+    private bool _terrainProceduralPreviewNeedsRender;
+    private EditorViewport? _terrainGeneratorPreviewViewport;
+    private bool _terrainGeneratorPreviewCameraInitialized;
+    private Vector3 _terrainGeneratorPreviewTarget = new(1024.0f, 400.0f, 1024.0f);
     private int _terrainNeighborSourceX;
     private int _terrainNeighborSourceZ;
     private bool _terrainNeighborEditMode = true;
@@ -218,6 +263,7 @@ public unsafe class EditorUI : IDisposable
     {
         _materialEditor.Dispose();
         _geometryEditor.Dispose();
+        _terrainGeneratorPreviewViewport?.Dispose();
     }
 
     public void Draw(
@@ -310,7 +356,7 @@ public unsafe class EditorUI : IDisposable
             ExecutePendingDocumentAction(window, sceneService, assetService, history);
         DrawHollowDialog(sceneService, assetService, history);
         DrawNewMaterialDialog(sceneService, assetService, history);
-        DrawTerrainCreateDialog(sceneService, assetService, history);
+        DrawTerrainCreateDialog(window, sceneService, assetService, history);
         //DrawLaunchErrorDialog();
 
         if (_newDocumentRequested)
@@ -5146,7 +5192,10 @@ public unsafe class EditorUI : IDisposable
 
             ImGui.Spacing();
             if (ImGui.Button("Terrain...", new Vector2(-1, 0)))
+            {
                 _showTerrainCreateDialog = true;
+                _terrainProceduralPreviewDirty = true;
+            }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Create a heightmap terrain asset and add it to the map.");
 
@@ -6733,55 +6782,63 @@ public unsafe class EditorUI : IDisposable
                         ImGui.TextUnformatted($"Resolution: {terrain.Width} x {terrain.Depth}");
                         ImGui.TextUnformatted($"Size: {(terrain.Width - 1) * terrain.CellSize:0.##} x {(terrain.Depth - 1) * terrain.CellSize:0.##}");
                         ImGui.TextUnformatted($"Height: {terrainMin.Y:0.##} .. {terrainMax.Y:0.##}");
-                        ImGui.TextUnformatted($"Neighbor tiles: {terrainSet.Tiles.Count}");
-                        ImGui.TextDisabled(
-                            "Existing: " + string.Join(
-                                ", ",
-                                terrainSet.Tiles.Select(tile => $"({tile.X}, {tile.Z})")));
-
-                        ImGui.SeparatorText("Neighbor terrains");
-                        if (ImGui.Checkbox(
-                                "Edit neighbors in 3D viewport##terrainNeighborEditMode",
-                                ref _terrainNeighborEditMode))
-                            viewport3D.RequestRender();
-                        if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip(
-                                "Empty cells are clickable to create a neighbor. Click an existing neighbor to delete it.");
-                        ImGui.TextDisabled("Blue cells create; green cells delete. The origin cannot be deleted.");
-                        if (!string.IsNullOrWhiteSpace(_terrainNeighborStatus))
-                            ImGui.TextDisabled(_terrainNeighborStatus);
-                        ImGui.TextDisabled("Create connected tiles in the same .terrain asset.");
-                        ImGui.SetNextItemWidth(90.0f);
-                        ImGui.InputInt("Source X##terrainNeighborSourceX", ref _terrainNeighborSourceX);
-                        ImGui.SameLine();
-                        ImGui.SetNextItemWidth(90.0f);
-                        ImGui.InputInt("Source Z##terrainNeighborSourceZ", ref _terrainNeighborSourceZ);
-
-                        bool neighborCreated = false;
-                        if (ImGui.Button("-X##terrainNeighborMinusX"))
-                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, -1, 0);
-                        ImGui.SameLine();
-                        if (ImGui.Button("+X##terrainNeighborPlusX"))
-                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 1, 0);
-                        ImGui.SameLine();
-                        if (ImGui.Button("-Z##terrainNeighborMinusZ"))
-                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, -1);
-                        ImGui.SameLine();
-                        if (ImGui.Button("+Z##terrainNeighborPlusZ"))
-                            neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, 1);
-
-                        if (neighborCreated)
+                        if (terrainSet.Procedural != null)
                         {
-                            sceneService.PopulateScene(assetService);
-                            sceneService.MarkModified(sceneService.Document.Serialize());
-                            _terrainNeighborStatus = "Created neighbor from the manual coordinates.";
-                            viewport3D.RequestRender();
-                            viewportTop.RequestRender();
-                            viewportFront.RequestRender();
-                            viewportSide.RequestRender();
+                            ImGui.TextUnformatted($"Preview tiles: {terrainSet.Tiles.Count}");
+                            DrawProceduralTerrainInspector(terrainSet.Procedural);
                         }
-                        if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip("The source tile must exist and the target grid slot must be empty.");
+                        else
+                        {
+                            ImGui.TextUnformatted($"Neighbor tiles: {terrainSet.Tiles.Count}");
+                            ImGui.TextDisabled(
+                                "Existing: " + string.Join(
+                                    ", ",
+                                    terrainSet.Tiles.Select(tile => $"({tile.X}, {tile.Z})")));
+
+                            ImGui.SeparatorText("Neighbor terrains");
+                            if (ImGui.Checkbox(
+                                    "Edit neighbors in 3D viewport##terrainNeighborEditMode",
+                                    ref _terrainNeighborEditMode))
+                                viewport3D.RequestRender();
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip(
+                                    "Empty cells are clickable to create a neighbor. Click an existing neighbor to delete it.");
+                            ImGui.TextDisabled("Blue cells create; green cells delete. The origin cannot be deleted.");
+                            if (!string.IsNullOrWhiteSpace(_terrainNeighborStatus))
+                                ImGui.TextDisabled(_terrainNeighborStatus);
+                            ImGui.TextDisabled("Create connected tiles in the same .terrain asset.");
+                            ImGui.SetNextItemWidth(90.0f);
+                            ImGui.InputInt("Source X##terrainNeighborSourceX", ref _terrainNeighborSourceX);
+                            ImGui.SameLine();
+                            ImGui.SetNextItemWidth(90.0f);
+                            ImGui.InputInt("Source Z##terrainNeighborSourceZ", ref _terrainNeighborSourceZ);
+
+                            bool neighborCreated = false;
+                            if (ImGui.Button("-X##terrainNeighborMinusX"))
+                                neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, -1, 0);
+                            ImGui.SameLine();
+                            if (ImGui.Button("+X##terrainNeighborPlusX"))
+                                neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 1, 0);
+                            ImGui.SameLine();
+                            if (ImGui.Button("-Z##terrainNeighborMinusZ"))
+                                neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, -1);
+                            ImGui.SameLine();
+                            if (ImGui.Button("+Z##terrainNeighborPlusZ"))
+                                neighborCreated = sceneService.CreateTerrainNeighbor(obj, assetService, _terrainNeighborSourceX, _terrainNeighborSourceZ, 0, 1);
+
+                            if (neighborCreated)
+                            {
+                                sceneService.PopulateScene(assetService);
+                                sceneService.MarkModified(sceneService.Document.Serialize());
+                                _terrainNeighborStatus = "Created neighbor from the manual coordinates.";
+                                viewport3D.RequestRender();
+                                viewportTop.RequestRender();
+                                viewportFront.RequestRender();
+                                viewportSide.RequestRender();
+                            }
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip("The source tile must exist and the target grid slot must be empty.");
+                        }
 
                         int terrainChunkQuads = obj.TerrainChunkQuads;
                         if (ImGui.DragInt("Chunk quads##terrainChunkQuads", ref terrainChunkQuads, 1.0f, 1, 256))
@@ -7389,6 +7446,7 @@ public unsafe class EditorUI : IDisposable
     }
 
     private void DrawTerrainCreateDialog(
+        EditorWindow window,
         EditorSceneService sceneService,
         EditorAssetService assetService,
         CommandHistory history)
@@ -7406,8 +7464,17 @@ public unsafe class EditorUI : IDisposable
         bool open = true;
         if (ImGui.BeginPopupModal("Create Terrain", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
-            ImGui.TextUnformatted("Create a flat heightmap terrain.");
+            ImGui.TextUnformatted(_terrainSourceMode == 0
+                ? "Create a local heightmap terrain."
+                : "Create a streamed procedural world terrain.");
             ImGui.InputText("Name", ref _terrainName, 128);
+
+            string[] sourceLabels = ["Flat / Heightmap", "Procedural world"];
+            bool sourceChanged = ImGui.Combo(
+                "Source",
+                ref _terrainSourceMode,
+                sourceLabels,
+                sourceLabels.Length);
 
             int width = _terrainWidth;
             int depth = _terrainDepth;
@@ -7415,32 +7482,65 @@ public unsafe class EditorUI : IDisposable
             float heightScale = _terrainHeightScale;
             int chunkQuads = _terrainChunkQuads;
 
-            ImGui.InputInt("Width samples", ref width);
-            ImGui.InputInt("Depth samples", ref depth);
-            ImGui.DragFloat("Cell size", ref cellSize, 0.05f, 0.01f, 100.0f, "%.2f");
-            ImGui.DragFloat("Height scale", ref heightScale, 0.1f, 0.01f, 10000.0f, "%.2f");
-            ImGui.InputInt("Chunk quads", ref chunkQuads);
+            bool chunkChanged = ImGui.InputInt("Chunk quads", ref chunkQuads);
+            _terrainChunkQuads = Math.Clamp(chunkQuads, 1, 256);
 
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextUnformatted("Heightmap");
-            ImGui.SameLine();
-            string heightmapLabel = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
-                ? "(Flat terrain)"
-                : _terrainHeightmapPath;
-            float clearButtonWidth = 62.0f;
-            float pickerWidth = MathF.Max(
-                120.0f,
-                ImGui.GetContentRegionAvail().X - clearButtonWidth - ImGui.GetStyle().ItemSpacing.X);
-            if (ImGui.Button(
-                    $"{heightmapLabel}##terrainHeightmapPicker",
-                    new Vector2(pickerWidth, 0.0f)))
+            if (_terrainSourceMode == 0)
             {
-                OpenTerrainHeightmapPicker();
+                ImGui.InputInt("Width samples", ref width);
+                ImGui.InputInt("Depth samples", ref depth);
+                ImGui.DragFloat("Cell size", ref cellSize, 0.05f, 0.01f, 100.0f, "%.2f");
+                ImGui.DragFloat("Height scale", ref heightScale, 0.1f, 0.01f, 10000.0f, "%.2f");
+
+                ImGui.AlignTextToFramePadding();
+                ImGui.TextUnformatted("Heightmap");
+                ImGui.SameLine();
+                string heightmapLabel = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
+                    ? "(Flat terrain)"
+                    : _terrainHeightmapPath;
+                float clearButtonWidth = 62.0f;
+                float pickerWidth = MathF.Max(
+                    120.0f,
+                    ImGui.GetContentRegionAvail().X - clearButtonWidth - ImGui.GetStyle().ItemSpacing.X);
+                if (ImGui.Button(
+                        $"{heightmapLabel}##terrainHeightmapPicker",
+                        new Vector2(pickerWidth, 0.0f)))
+                {
+                    OpenTerrainHeightmapPicker();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Clear##terrainHeightmapClear", new Vector2(clearButtonWidth, 0.0f)))
+                    _terrainHeightmapPath = "";
+                ImGui.TextDisabled("Use a grayscale image. Its resolution becomes the terrain resolution.");
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Clear##terrainHeightmapClear", new Vector2(clearButtonWidth, 0.0f)))
-                _terrainHeightmapPath = "";
-            ImGui.TextDisabled("Use a grayscale image. Its resolution becomes the terrain resolution.");
+
+            if (_terrainSourceMode == 1)
+            {
+                bool controlsChanged = DrawProceduralTerrainCreateControls();
+                if (sourceChanged || controlsChanged || chunkChanged || _terrainProceduralPreviewDirty)
+                {
+                    sceneService.UpdateProceduralTerrainPreview(
+                        BuildProceduralTerrainSettings(),
+                        _terrainChunkQuads,
+                        ProceduralTerrainPreviewMaterialPath,
+                        Array.Empty<string>(),
+                        "",
+                        Vector2.One,
+                        Vector2.Zero,
+                        0.0f,
+                        assetService);
+                    _terrainProceduralPreviewDirty = false;
+                    _terrainProceduralPreviewNeedsRender = true;
+                }
+
+                DrawProceduralTerrainGeneratorPreview(window, sceneService, assetService);
+            }
+            else if (sourceChanged)
+            {
+                sceneService.ClearProceduralTerrainPreview();
+                _terrainProceduralPreviewDirty = false;
+                _terrainProceduralPreviewNeedsRender = false;
+            }
 
             _terrainWidth = Math.Clamp(width, 2, 4096);
             _terrainDepth = Math.Clamp(depth, 2, 4096);
@@ -7463,17 +7563,24 @@ public unsafe class EditorUI : IDisposable
                         fullPath = assetService.ResolveEditorAssetPath(relativePath);
                     }
 
-                    TerrainAsset terrain = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
-                        ? TerrainAsset.CreateFlat(
-                            _terrainWidth,
-                            _terrainDepth,
-                            _terrainCellSize,
-                            _terrainHeightScale)
-                        : TerrainAsset.FromHeightmap(
-                            assetService.ResolveEditorAssetPath(_terrainHeightmapPath),
-                            _terrainCellSize,
-                            _terrainHeightScale);
-                    TerrainTileSetAsset.FromSingle(terrain).Save(fullPath);
+                    if (_terrainSourceMode == 1)
+                    {
+                        new ProceduralTerrainAsset(BuildProceduralTerrainSettings()).Save(fullPath);
+                    }
+                    else
+                    {
+                        TerrainAsset terrain = string.IsNullOrWhiteSpace(_terrainHeightmapPath)
+                            ? TerrainAsset.CreateFlat(
+                                _terrainWidth,
+                                _terrainDepth,
+                                _terrainCellSize,
+                                _terrainHeightScale)
+                            : TerrainAsset.FromHeightmap(
+                                assetService.ResolveEditorAssetPath(_terrainHeightmapPath),
+                                _terrainCellSize,
+                                _terrainHeightScale);
+                        TerrainTileSetAsset.FromSingle(terrain).Save(fullPath);
+                    }
 
                     string objectId = $"terrain_{safeName}";
                     var obj = new MapObject
@@ -7507,6 +7614,9 @@ public unsafe class EditorUI : IDisposable
 
                     _showTerrainCreateDialog = false;
                     _terrainCreateWaitingForHeightmap = false;
+                    sceneService.ClearProceduralTerrainPreview();
+                    _terrainProceduralPreviewDirty = false;
+                    _terrainProceduralPreviewNeedsRender = false;
                     ImGui.CloseCurrentPopup();
                 }
                 catch (Exception ex)
@@ -7521,6 +7631,9 @@ public unsafe class EditorUI : IDisposable
             {
                 _showTerrainCreateDialog = false;
                 _terrainCreateWaitingForHeightmap = false;
+                sceneService.ClearProceduralTerrainPreview();
+                _terrainProceduralPreviewDirty = false;
+                _terrainProceduralPreviewNeedsRender = false;
                 ImGui.CloseCurrentPopup();
             }
 
@@ -7531,7 +7644,273 @@ public unsafe class EditorUI : IDisposable
         {
             _showTerrainCreateDialog = false;
             _terrainCreateWaitingForHeightmap = false;
+            sceneService.ClearProceduralTerrainPreview();
+            _terrainProceduralPreviewDirty = false;
+            _terrainProceduralPreviewNeedsRender = false;
         }
+    }
+
+    private void DrawProceduralTerrainGeneratorPreview(
+        EditorWindow window,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        _terrainGeneratorPreviewViewport ??= new EditorViewport(
+            window.GL,
+            CameraViewType.Perspective3D,
+            assetService.ImageBasedLighting);
+
+        EditorViewport viewport = _terrainGeneratorPreviewViewport;
+        viewport.Camera.FarClipPlane = 100_000.0f;
+        float previewTileSize = Math.Clamp(_terrainProceduralTileSize, 32.0f, 65_536.0f);
+        _terrainGeneratorPreviewTarget = new Vector3(
+            previewTileSize * 0.5f,
+            400.0f,
+            previewTileSize * 0.5f);
+        viewport.Camera.MinDistance = Math.Clamp(previewTileSize * 0.02f, 2.0f, 512.0f);
+        viewport.Camera.MaxDistance = 100_000.0f;
+
+        // The modal is auto-sized by ImGui. Keep the render target large
+        // enough to inspect the terrain while preventing the preview from
+        // taking the entire editor window on smaller monitors.
+        Vector2 available = ImGui.GetContentRegionAvail();
+        float previewWidth = available.X > 32.0f
+            ? MathF.Min(MathF.Max(available.X, 560.0f), 820.0f)
+            : 720.0f;
+        float previewHeight = Math.Clamp(previewWidth * 0.56f, 300.0f, 470.0f);
+        Vector2 previewSize = new(previewWidth, previewHeight);
+
+        if (!_terrainGeneratorPreviewCameraInitialized || _terrainProceduralPreviewNeedsRender)
+        {
+            float previewDistance = Math.Clamp(previewTileSize * 2.05f, 128.0f, 10_000.0f);
+            viewport.Camera.Position = _terrainGeneratorPreviewTarget + new Vector3(
+                0.0f,
+                previewDistance * 0.58f,
+                previewDistance);
+            viewport.Camera.LookAt(_terrainGeneratorPreviewTarget);
+            _terrainGeneratorPreviewCameraInitialized = true;
+            _terrainProceduralPreviewNeedsRender = false;
+        }
+
+        // Check the image rectangle before drawing it so the current frame's
+        // mouse input can update the camera before the framebuffer is rendered.
+        Vector2 previewMin = ImGui.GetCursorScreenPos();
+        Vector2 previewMax = previewMin + previewSize;
+        Vector2 mouse = ImGui.GetIO().MousePos;
+        bool hovered = mouse.X >= previewMin.X && mouse.X <= previewMax.X &&
+                       mouse.Y >= previewMin.Y && mouse.Y <= previewMax.Y;
+        if (hovered)
+        {
+            Vector2 delta = ImGui.GetIO().MouseDelta;
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left) && delta.LengthSquared() > 0.0001f)
+            {
+                viewport.Camera.OrbitAround(
+                    _terrainGeneratorPreviewTarget,
+                    -delta.X * 0.35f,
+                    -delta.Y * 0.25f);
+            }
+
+            float wheel = ImGui.GetIO().MouseWheel;
+            if (float.IsFinite(wheel) && MathF.Abs(wheel) > 0.0001f)
+            {
+                viewport.Camera.OrbitAround(
+                    _terrainGeneratorPreviewTarget,
+                    0.0f,
+                    0.0f,
+                    MathF.Exp(-wheel * 0.12f));
+            }
+        }
+
+        int targetWidth = Math.Max(8, ((int)MathF.Round(previewWidth) + 3) & ~3);
+        int targetHeight = Math.Max(8, ((int)MathF.Round(previewHeight) + 3) & ~3);
+        if (targetWidth != viewport.Width || targetHeight != viewport.Height)
+            viewport.CreateFbo(targetWidth, targetHeight);
+
+        window.Glfw.GetFramebufferSize(window.Handle, out int framebufferWidth, out int framebufferHeight);
+        viewport.BeginRender();
+        try
+        {
+            viewport.RenderScene(
+                assetService,
+                sceneService,
+                SnapGrid,
+                sceneOverride: sceneService.ProceduralPreviewScene,
+                drawAtmosphere: false,
+                drawGrid: false);
+        }
+        finally
+        {
+            viewport.EndRender(
+                Math.Max(1, framebufferWidth),
+                Math.Max(1, framebufferHeight));
+        }
+
+        ImGui.Image(
+            (IntPtr)viewport.ColorTexture,
+            previewSize,
+            new Vector2(0.0f, 1.0f),
+            new Vector2(1.0f, 0.0f));
+        ImGui.TextDisabled("Preview: left-drag to orbit, mouse wheel to zoom. Uses Materials/GRASS.fmat.");
+    }
+
+    private bool DrawProceduralTerrainCreateControls()
+    {
+        bool changed = false;
+        ImGui.SeparatorText("Procedural world");
+        ImGui.TextDisabled("The .terrain stores this recipe; only tiles near the camera are generated.");
+
+        if (ImGui.Button("Randomize seed##proceduralTerrainRandomSeed"))
+        {
+            _terrainProceduralSeed = Random.Shared.Next();
+            changed = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Regenerate preview##proceduralTerrainRegenerate"))
+            changed = true;
+        changed |= ImGui.InputInt("Seed##proceduralTerrainSeed", ref _terrainProceduralSeed);
+        changed |= ImGui.DragFloat(
+            "World size (km)##proceduralTerrainWorldSize",
+            ref _terrainProceduralWorldSizeKm,
+            10.0f,
+            1.0f,
+            80_000.0f,
+            "%.0f km");
+        changed |= ImGui.DragFloat(
+            "Tile size (m)##proceduralTerrainTileSize",
+            ref _terrainProceduralTileSize,
+            8.0f,
+            32.0f,
+            65_536.0f,
+            "%.0f m");
+        changed |= ImGui.InputInt("Tile resolution##proceduralTerrainResolution", ref _terrainProceduralResolution);
+
+        ImGui.SeparatorText("Shape");
+        changed |= ImGui.DragFloat("Minimum height##proceduralTerrainMinHeight", ref _terrainProceduralMinHeight, 1.0f, -100_000.0f, 100_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Maximum height##proceduralTerrainMaxHeight", ref _terrainProceduralMaxHeight, 1.0f, -100_000.0f, 100_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Sea level##proceduralTerrainSeaLevel", ref _terrainProceduralSeaLevel, 1.0f, -100_000.0f, 100_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Base height##proceduralTerrainBaseHeight", ref _terrainProceduralBaseHeight, 1.0f, -100_000.0f, 100_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Continental amplitude##proceduralTerrainContinentalAmplitude", ref _terrainProceduralContinentalAmplitude, 10.0f, 0.0f, 100_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Continental scale##proceduralTerrainContinentalScale", ref _terrainProceduralContinentalScale, 0.000001f, 0.0000001f, 0.001f, "%.6f");
+        changed |= ImGui.InputInt("Continental octaves##proceduralTerrainContinentalOctaves", ref _terrainProceduralContinentalOctaves);
+        changed |= ImGui.DragFloat("Noise lacunarity##proceduralTerrainNoiseLacunarity", ref _terrainProceduralNoiseLacunarity, 0.01f, 1.01f, 4.0f, "%.2f");
+        changed |= ImGui.DragFloat("Noise gain##proceduralTerrainNoiseGain", ref _terrainProceduralNoiseGain, 0.01f, 0.01f, 0.99f, "%.2f");
+        changed |= ImGui.DragFloat("Mountain height##proceduralTerrainMountainHeight", ref _terrainProceduralMountainHeight, 10.0f, 0.0f, 20_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Mountain scale##proceduralTerrainMountainScale", ref _terrainProceduralMountainScale, 0.000001f, 0.0000001f, 0.001f, "%.6f");
+        changed |= ImGui.InputInt("Mountain octaves##proceduralTerrainMountainOctaves", ref _terrainProceduralMountainOctaves);
+        changed |= ImGui.DragFloat("Mountain mask start##proceduralTerrainMountainMaskStart", ref _terrainProceduralMountainMaskStart, 0.01f, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui.DragFloat("Mountain mask end##proceduralTerrainMountainMaskEnd", ref _terrainProceduralMountainMaskEnd, 0.01f, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui.DragFloat("Valley depth##proceduralTerrainValleyDepth", ref _terrainProceduralValleyDepth, 5.0f, 0.0f, 10_000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Valley scale##proceduralTerrainValleyScale", ref _terrainProceduralValleyScale, 0.000001f, 0.0000001f, 0.001f, "%.6f");
+        changed |= ImGui.InputInt("Valley octaves##proceduralTerrainValleyOctaves", ref _terrainProceduralValleyOctaves);
+        changed |= ImGui.DragFloat("Detail height##proceduralTerrainDetailHeight", ref _terrainProceduralDetailHeight, 1.0f, 0.0f, 1000.0f, "%.1f");
+        changed |= ImGui.DragFloat("Detail scale##proceduralTerrainDetailScale", ref _terrainProceduralDetailScale, 0.00001f, 0.000001f, 0.01f, "%.6f");
+        changed |= ImGui.InputInt("Detail octaves##proceduralTerrainDetailOctaves", ref _terrainProceduralDetailOctaves);
+        changed |= ImGui.DragFloat("Domain warp strength##proceduralTerrainWarpStrength", ref _terrainProceduralWarpStrength, 0.01f, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui.DragFloat("Domain warp scale##proceduralTerrainWarpScale", ref _terrainProceduralWarpScale, 0.000001f, 0.0000001f, 0.001f, "%.6f");
+        changed |= ImGui.InputInt("Domain warp octaves##proceduralTerrainWarpOctaves", ref _terrainProceduralWarpOctaves);
+        changed |= ImGui.DragFloat("Erosion approximation##proceduralTerrainErosion", ref _terrainProceduralErosion, 0.01f, 0.0f, 1.0f, "%.2f");
+        changed |= ImGui.DragFloat("River depth##proceduralTerrainRiverDepth", ref _terrainProceduralRiverDepth, 1.0f, 0.0f, 5000.0f, "%.1f");
+        changed |= ImGui.DragFloat("River scale##proceduralTerrainRiverScale", ref _terrainProceduralRiverScale, 0.000001f, 0.0000001f, 0.001f, "%.6f");
+        changed |= ImGui.InputInt("River octaves##proceduralTerrainRiverOctaves", ref _terrainProceduralRiverOctaves);
+
+        ImGui.SeparatorText("Streaming budget");
+        changed |= ImGui.InputInt("Preview tile radius##proceduralTerrainPreviewRadius", ref _terrainProceduralPreviewRadius);
+        changed |= ImGui.InputInt("Streaming tile radius##proceduralTerrainStreamingRadius", ref _terrainProceduralStreamingRadius);
+        changed |= ImGui.InputInt("Collision tile radius##proceduralTerrainCollisionRadius", ref _terrainProceduralCollisionRadius);
+        changed |= ImGui.InputInt("Maximum resident tiles##proceduralTerrainMaxResident", ref _terrainProceduralMaxResidentTiles);
+        changed |= ImGui.InputInt("Generation tasks##proceduralTerrainGenerationTasks", ref _terrainProceduralMaxGenerationTasks);
+        changed |= ImGui.InputInt("Tile uploads per frame##proceduralTerrainUploads", ref _terrainProceduralMaxUploadsPerFrame);
+        changed |= ImGui.DragFloat("LOD pixel error##proceduralTerrainLodPixelError", ref _terrainProceduralLodPixelError, 0.25f, 0.1f, 100.0f, "%.2f px");
+        ImGui.TextDisabled("Generation runs on workers; mesh and collision uploads are budgeted per frame.");
+
+        _terrainProceduralWorldSizeKm = Math.Clamp(_terrainProceduralWorldSizeKm, 1.0f, 80_000.0f);
+        _terrainProceduralTileSize = Math.Clamp(_terrainProceduralTileSize, 32.0f, 65_536.0f);
+        _terrainProceduralResolution = Math.Clamp(_terrainProceduralResolution, 17, 513);
+        _terrainProceduralMinHeight = Math.Clamp(_terrainProceduralMinHeight, -100_000.0f, 100_000.0f);
+        _terrainProceduralMaxHeight = Math.Clamp(_terrainProceduralMaxHeight, _terrainProceduralMinHeight + 1.0f, 100_000.0f);
+        _terrainProceduralSeaLevel = Math.Clamp(_terrainProceduralSeaLevel, _terrainProceduralMinHeight, _terrainProceduralMaxHeight);
+        _terrainProceduralContinentalOctaves = Math.Clamp(_terrainProceduralContinentalOctaves, 1, 8);
+        _terrainProceduralMountainOctaves = Math.Clamp(_terrainProceduralMountainOctaves, 1, 8);
+        _terrainProceduralValleyOctaves = Math.Clamp(_terrainProceduralValleyOctaves, 1, 8);
+        _terrainProceduralDetailOctaves = Math.Clamp(_terrainProceduralDetailOctaves, 1, 8);
+        _terrainProceduralWarpOctaves = Math.Clamp(_terrainProceduralWarpOctaves, 1, 8);
+        _terrainProceduralRiverOctaves = Math.Clamp(_terrainProceduralRiverOctaves, 1, 8);
+        _terrainProceduralNoiseLacunarity = Math.Clamp(_terrainProceduralNoiseLacunarity, 1.01f, 4.0f);
+        _terrainProceduralNoiseGain = Math.Clamp(_terrainProceduralNoiseGain, 0.01f, 0.99f);
+        _terrainProceduralMountainMaskStart = Math.Clamp(_terrainProceduralMountainMaskStart, 0.0f, 0.999f);
+        _terrainProceduralMountainMaskEnd = Math.Clamp(_terrainProceduralMountainMaskEnd, _terrainProceduralMountainMaskStart + 0.001f, 1.0f);
+        _terrainProceduralPreviewRadius = Math.Clamp(_terrainProceduralPreviewRadius, 0, 4);
+        _terrainProceduralStreamingRadius = Math.Clamp(_terrainProceduralStreamingRadius, 0, 8);
+        _terrainProceduralCollisionRadius = Math.Clamp(_terrainProceduralCollisionRadius, 0, _terrainProceduralStreamingRadius);
+        _terrainProceduralMaxResidentTiles = Math.Clamp(_terrainProceduralMaxResidentTiles, 1, 4096);
+        _terrainProceduralMaxGenerationTasks = Math.Clamp(_terrainProceduralMaxGenerationTasks, 1, 16);
+        _terrainProceduralMaxUploadsPerFrame = Math.Clamp(_terrainProceduralMaxUploadsPerFrame, 1, 8);
+        _terrainProceduralLodPixelError = MathF.Max(0.1f, _terrainProceduralLodPixelError);
+        return changed;
+    }
+
+    private ProceduralTerrainSettings BuildProceduralTerrainSettings()
+    {
+        var settings = new ProceduralTerrainSettings
+        {
+            Seed = _terrainProceduralSeed,
+            WorldSizeMeters = _terrainProceduralWorldSizeKm * 1000.0,
+            TileSizeMeters = _terrainProceduralTileSize,
+            TileResolution = _terrainProceduralResolution,
+            MinHeight = _terrainProceduralMinHeight,
+            MaxHeight = _terrainProceduralMaxHeight,
+            SeaLevel = _terrainProceduralSeaLevel,
+            BaseHeight = _terrainProceduralBaseHeight,
+            ContinentalAmplitude = _terrainProceduralContinentalAmplitude,
+            ContinentalScale = _terrainProceduralContinentalScale,
+            ContinentalOctaves = _terrainProceduralContinentalOctaves,
+            NoiseLacunarity = _terrainProceduralNoiseLacunarity,
+            NoiseGain = _terrainProceduralNoiseGain,
+            MountainHeight = _terrainProceduralMountainHeight,
+            MountainScale = _terrainProceduralMountainScale,
+            MountainOctaves = _terrainProceduralMountainOctaves,
+            MountainMaskStart = _terrainProceduralMountainMaskStart,
+            MountainMaskEnd = _terrainProceduralMountainMaskEnd,
+            ValleyDepth = _terrainProceduralValleyDepth,
+            ValleyScale = _terrainProceduralValleyScale,
+            ValleyOctaves = _terrainProceduralValleyOctaves,
+            DetailHeight = _terrainProceduralDetailHeight,
+            DetailScale = _terrainProceduralDetailScale,
+            DetailOctaves = _terrainProceduralDetailOctaves,
+            DomainWarpStrength = _terrainProceduralWarpStrength,
+            DomainWarpScale = _terrainProceduralWarpScale,
+            DomainWarpOctaves = _terrainProceduralWarpOctaves,
+            ErosionStrength = _terrainProceduralErosion,
+            RiverDepth = _terrainProceduralRiverDepth,
+            RiverScale = _terrainProceduralRiverScale,
+            RiverOctaves = _terrainProceduralRiverOctaves,
+            PreviewTileRadius = _terrainProceduralPreviewRadius,
+            StreamingTileRadius = _terrainProceduralStreamingRadius,
+            CollisionTileRadius = _terrainProceduralCollisionRadius,
+            MaxResidentTiles = _terrainProceduralMaxResidentTiles,
+            MaxGenerationTasks = _terrainProceduralMaxGenerationTasks,
+            MaxTileUploadsPerFrame = _terrainProceduralMaxUploadsPerFrame,
+            LodPixelError = _terrainProceduralLodPixelError
+        };
+        settings.Validate();
+        return settings;
+    }
+
+    private static void DrawProceduralTerrainInspector(ProceduralTerrainAsset procedural)
+    {
+        ProceduralTerrainSettings settings = procedural.Settings;
+        ImGui.SeparatorText("Procedural world");
+        ImGui.TextUnformatted($"Seed: {settings.Seed}");
+        ImGui.TextUnformatted($"World size: {settings.WorldSizeMeters / 1000.0:0.##} km");
+        ImGui.TextUnformatted($"Tile: {settings.TileSizeMeters:0.##} m ({settings.TileResolution} samples)");
+        ImGui.TextUnformatted($"Preview radius: {settings.PreviewTileRadius} tile(s)");
+        ImGui.TextUnformatted($"Streaming radius: {settings.StreamingTileRadius} tile(s)");
+        ImGui.TextUnformatted($"Collision radius: {settings.CollisionTileRadius} tile(s)");
+        ImGui.TextUnformatted($"Resident budget: {settings.MaxResidentTiles} tile(s)");
+        ImGui.TextUnformatted($"Modified tiles: {procedural.ModifiedTileCount}");
+        ImGui.TextDisabled(
+            "This asset stores a recipe and sparse sculpt deltas. The editor " +
+            "shows only the local preview; the game streams tiles around the player.");
     }
 
     private void OpenTerrainHeightmapPicker()
@@ -9021,7 +9400,7 @@ public unsafe class EditorUI : IDisposable
             return;
 
         TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
-        if (terrainSet == null)
+        if (terrainSet == null || terrainSet.Procedural != null)
             return;
 
         Vector3 terrainPosition = _selectedObject.Body.Position;
@@ -9123,7 +9502,7 @@ public unsafe class EditorUI : IDisposable
             return false;
 
         TerrainTileSetAsset? terrainSet = sceneService.TryLoadTerrainTileSet(_selectedObject, assetService);
-        if (terrainSet == null)
+        if (terrainSet == null || terrainSet.Procedural != null)
             return false;
 
         Vector3 terrainPosition = _selectedObject.Body.Position;

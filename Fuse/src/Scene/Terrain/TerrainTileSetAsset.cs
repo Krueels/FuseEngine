@@ -66,11 +66,14 @@ public sealed class TerrainTileSetSnapshot
 ///
 /// Version 1 .terrain files are transparently exposed as a one-tile set.
 /// Version 2 stores a tile count followed by each tile coordinate and its
-/// heightmap, so the map file needs only one terrain_asset reference.
+/// heightmap, so the map file needs only one terrain_asset reference. Version
+/// 3 stores a procedural recipe plus sparse sculpt deltas and materialises a
+/// small preview window on demand.
 /// </summary>
 public sealed class TerrainTileSetAsset
 {
     public const int CurrentVersion = 2;
+    public const int ProceduralVersion = ProceduralTerrainAsset.FileVersion;
     private const int MaxTileCount = 4096;
     private const float SettingsEpsilon = 0.000001f;
 
@@ -78,7 +81,10 @@ public sealed class TerrainTileSetAsset
     private readonly List<TerrainTile> _orderedTiles;
 
     public IReadOnlyList<TerrainTile> Tiles => _orderedTiles;
-    public TerrainTile Primary => _tiles[(0, 0)];
+    public TerrainTile Primary => _tiles.TryGetValue((0, 0), out TerrainTile? origin)
+        ? origin
+        : _orderedTiles[0];
+    public ProceduralTerrainAsset? Procedural { get; }
     public int Width => Primary.Asset.Width;
     public int Depth => Primary.Asset.Depth;
     public float CellSize => Primary.Asset.CellSize;
@@ -88,9 +94,18 @@ public sealed class TerrainTileSetAsset
     public float TileWorldDepth => (Depth - 1) * CellSize;
 
     public TerrainTileSetAsset(IEnumerable<TerrainTile> tiles)
+        : this(tiles, null)
+    {
+    }
+
+    private TerrainTileSetAsset(
+        IEnumerable<TerrainTile> tiles,
+        ProceduralTerrainAsset? procedural)
     {
         if (tiles == null)
             throw new ArgumentNullException(nameof(tiles));
+
+        Procedural = procedural;
 
         _tiles = new Dictionary<(int X, int Z), TerrainTile>();
         foreach (TerrainTile tile in tiles)
@@ -99,13 +114,15 @@ public sealed class TerrainTileSetAsset
                 throw new InvalidDataException($"Duplicate terrain tile coordinate ({tile.X}, {tile.Z}).");
         }
 
-        if (!_tiles.ContainsKey((0, 0)))
-            throw new InvalidDataException("A terrain tile set must contain the origin tile (0, 0).");
-
         if (_tiles.Count == 0 || _tiles.Count > MaxTileCount)
             throw new InvalidDataException("The terrain tile count is outside the supported range.");
 
-        TerrainAsset reference = Primary.Asset;
+        // Primary normally resolves to (0, 0), but transient streamed sets
+        // may contain only a tile at another global coordinate. Do not use
+        // Primary here because the ordered list is built below.
+        TerrainAsset reference = _tiles.TryGetValue((0, 0), out TerrainTile? origin)
+            ? origin.Asset
+            : _tiles.Values.First().Asset;
         foreach (TerrainTile tile in _tiles.Values)
         {
             TerrainAsset asset = tile.Asset;
@@ -130,7 +147,67 @@ public sealed class TerrainTileSetAsset
     {
         if (terrain == null)
             throw new ArgumentNullException(nameof(terrain));
-        return new TerrainTileSetAsset([new TerrainTile(0, 0, terrain)]);
+        return FromSingleAt(0, 0, terrain);
+    }
+
+    /// <summary>
+    /// Creates a transient one-tile set at a global tile coordinate. This is
+    /// used by the procedural streamer so the normal terrain LOD adjacency
+    /// code can see neighboring streamed tiles in one coordinate space.
+    /// </summary>
+    public static TerrainTileSetAsset FromSingleAt(int x, int z, TerrainAsset terrain)
+    {
+        if (terrain == null)
+            throw new ArgumentNullException(nameof(terrain));
+        return new TerrainTileSetAsset([new TerrainTile(x, z, terrain)]);
+    }
+
+    /// <summary>
+    /// Materializes only the small editor/runtime preview window of a
+    /// procedural world. The complete world remains represented by the
+    /// recipe, not by these preview tiles.
+    /// </summary>
+    public static TerrainTileSetAsset FromProcedural(ProceduralTerrainAsset procedural)
+    {
+        ArgumentNullException.ThrowIfNull(procedural);
+
+        int radius = System.Math.Clamp(procedural.Settings.PreviewTileRadius, 0, 4);
+        var coordinates = new HashSet<(int X, int Z)>();
+        for (int z = -radius; z <= radius; z++)
+        {
+            for (int x = -radius; x <= radius; x++)
+            {
+                if (!procedural.IsTileWithinWorld(x, z))
+                    continue;
+
+                coordinates.Add((x, z));
+            }
+        }
+
+        // Sculpt/neighbor edits may target a tile outside the small preview
+        // radius. Keep those tiles materialized after reopening the asset so
+        // the editor can display and edit the persisted result.
+        foreach ((long X, long Z) coordinate in procedural.ModifiedTileCoordinates)
+        {
+            if (coordinate.X < int.MinValue || coordinate.X > int.MaxValue ||
+                coordinate.Z < int.MinValue || coordinate.Z > int.MaxValue ||
+                !procedural.IsTileWithinWorld(coordinate.X, coordinate.Z))
+                continue;
+
+            coordinates.Add(((int)coordinate.X, (int)coordinate.Z));
+        }
+
+        coordinates.Add((0, 0));
+        var tiles = new List<TerrainTile>(coordinates.Count);
+        foreach ((int X, int Z) coordinate in coordinates.OrderBy(value => value.Z).ThenBy(value => value.X))
+        {
+            tiles.Add(new TerrainTile(
+                coordinate.X,
+                coordinate.Z,
+                procedural.GenerateTile(coordinate.X, coordinate.Z)));
+        }
+
+        return new TerrainTileSetAsset(tiles, procedural);
     }
 
     public bool TryGetTile(int x, int z, out TerrainTile tile) =>
@@ -355,6 +432,17 @@ public sealed class TerrainTileSetAsset
 
     public void Save(string path)
     {
+        if (Procedural != null)
+        {
+            // Sculpting still operates on the ordinary TerrainAsset returned
+            // for a tile. Convert those changes back to sparse overrides before
+            // writing the compact procedural file.
+            foreach (TerrainTile tile in _orderedTiles)
+                Procedural.UpdateDeltaFromTile(tile.X, tile.Z, tile.Asset);
+            Procedural.Save(path);
+            return;
+        }
+
         string? directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(directory))
             Directory.CreateDirectory(directory);
@@ -386,6 +474,9 @@ public sealed class TerrainTileSetAsset
         if (version == TerrainAsset.CurrentVersion)
             return FromSingle(ReadTerrain(reader));
 
+        if (version == ProceduralVersion)
+            return FromProcedural(ProceduralTerrainAsset.ReadPayload(reader));
+
         if (version != CurrentVersion)
             throw new InvalidDataException($"Unsupported terrain version: {version}");
 
@@ -400,6 +491,9 @@ public sealed class TerrainTileSetAsset
             int z = reader.ReadInt32();
             tiles.Add(new TerrainTile(x, z, ReadTerrain(reader)));
         }
+
+        if (!tiles.Any(tile => tile.X == 0 && tile.Z == 0))
+            throw new InvalidDataException("A saved terrain tile set must contain the origin tile (0, 0).");
 
         return new TerrainTileSetAsset(tiles);
     }

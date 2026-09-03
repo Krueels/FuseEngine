@@ -408,6 +408,79 @@ public static class TerrainSceneBuilder
     }
 
     /// <summary>
+    /// Adds only the native collision body for an already-rendered procedural
+    /// tile. This lets the streamer keep visual tiles around the player while
+    /// limiting Jolt bodies to the configured collision radius.
+    /// </summary>
+    public static bool AddCollisionToScene(
+        Fuse.Renderer.Scene scene,
+        TerrainTile tile,
+        string terrainGroupId,
+        Vector3 worldPosition,
+        Quaternion worldRotation,
+        PhysicsWorld physics,
+        IList<RigidBody> createdBodies,
+        float friction,
+        float restitution)
+    {
+        if (scene == null || tile == null || string.IsNullOrWhiteSpace(terrainGroupId))
+            return false;
+        if (!CanUseNativeHeightField(tile.Asset))
+            return false;
+
+        string collisionId = $"{GetTileId(terrainGroupId, tile)}_collision";
+        foreach (Entity entity in scene.Entities)
+        {
+            if (entity.Id.Equals(collisionId, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return CreateNativeHeightFieldBody(
+                scene,
+                tile.Asset,
+                collisionId,
+                terrainGroupId,
+                tile,
+                worldPosition + Vector3.Transform(
+                    new Vector3(
+                        tile.X * (tile.Asset.Width - 1) * tile.Asset.CellSize,
+                        0.0f,
+                        tile.Z * (tile.Asset.Depth - 1) * tile.Asset.CellSize),
+                    worldRotation),
+                worldRotation,
+                physics,
+                createdBodies,
+                friction,
+                restitution) != null;
+    }
+
+    public static int RemoveCollisionFromScene(
+        Fuse.Renderer.Scene scene,
+        string terrainGroupId,
+        TerrainTileCoordinate coordinate,
+        PhysicsWorld physics,
+        IList<RigidBody> sceneBodies)
+    {
+        List<RigidBody> removedBodies = scene.RemoveEntities(entity =>
+            entity.TerrainLod == null &&
+            entity.TerrainChunkGroupId.Equals(terrainGroupId, StringComparison.OrdinalIgnoreCase) &&
+            (long)entity.TerrainTileX == coordinate.X &&
+            (long)entity.TerrainTileZ == coordinate.Z);
+
+        foreach (RigidBody body in removedBodies)
+        {
+            if (body.IsBuilt)
+            {
+                physics.DestroyBody(body.Native);
+                body.Destroy();
+            }
+            sceneBodies.Remove(body);
+        }
+
+        return removedBodies.Count;
+    }
+
+    /// <summary>
     /// Refreshes only chunks touched by a sculpt operation. Render meshes are
     /// updated in place, so the scene hierarchy, entities and materials stay
     /// alive while the brush is being dragged.

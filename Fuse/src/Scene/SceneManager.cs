@@ -286,6 +286,18 @@ private void ClearCurrentMap()
         if (_triggerSystem != null)
             _triggerSystem.Update(dt);
     }
+
+    /// <summary>
+    /// Updates procedural terrain residency around the player. CPU generation
+    /// may run in the background, while the scene consumes a small upload
+    /// budget on the engine/render thread.
+    /// </summary>
+    public int UpdateTerrainStreaming(Vector3 cameraPosition) =>
+        _scene.UpdateProceduralTerrainStreaming(
+            cameraPosition,
+            _assets,
+            _physics,
+            _bodies);
     
     public bool CheckPendingResets()
     {

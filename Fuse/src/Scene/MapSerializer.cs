@@ -611,6 +611,7 @@ public static class MapSerializer
                     }
                     bool terrainVisible = IsGloballyVisible(id);
 
+                    bool isProceduralTerrain = terrain.Procedural != null;
                     int chunkCount = TerrainSceneBuilder.AddToScene(
                         scene,
                         terrain,
@@ -626,8 +627,8 @@ public static class MapSerializer
                         terrainUvOffset,
                         terrainUvRotation,
                         assets,
-                        physics,
-                        createdBodies,
+                        isProceduralTerrain ? null : physics,
+                        isProceduralTerrain ? null : createdBodies,
                         "",
                         terrainFriction,
                         terrainRestitution,
@@ -640,6 +641,58 @@ public static class MapSerializer
 
                     if (chunkCount == 0)
                         Logger.Warn($"Map load: terrain '{id}' generated no chunks.");
+
+                    if (terrain.Procedural != null && terrainVisible)
+                    {
+                        var proceduralLayer = new ProceduralTerrainLayer(
+                            id,
+                            terrain.Procedural,
+                            terrainPosition,
+                            terrainRotation,
+                            terrainVisible,
+                            terrainChunkQuads,
+                            terrainMaterialPath,
+                            terrainMaterialPaths,
+                            terrainTexturePath,
+                            terrainUvScale,
+                            terrainUvOffset,
+                            terrainUvRotation,
+                            parentId: "",
+                            friction: terrainFriction,
+                            restitution: terrainRestitution,
+                            pixelError: obj.TryGetPropertyValue("terrain_pixel_error", out var proceduralPixelErrorNode)
+                                ? MathF.Max(0.1f, (float)proceduralPixelErrorNode!)
+                                : TerrainSceneBuilder.DefaultPixelError,
+                            collisionLod: obj.TryGetPropertyValue("terrain_collision_lod", out var proceduralCollisionLodNode)
+                                ? System.Math.Max(0, (int)proceduralCollisionLodNode!)
+                                : TerrainSceneBuilder.DefaultCollisionLod);
+
+                        foreach (TerrainTile tile in terrain.Tiles)
+                        {
+                            var coordinate = new TerrainTileCoordinate(tile.X, tile.Z);
+                            bool hasCollision = proceduralLayer.Streamer.IsWithinRadius(
+                                coordinate,
+                                proceduralLayer.CollisionTileRadius);
+                            proceduralLayer.MarkInitialTile(tile, false);
+                            if (hasCollision)
+                            {
+                                if (TerrainSceneBuilder.AddCollisionToScene(
+                                    scene,
+                                    tile,
+                                    id,
+                                    terrainPosition,
+                                    terrainRotation,
+                                    physics,
+                                    createdBodies,
+                                    terrainFriction,
+                                    terrainRestitution))
+                                {
+                                    proceduralLayer.CollisionTiles.Add(coordinate);
+                                }
+                            }
+                        }
+                        scene.RegisterProceduralTerrain(proceduralLayer);
+                    }
                 }
                 catch (Exception ex)
                 {

@@ -42,6 +42,72 @@ public class ViewportCamera
         _pitch = float.Clamp(_pitch, -89.0f, 89.0f);
     }
 
+    /// <summary>
+    /// Points the perspective camera at a world-space target. This is used by
+    /// editor previews that have their own camera and should not depend on the
+    /// main viewport's fly-camera state.
+    /// </summary>
+    public void LookAt(Vector3 target)
+    {
+        if (IsOrthographic)
+            return;
+
+        Vector3 direction = target - Position;
+        if (direction.LengthSquared() <= 0.000001f)
+            return;
+
+        direction = Vector3.Normalize(direction);
+        _pitch = float.Clamp(
+            -MathF.Asin(float.Clamp(direction.Y, -1.0f, 1.0f)) * 180.0f / MathF.PI,
+            -89.0f,
+            89.0f);
+        _yaw = MathF.Atan2(-direction.Z, -direction.X) * 180.0f / MathF.PI;
+    }
+
+    /// <summary>
+    /// Orbits a perspective camera around a target. The camera position and
+    /// orientation are updated together so a preview can be rotated without
+    /// exposing or mutating the editor's main viewport camera.
+    /// </summary>
+    public void OrbitAround(
+        Vector3 target,
+        float deltaYaw,
+        float deltaPitch,
+        float zoomFactor = 1.0f)
+    {
+        if (IsOrthographic)
+            return;
+
+        Vector3 offset = Position - target;
+        float distance = offset.Length();
+        if (!float.IsFinite(distance) || distance <= 0.001f)
+            distance = MathF.Max(MinDistance, 1.0f);
+
+        float azimuth = MathF.Atan2(offset.Z, offset.X);
+        float elevation = MathF.Asin(float.Clamp(offset.Y / distance, -1.0f, 1.0f));
+        const float radiansPerDegree = MathF.PI / 180.0f;
+        azimuth += deltaYaw * radiansPerDegree;
+        elevation = float.Clamp(
+            elevation + deltaPitch * radiansPerDegree,
+            -89.0f * radiansPerDegree,
+            89.0f * radiansPerDegree);
+
+        if (float.IsFinite(zoomFactor) && zoomFactor > 0.0f)
+            distance *= zoomFactor;
+
+        distance = float.Clamp(
+            distance,
+            MathF.Max(0.05f, MinDistance),
+            MathF.Max(MinDistance, MaxDistance));
+
+        float horizontalDistance = MathF.Cos(elevation) * distance;
+        Position = target + new Vector3(
+            MathF.Cos(azimuth) * horizontalDistance,
+            MathF.Sin(elevation) * distance,
+            MathF.Sin(azimuth) * horizontalDistance);
+        LookAt(target);
+    }
+
     public void Zoom(float delta, Vector2 mousePos, Vector2 viewportSize)
     {
         if (viewportSize.X <= 1.0f || viewportSize.Y <= 1.0f || !float.IsFinite(delta))

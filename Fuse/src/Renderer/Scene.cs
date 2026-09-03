@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Fuse.Math;
 using Fuse.Physics;
 using Fuse.Scene.Terrain;
+using Fuse.AssetManagement;
 using JoltPhysicsSharp;
 
 namespace Fuse.Renderer;
@@ -145,6 +146,7 @@ public class Scene
     private readonly Dictionary<BodyID, Entity> _bodyEntityMap = [];
     private readonly List<Entity> _staticShadowCasters = [];
     private readonly List<Entity> _dynamicShadowCasters = [];
+    private readonly List<ProceduralTerrainLayer> _proceduralTerrainLayers = [];
 
     public ulong StaticShadowRevision { get; private set; }
     public ulong DynamicShadowRevision { get; private set; }
@@ -152,6 +154,7 @@ public class Scene
     public IReadOnlyList<Entity> DynamicShadowCasters => _dynamicShadowCasters;
 
     public IReadOnlyList<Light> Lights => _lights;
+    public IReadOnlyList<ProceduralTerrainLayer> ProceduralTerrainLayers => _proceduralTerrainLayers;
 
     public Light AddLight(Light light)
     {
@@ -178,6 +181,10 @@ public class Scene
 
     public void Clear()
     {
+        foreach (ProceduralTerrainLayer layer in _proceduralTerrainLayers)
+            layer.Dispose();
+        _proceduralTerrainLayers.Clear();
+
         // Dispose APENAS meshes que a entidade possui (brushes/cápsulas).
         // NUNCA dispose de meshes compartilhadas (cache do AssetManager: "cube", modelos OBJ, etc)
         // — o skybox usa GetMesh("cube") todo frame e o próximo mapa reutiliza o cache.
@@ -205,6 +212,226 @@ public class Scene
         _dynamicShadowCasters.Clear();
         StaticShadowRevision = 0;
         DynamicShadowRevision = 0;
+    }
+
+    public void RegisterProceduralTerrain(ProceduralTerrainLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (_proceduralTerrainLayers.Any(existing =>
+                existing.Id.Equals(layer.Id, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"A procedural terrain with id '{layer.Id}' is already registered.");
+
+        _proceduralTerrainLayers.Add(layer);
+    }
+
+    /// <summary>
+    /// Advances all procedural terrain streamers and consumes a bounded number
+    /// of completed CPU tiles. Meshes and Jolt bodies are created only here,
+    /// on the caller's render/engine thread.
+    /// </summary>
+    public int UpdateProceduralTerrainStreaming(
+        Vector3 cameraPosition,
+        AssetManager assets,
+        PhysicsWorld physics,
+        IList<RigidBody> sceneBodies)
+    {
+        if (_proceduralTerrainLayers.Count == 0)
+            return 0;
+
+        int changed = 0;
+        foreach (ProceduralTerrainLayer layer in _proceduralTerrainLayers)
+        {
+            Vector3 localCamera = Vector3.Transform(
+                cameraPosition - layer.WorldPosition,
+                Quaternion.Inverse(layer.WorldRotation));
+            layer.Streamer.Update(localCamera);
+
+            foreach (TerrainTileCoordinate coordinate in layer.Streamer.ConsumeEvictions())
+            {
+                if (!layer.LoadedGroups.TryGetValue(coordinate, out string? groupId))
+                    continue;
+
+                RemoveProceduralTerrainTile(
+                    groupId,
+                    coordinate,
+                    groupId.Equals(layer.Id, StringComparison.OrdinalIgnoreCase),
+                    physics,
+                    sceneBodies);
+                layer.LoadedGroups.Remove(coordinate);
+                layer.LoadedAssets.Remove(coordinate);
+                layer.CollisionTiles.Remove(coordinate);
+                changed++;
+            }
+
+            foreach (TerrainStreamResult result in layer.Streamer.DrainReady(layer.MaxTileUploadsPerFrame))
+            {
+                TerrainTileCoordinate coordinate = result.Coordinate;
+                if (layer.LoadedGroups.ContainsKey(coordinate))
+                    continue;
+
+                try
+                {
+                    // Keep all resident tiles in one LOD group. The tile
+                    // coordinates let TerrainSceneBuilder and UpdateTerrainLod
+                    // stitch neighbouring streamed tiles together instead of
+                    // treating every upload as an isolated terrain.
+                    int tileX = checked((int)coordinate.X);
+                    int tileZ = checked((int)coordinate.Z);
+                    TerrainTileSetAsset streamedSet = TerrainTileSetAsset.FromSingleAt(
+                        tileX,
+                        tileZ,
+                        result.Asset);
+
+                    TerrainSceneBuilder.AddToScene(
+                        this,
+                        streamedSet,
+                        layer.Id,
+                        layer.WorldPosition,
+                        layer.WorldRotation,
+                        layer.Visible,
+                        layer.ChunkQuads,
+                        layer.MaterialPath,
+                        layer.MaterialPaths,
+                        layer.TexturePath,
+                        layer.UvScale,
+                        layer.UvOffset,
+                        layer.UvRotation,
+                        assets,
+                        layer.Streamer.IsWithinRadius(coordinate, layer.CollisionTileRadius)
+                            ? physics
+                            : null,
+                        layer.Streamer.IsWithinRadius(coordinate, layer.CollisionTileRadius)
+                            ? sceneBodies
+                            : null,
+                        layer.ParentId,
+                        layer.Friction,
+                        layer.Restitution,
+                        layer.PixelError,
+                        layer.CollisionLod);
+                    layer.LoadedGroups[coordinate] = layer.Id;
+                    layer.LoadedAssets[coordinate] = result.Asset;
+                    if (layer.Streamer.IsWithinRadius(coordinate, layer.CollisionTileRadius) &&
+                        HasProceduralTerrainCollision(layer.Id, coordinate))
+                        layer.CollisionTiles.Add(coordinate);
+                    changed++;
+                }
+                catch (Exception ex)
+                {
+                    Core.Logger.Warn($"Procedural terrain tile ({coordinate.X}, {coordinate.Z}) failed: {ex.Message}");
+                }
+            }
+
+            // A visual tile can stay resident while crossing the collision
+            // radius. Add/remove only its hidden Jolt body instead of
+            // rebuilding the render meshes.
+            foreach (var pair in layer.LoadedAssets)
+            {
+                TerrainTileCoordinate coordinate = pair.Key;
+                bool shouldHaveCollision = layer.Streamer.IsWithinRadius(
+                    coordinate,
+                    layer.CollisionTileRadius);
+                bool hasCollision = layer.CollisionTiles.Contains(coordinate);
+                if (shouldHaveCollision == hasCollision)
+                    continue;
+
+                int tileX = checked((int)coordinate.X);
+                int tileZ = checked((int)coordinate.Z);
+                if (shouldHaveCollision)
+                {
+                    bool added = TerrainSceneBuilder.AddCollisionToScene(
+                        this,
+                        new TerrainTile(tileX, tileZ, pair.Value),
+                        layer.Id,
+                        layer.WorldPosition,
+                        layer.WorldRotation,
+                        physics,
+                        sceneBodies,
+                        layer.Friction,
+                        layer.Restitution);
+                    if (added)
+                        layer.CollisionTiles.Add(coordinate);
+                }
+                else
+                {
+                    TerrainSceneBuilder.RemoveCollisionFromScene(
+                        this,
+                        layer.Id,
+                        coordinate,
+                        physics,
+                        sceneBodies);
+                    layer.CollisionTiles.Remove(coordinate);
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    private void RemoveProceduralTerrainTile(
+        string groupId,
+        TerrainTileCoordinate coordinate,
+        bool sharedLayerGroup,
+        PhysicsWorld physics,
+        IList<RigidBody> sceneBodies)
+    {
+        List<RigidBody> removedBodies = RemoveEntities(entity =>
+            entity.TerrainChunkGroupId.Equals(groupId, StringComparison.OrdinalIgnoreCase) &&
+            // All preview and streamed tiles share the layer id. Matching the
+            // coordinate prevents evicting the whole preview window when only
+            // one tile leaves it.
+            (!sharedLayerGroup ||
+             ((long)entity.TerrainTileX == coordinate.X &&
+              (long)entity.TerrainTileZ == coordinate.Z)));
+        foreach (RigidBody body in removedBodies)
+        {
+            if (body.IsBuilt)
+            {
+                physics.DestroyBody(body.Native);
+                body.Destroy();
+            }
+            sceneBodies.Remove(body);
+        }
+    }
+
+    private bool HasProceduralTerrainCollision(
+        string terrainGroupId,
+        TerrainTileCoordinate coordinate) =>
+        _entities.Any(entity =>
+            entity.TerrainLod == null &&
+            entity.TerrainChunkGroupId.Equals(terrainGroupId, StringComparison.OrdinalIgnoreCase) &&
+            (long)entity.TerrainTileX == coordinate.X &&
+            (long)entity.TerrainTileZ == coordinate.Z);
+
+    /// <summary>Removes entities matching a predicate and returns their bodies.</summary>
+    public List<RigidBody> RemoveEntities(Predicate<Entity> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+        var removedBodies = new List<RigidBody>();
+        for (int index = _entities.Count - 1; index >= 0; index--)
+        {
+            Entity entity = _entities[index];
+            if (!predicate(entity))
+                continue;
+
+            if (entity.Body != null)
+            {
+                _bodyEntityMap.Remove(entity.Body.Native);
+                removedBodies.Add(entity.Body);
+            }
+
+            if (entity.TerrainLod != null)
+                entity.TerrainLod.Dispose();
+            else if (entity.MeshOwnedByEntity)
+                entity.Mesh?.Dispose();
+
+            entity.Mesh = null;
+            entity.TerrainLod = null;
+            entity.MeshOwnedByEntity = false;
+            entity.Body = null;
+            _entities.RemoveAt(index);
+        }
+
+        return removedBodies;
     }
 
     public IReadOnlyList<Entity> Entities => _entities;
@@ -365,7 +592,7 @@ public class Scene
             desiredLevels[entity] = desiredLevel;
 
             if (!string.IsNullOrWhiteSpace(entity.TerrainChunkGroupId) &&
-                entity.TerrainChunkX >= 0 && entity.TerrainChunkZ >= 0)
+                entity.TerrainLocalChunkX >= 0 && entity.TerrainLocalChunkZ >= 0)
             {
                 if (!terrainGroups.TryGetValue(entity.TerrainChunkGroupId, out var group))
                 {
