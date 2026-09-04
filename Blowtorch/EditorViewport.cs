@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Collections.Generic;
 using Silk.NET.OpenGL;
 using Fuse.Scene.Model;
+using Fuse.Scene.Terrain;
 using Fuse.Renderer;
 using Fuse.AssetManagement;
 using Fuse.Core;
@@ -425,6 +426,23 @@ public unsafe class EditorViewport : IDisposable
             _gl.DepthMask(true);
         }
 
+        if (!isWireframe)
+        {
+            UpdateProceduralGrass(scene, _camera.Position);
+            assetService.GrassRenderer?.Render(
+                scene,
+                view,
+                proj,
+                _camera.Position,
+                cloudSunDirection,
+                cloudSunColor,
+                ambient: 0.18f,
+                outputSrgb: true,
+                sceneDepthTexture: _depthTex,
+                sceneDepthWidth: _width,
+                sceneDepthHeight: _height);
+        }
+
         // Render the global ocean after opaque scene geometry. OceanRenderer
         // snapshots this viewport's color/depth first, which keeps the
         // reflection/refraction pass from sampling the attachment it writes.
@@ -809,6 +827,20 @@ public unsafe class EditorViewport : IDisposable
             onDrawDebug?.Invoke(_debugDrawer, assetService);
 
         _debugDrawer.Render(view, proj);
+    }
+
+    private static void UpdateProceduralGrass(Fuse.Renderer.Scene scene, Vector3 cameraPosition)
+    {
+        foreach (ProceduralTerrainLayer layer in scene.ProceduralTerrainLayers)
+        {
+            if (!layer.Visible || !layer.Asset.Settings.Grass.Enabled)
+                continue;
+
+            Vector3 localCamera = Vector3.Transform(
+                cameraPosition - layer.WorldPosition,
+                Quaternion.Inverse(layer.WorldRotation));
+            layer.GrassPatches.Update(localCamera.X, localCamera.Z);
+        }
     }
 
     private static bool TryGetDebugBounds(MapObject mapObj, Scene scene, out AABB bounds)

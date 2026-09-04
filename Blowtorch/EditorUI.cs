@@ -141,6 +141,8 @@ public unsafe class EditorUI : IDisposable
     private int _terrainProceduralMaxGenerationTasks = 2;
     private int _terrainProceduralMaxUploadsPerFrame = 1;
     private float _terrainProceduralLodPixelError = 5.0f;
+    private readonly ProceduralGrassSettings _terrainProceduralGrass = new();
+    private bool _terrainGrassSettingsDirty;
     private bool _terrainProceduralPreviewDirty;
     private bool _terrainProceduralPreviewNeedsRender;
     private EditorViewport? _terrainGeneratorPreviewViewport;
@@ -156,7 +158,9 @@ public unsafe class EditorUI : IDisposable
         "Set Height",
         "Smooth",
         "Stamp",
-        "Noise"
+        "Noise",
+        "Paint Grass",
+        "Erase Grass"
     ];
     private TerrainSculptTool _terrainSculptTool = TerrainSculptTool.RaiseLower;
     private float _terrainBrushRadius = 2.0f;
@@ -3934,8 +3938,9 @@ public unsafe class EditorUI : IDisposable
                 if (_selectedObject?.IsTerrain == true &&
                     ImGui.IsMouseDown(ImGuiMouseButton.Left))
                 {
-                    BeginTerrainSculpt(sceneService, assetService);
-                    if (_terrainSculptActive)
+                    bool grassPaint = _terrainSculptTool is
+                        TerrainSculptTool.PaintGrass or TerrainSculptTool.EraseGrass;
+                    if (grassPaint)
                     {
                         EditorGizmo.GetMouseRay(
                             ImGui.GetIO().MousePos,
@@ -3945,25 +3950,52 @@ public unsafe class EditorUI : IDisposable
                             vpSize,
                             out Vector3 rayOrigin,
                             out Vector3 rayDirection);
-
-                        float terrainBrushStrength = _terrainSculptTool == TerrainSculptTool.RaiseLower
-                            ? _terrainBrushStrength
-                            : _terrainBrushStrength * MathF.Max(0.001f, ImGui.GetIO().DeltaTime);
-                        bool terrainChanged = sceneService.ApplyTerrainToolAtRay(
+                        bool erase = _terrainSculptTool == TerrainSculptTool.EraseGrass ||
+                                     ImGui.GetIO().KeyShift;
+                        bool terrainChanged = sceneService.PaintProceduralGrassAtRay(
                             _selectedObject,
                             assetService,
                             rayOrigin,
                             rayDirection,
-                            _terrainSculptTool,
                             _terrainBrushRadius,
-                            terrainBrushStrength,
-                            _terrainSculptLower || ImGui.GetIO().KeyShift,
-                            _terrainSetHeight,
-                            _terrainNoiseScale,
-                            _terrainNoiseSeed,
-                            _terrainHeightmapBrush);
+                            _terrainBrushStrength * MathF.Max(0.001f, ImGui.GetIO().DeltaTime),
+                            erase);
                         if (terrainChanged)
                             viewport.RequestRender();
+                    }
+                    else
+                    {
+                        BeginTerrainSculpt(sceneService, assetService);
+                        if (_terrainSculptActive)
+                        {
+                            EditorGizmo.GetMouseRay(
+                                ImGui.GetIO().MousePos,
+                                viewport.Camera.ViewMatrix,
+                                viewport.Camera.ProjectionMatrix(vpSize.X / vpSize.Y),
+                                vpPos,
+                                vpSize,
+                                out Vector3 rayOrigin,
+                                out Vector3 rayDirection);
+
+                            float terrainBrushStrength = _terrainSculptTool == TerrainSculptTool.RaiseLower
+                                ? _terrainBrushStrength
+                                : _terrainBrushStrength * MathF.Max(0.001f, ImGui.GetIO().DeltaTime);
+                            bool terrainChanged = sceneService.ApplyTerrainToolAtRay(
+                                _selectedObject,
+                                assetService,
+                                rayOrigin,
+                                rayDirection,
+                                _terrainSculptTool,
+                                _terrainBrushRadius,
+                                terrainBrushStrength,
+                                _terrainSculptLower || ImGui.GetIO().KeyShift,
+                                _terrainSetHeight,
+                                _terrainNoiseScale,
+                                _terrainNoiseSeed,
+                                _terrainHeightmapBrush);
+                            if (terrainChanged)
+                                viewport.RequestRender();
+                        }
                     }
                 }
             }
@@ -6810,7 +6842,23 @@ public unsafe class EditorUI : IDisposable
                         if (terrainSet.Procedural != null)
                         {
                             ImGui.TextUnformatted($"Preview tiles: {terrainSet.Tiles.Count}");
-                            DrawProceduralTerrainInspector(terrainSet.Procedural);
+                            _terrainGrassSettingsDirty |= DrawProceduralTerrainInspector(terrainSet.Procedural);
+                            if (_terrainGrassSettingsDirty)
+                            {
+                                ImGui.TextColored(
+                                    new Vector4(1.0f, 0.72f, 0.18f, 1.0f),
+                                    "Grass profile has unsaved changes.");
+                                if (ImGui.Button("Apply grass profile##terrainGrassApply"))
+                                {
+                                    terrainSet.Procedural.Settings.Validate();
+                                    string terrainPath = assetService.ResolveEditorAssetPath(obj.TerrainAssetPath!);
+                                    if (sceneService.SaveTerrainAsset(terrainPath))
+                                    {
+                                        _terrainGrassSettingsDirty = false;
+                                        viewport3D.RequestRender();
+                                    }
+                                }
+                            }
                         }
                         else
                         {
@@ -7961,6 +8009,8 @@ public unsafe class EditorUI : IDisposable
         changed |= ImGui.DragFloat("LOD pixel error##proceduralTerrainLodPixelError", ref _terrainProceduralLodPixelError, 0.25f, 0.1f, 100.0f, "%.2f px");
         ImGui.TextDisabled("Generation runs on workers; mesh and collision uploads are budgeted per frame.");
 
+        changed |= DrawGrassSettingsEditor(_terrainProceduralGrass, "create");
+
         _terrainProceduralWorldSizeKm = Math.Clamp(_terrainProceduralWorldSizeKm, 1.0f, 80_000.0f);
         _terrainProceduralTileSize = Math.Clamp(_terrainProceduralTileSize, 32.0f, 65_536.0f);
         _terrainProceduralResolution = Math.Clamp(_terrainProceduralResolution, 17, 513);
@@ -8028,13 +8078,14 @@ public unsafe class EditorUI : IDisposable
             MaxResidentTiles = _terrainProceduralMaxResidentTiles,
             MaxGenerationTasks = _terrainProceduralMaxGenerationTasks,
             MaxTileUploadsPerFrame = _terrainProceduralMaxUploadsPerFrame,
-            LodPixelError = _terrainProceduralLodPixelError
+            LodPixelError = _terrainProceduralLodPixelError,
+            Grass = _terrainProceduralGrass.Clone()
         };
         settings.Validate();
         return settings;
     }
 
-    private static void DrawProceduralTerrainInspector(ProceduralTerrainAsset procedural)
+    private static bool DrawProceduralTerrainInspector(ProceduralTerrainAsset procedural)
     {
         ProceduralTerrainSettings settings = procedural.Settings;
         ImGui.SeparatorText("Procedural world");
@@ -8049,6 +8100,300 @@ public unsafe class EditorUI : IDisposable
         ImGui.TextDisabled(
             "This asset stores a recipe and sparse sculpt deltas. The editor " +
             "shows only the local preview; the game streams tiles around the player.");
+        return DrawGrassSettingsEditor(settings.Grass, "inspector");
+    }
+
+    private static bool DrawGrassSettingsEditor(ProceduralGrassSettings grass, string id)
+    {
+        bool changed = false;
+        ImGui.SeparatorText("Procedural grass");
+        ImGui.PushID(id);
+
+        bool enabled = grass.Enabled;
+        if (ImGui.Checkbox("Enabled", ref enabled))
+        {
+            grass.Enabled = enabled;
+            changed = true;
+        }
+
+        long seed64 = grass.Seed;
+        int seed = unchecked((int)seed64);
+        if (ImGui.InputInt("Seed", ref seed))
+        {
+            grass.Seed = seed;
+            changed = true;
+        }
+
+        float density = grass.Density;
+        if (ImGui.SliderFloat("Density", ref density, 0.0f, 1.0f, "%.2f"))
+        {
+            grass.Density = density;
+            changed = true;
+        }
+
+        float patchSize = grass.PatchSizeMeters;
+        if (ImGui.DragFloat("Patch size", ref patchSize, 1.0f, 4.0f, 128.0f, "%.0f m"))
+        {
+            grass.PatchSizeMeters = patchSize;
+            changed = true;
+        }
+
+        int candidates = grass.CandidatesPerPatch;
+        if (ImGui.InputInt("Candidates / patch", ref candidates))
+        {
+            grass.CandidatesPerPatch = candidates;
+            changed = true;
+        }
+
+        int resident = grass.MaxResidentPatches;
+        if (ImGui.InputInt("Resident patch budget", ref resident))
+        {
+            grass.MaxResidentPatches = resident;
+            changed = true;
+        }
+
+        int uploads = grass.MaxPatchUploadsPerFrame;
+        if (ImGui.InputInt("Patch uploads / frame", ref uploads))
+        {
+            grass.MaxPatchUploadsPerFrame = uploads;
+            changed = true;
+        }
+
+        ImGui.SeparatorText("Grass LOD");
+        float lod0 = grass.Lod0Distance;
+        if (ImGui.DragFloat("LOD 0 distance", ref lod0, 1.0f, 1.0f, 10_000.0f, "%.0f m"))
+        {
+            grass.Lod0Distance = lod0;
+            changed = true;
+        }
+
+        float lod1 = grass.Lod1Distance;
+        if (ImGui.DragFloat("LOD 1 distance", ref lod1, 1.0f, 2.0f, 20_000.0f, "%.0f m"))
+        {
+            grass.Lod1Distance = lod1;
+            changed = true;
+        }
+
+        float maximumDistance = grass.MaximumDistance;
+        if (ImGui.DragFloat("Maximum distance", ref maximumDistance, 1.0f, 3.0f, 40_000.0f, "%.0f m"))
+        {
+            grass.MaximumDistance = maximumDistance;
+            changed = true;
+        }
+
+        float farDensity = grass.FarDensity;
+        if (ImGui.SliderFloat("Far density", ref farDensity, 0.01f, 1.0f, "%.2f"))
+        {
+            grass.FarDensity = farDensity;
+            changed = true;
+        }
+
+        bool hiZOcclusion = grass.HiZOcclusion;
+        if (ImGui.Checkbox("Hi-Z patch occlusion", ref hiZOcclusion))
+        {
+            grass.HiZOcclusion = hiZOcclusion;
+            changed = true;
+        }
+        if (grass.HiZOcclusion)
+        {
+            float hiZBias = grass.HiZOcclusionBias;
+            if (ImGui.DragFloat("Hi-Z depth bias", ref hiZBias, 0.0001f, 0.00001f, 0.1f, "%.5f"))
+            {
+                grass.HiZOcclusionBias = hiZBias;
+                changed = true;
+            }
+            ImGui.TextDisabled("Uses the previous frame depth in game and the viewport depth in the editor.");
+        }
+
+        ImGui.SeparatorText("Blade and placement");
+        Vector2 heightRange = new(grass.BladeHeightMin, grass.BladeHeightMax);
+        if (ImGui.DragFloat2("Blade height min/max", ref heightRange, 0.01f, 0.02f, 12.0f, "%.2f m"))
+        {
+            grass.BladeHeightMin = heightRange.X;
+            grass.BladeHeightMax = heightRange.Y;
+            changed = true;
+        }
+
+        Vector2 widthRange = new(grass.BladeWidthMin, grass.BladeWidthMax);
+        if (ImGui.DragFloat2("Blade width min/max", ref widthRange, 0.001f, 0.002f, 2.0f, "%.3f m"))
+        {
+            grass.BladeWidthMin = widthRange.X;
+            grass.BladeWidthMax = widthRange.Y;
+            changed = true;
+        }
+
+        float maximumSlope = grass.MaximumSlopeDegrees;
+        if (ImGui.SliderFloat("Maximum slope", ref maximumSlope, 0.0f, 89.9f, "%.1f deg"))
+        {
+            grass.MaximumSlopeDegrees = maximumSlope;
+            changed = true;
+        }
+
+        Vector2 altitude = new(grass.MinimumHeight, grass.MaximumHeight);
+        if (ImGui.DragFloat2("Altitude min/max", ref altitude, 1.0f, -100_000.0f, 100_000.0f, "%.1f m"))
+        {
+            grass.MinimumHeight = altitude.X;
+            grass.MaximumHeight = altitude.Y;
+            changed = true;
+        }
+
+        float biomeInfluence = grass.BiomeNoiseInfluence;
+        if (ImGui.SliderFloat("Biome density influence", ref biomeInfluence, 0.0f, 1.0f, "%.2f"))
+        {
+            grass.BiomeNoiseInfluence = biomeInfluence;
+            changed = true;
+        }
+
+        float biomeScale = grass.BiomeNoiseScale;
+        if (ImGui.DragFloat("Biome scale", ref biomeScale, 0.0001f, 0.0000001f, 10.0f, "%.5f"))
+        {
+            grass.BiomeNoiseScale = biomeScale;
+            changed = true;
+        }
+
+        string maskPath = grass.DensityMaskPath;
+        if (ImGui.InputText("Tiled density mask path", ref maskPath, 512))
+        {
+            grass.DensityMaskPath = maskPath.Trim();
+            changed = true;
+        }
+
+        int maskResolution = grass.DensityMaskResolution;
+        if (ImGui.InputInt("Mask resolution / tile", ref maskResolution))
+        {
+            grass.DensityMaskResolution = maskResolution;
+            changed = true;
+        }
+
+        float clumpStrength = grass.ClumpStrength;
+        if (ImGui.SliderFloat("Clump strength", ref clumpStrength, 0.0f, 1.0f, "%.2f"))
+        {
+            grass.ClumpStrength = clumpStrength;
+            changed = true;
+        }
+
+        float clumpScale = grass.ClumpScale;
+        if (ImGui.DragFloat("Clump scale", ref clumpScale, 0.001f, 0.00001f, 4.0f, "%.4f"))
+        {
+            grass.ClumpScale = clumpScale;
+            changed = true;
+        }
+
+        ImGui.SeparatorText("Grass species");
+        ImGui.TextDisabled("Species share the same GPU buffers; weights choose the variant per blade.");
+        for (int speciesIndex = 0; speciesIndex < grass.Species.Count; speciesIndex++)
+        {
+            ProceduralGrassSpeciesSettings species = grass.Species[speciesIndex];
+            ImGui.PushID($"grassSpecies_{speciesIndex}");
+            string header = $"{speciesIndex + 1}: {species.Name}";
+            if (ImGui.TreeNodeEx(header, ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                bool speciesEnabled = species.Enabled;
+                if (ImGui.Checkbox("Enabled", ref speciesEnabled))
+                {
+                    species.Enabled = speciesEnabled;
+                    changed = true;
+                }
+
+                string speciesName = species.Name;
+                if (ImGui.InputText("Name", ref speciesName, 64))
+                {
+                    species.Name = speciesName;
+                    changed = true;
+                }
+
+                float speciesWeight = species.Weight;
+                if (ImGui.DragFloat("Weight", ref speciesWeight, 0.01f, 0.001f, 100.0f, "%.3f"))
+                {
+                    species.Weight = speciesWeight;
+                    changed = true;
+                }
+
+                float heightMultiplier = species.HeightMultiplier;
+                if (ImGui.DragFloat("Height multiplier", ref heightMultiplier, 0.01f, 0.1f, 4.0f, "%.2f"))
+                {
+                    species.HeightMultiplier = heightMultiplier;
+                    changed = true;
+                }
+
+                float widthMultiplier = species.WidthMultiplier;
+                if (ImGui.DragFloat("Width multiplier", ref widthMultiplier, 0.01f, 0.1f, 4.0f, "%.2f"))
+                {
+                    species.WidthMultiplier = widthMultiplier;
+                    changed = true;
+                }
+
+                Vector3 speciesTint = species.ColorTint;
+                if (ImGui.ColorEdit3("Color tint", ref speciesTint, ImGuiColorEditFlags.Float))
+                {
+                    species.ColorTint = speciesTint;
+                    changed = true;
+                }
+                ImGui.TreePop();
+            }
+            ImGui.PopID();
+        }
+
+        ImGui.SeparatorText("Wind and lighting");
+        Vector2 windDirection = grass.WindDirection;
+        if (ImGui.DragFloat2("Wind direction X/Z", ref windDirection, 0.01f, -1.0f, 1.0f, "%.2f"))
+        {
+            grass.WindDirection = windDirection;
+            changed = true;
+        }
+
+        float windStrength = grass.WindStrength;
+        if (ImGui.DragFloat("Wind strength", ref windStrength, 0.01f, 0.0f, 4.0f, "%.2f"))
+        {
+            grass.WindStrength = windStrength;
+            changed = true;
+        }
+
+        float windSpeed = grass.WindSpeed;
+        if (ImGui.DragFloat("Wind speed", ref windSpeed, 0.02f, 0.0f, 20.0f, "%.2f"))
+        {
+            grass.WindSpeed = windSpeed;
+            changed = true;
+        }
+
+        float translucency = grass.Translucency;
+        if (ImGui.DragFloat("Translucency", ref translucency, 0.01f, 0.0f, 4.0f, "%.2f"))
+        {
+            grass.Translucency = translucency;
+            changed = true;
+        }
+
+        bool castShadows = grass.CastNearShadows;
+        if (ImGui.Checkbox("LOD 0 casts shadows", ref castShadows))
+        {
+            grass.CastNearShadows = castShadows;
+            changed = true;
+        }
+
+        Vector3 rootColor = grass.RootColor;
+        if (ImGui.ColorEdit3("Root color", ref rootColor))
+        {
+            grass.RootColor = rootColor;
+            changed = true;
+        }
+
+        Vector3 midColor = grass.MidColor;
+        if (ImGui.ColorEdit3("Middle color", ref midColor))
+        {
+            grass.MidColor = midColor;
+            changed = true;
+        }
+
+        Vector3 tipColor = grass.TipColor;
+        if (ImGui.ColorEdit3("Tip color", ref tipColor))
+        {
+            grass.TipColor = tipColor;
+            changed = true;
+        }
+
+        grass.Validate();
+        ImGui.PopID();
+        return changed;
     }
 
     private void OpenTerrainHeightmapPicker()
@@ -8174,6 +8519,12 @@ public unsafe class EditorUI : IDisposable
         else if (_terrainSculptTool == TerrainSculptTool.Smooth)
         {
             ImGui.TextDisabled("Smooth averages neighboring height samples.");
+        }
+        else if (_terrainSculptTool is TerrainSculptTool.PaintGrass or TerrainSculptTool.EraseGrass)
+        {
+            ImGui.TextDisabled(
+                "Paints a sparse R8 density mask for procedural terrain grass. " +
+                "Shift temporarily erases. Missing mask tiles remain fully enabled.");
         }
         else
         {

@@ -597,6 +597,7 @@ public unsafe class Application : IDisposable
 
         _debugDrawer.DrawPlayerDebug(_player);
         _oceanPhysics.DrawDebug(_debugDrawer);
+        _renderer.GrassRenderer?.DrawDebug(_debugDrawer);
         _enemySystem?.DrawDebug(_renderer, _player.Camera, aspect, renderViewOverride);
 
         // Skinned model skeleton debug

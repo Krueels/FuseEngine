@@ -1,0 +1,34 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D uHiZ;
+layout(r32f, binding = 0) writeonly uniform image2D uDestination;
+
+uniform int uSourceLevel;
+uniform vec2 uSourceSize;
+uniform vec2 uDestinationSize;
+
+void main()
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 destinationSize = ivec2(uDestinationSize);
+    if (pixel.x >= destinationSize.x || pixel.y >= destinationSize.y)
+        return;
+
+    ivec2 sourceSize = ivec2(uSourceSize);
+    ivec2 base = min(pixel * 2, sourceSize - ivec2(1));
+    ivec2 right = min(base + ivec2(1, 0), sourceSize - ivec2(1));
+    ivec2 down = min(base + ivec2(0, 1), sourceSize - ivec2(1));
+    ivec2 diagonal = min(base + ivec2(1, 1), sourceSize - ivec2(1));
+
+    // Standard depth uses 0 for near and 1 for far. Max reduction is the
+    // conservative value for proving that every pixel in a patch footprint
+    // is behind an already-rendered occluder.
+    float value = max(
+        max(texelFetch(uHiZ, base, uSourceLevel).r,
+            texelFetch(uHiZ, right, uSourceLevel).r),
+        max(texelFetch(uHiZ, down, uSourceLevel).r,
+            texelFetch(uHiZ, diagonal, uSourceLevel).r));
+    imageStore(uDestination, pixel, vec4(value, 0.0, 0.0, 1.0));
+}

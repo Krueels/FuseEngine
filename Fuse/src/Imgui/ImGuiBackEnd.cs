@@ -168,6 +168,27 @@ public unsafe class ImGuiBackEnd : IDisposable
         ImGui.Text($"Pós-processamento: {stats.PostProcessMilliseconds:0.00} ms");
         ImGui.Text($"Objetos desenhados: {stats.ObjectsDrawn}");
 
+        if (renderer.GrassRenderer is { } grassRenderer)
+        {
+            ProceduralGrassDiagnostics grass = grassRenderer.Diagnostics;
+            ImGui.SeparatorText("Grama procedural");
+            ImGui.Text($"Patches: {grass.VisiblePatches} visíveis / {grass.ResidentPatches} residentes / {grass.PendingPatches} pendentes");
+            ImGui.Text($"Lâminas candidatas: {grass.CandidateBlades:N0}");
+            ImGui.Text($"LOD 0: {grass.Lod0Blades:N0}   LOD 1: {grass.Lod1Blades:N0}   LOD 2: {grass.Lod2Blades:N0}");
+            ImGui.Text($"Eliminados: frustum {grass.FrustumCulledPatches}, distância {grass.DistanceCulledPatches}, densidade {grass.DensityCulledBlades:N0}, Hi-Z {grass.OcclusionCulledPatches}");
+            ImGui.Text($"Compute GPU: {grass.ComputeMilliseconds:0.000} ms");
+            ImGui.Text($"Draw calls: {grass.DrawCalls}");
+            ImGui.Text($"Memória GPU: {grass.GpuBytes / (1024.0 * 1024.0):0.00} MiB");
+            bool debugLods = grassRenderer.DebugLodColors;
+            if (ImGui.Checkbox("Cores dos LODs da grama", ref debugLods))
+                grassRenderer.DebugLodColors = debugLods;
+            bool readback = grassRenderer.ReadbackDiagnostics;
+            if (ImGui.Checkbox("Leitura exata de contadores (custa sincronização)", ref readback))
+                grassRenderer.ReadbackDiagnostics = readback;
+            if (!grassRenderer.ReadbackDiagnostics)
+                ImGui.TextDisabled("Ative F9 ou a leitura exata para preencher os contadores por LOD.");
+        }
+
         ImGui.SeparatorText("Iluminação");
         ImGui.Text($"Luzes na cena: {stats.LightsInScene}");
         ImGui.Text($"Point: {stats.PointLights}   Spot: {stats.SpotLights}");

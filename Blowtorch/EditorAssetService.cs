@@ -38,6 +38,7 @@ public class EditorAssetService : IDisposable
     private VolumetricCloudRenderer? _cloudRenderer;
     private VolumetricFogRenderer? _fogRenderer;
     private OceanRenderer? _oceanRenderer;
+    private ProceduralGrassRenderer? _grassRenderer;
     private ulong _skyboxSettingsSignature;
     private ulong _proceduralIblSignature;
     private long _proceduralIblLastAttemptMilliseconds;
@@ -87,6 +88,7 @@ public class EditorAssetService : IDisposable
     public VolumetricCloudRenderer? CloudRenderer => _cloudRenderer;
     public VolumetricFogRenderer? FogRenderer => _fogRenderer;
     public OceanRenderer? OceanRenderer => _oceanRenderer;
+    public ProceduralGrassRenderer? GrassRenderer => _grassRenderer;
     public bool IsProceduralSkybox => _skyboxSettings.Mode == SkyboxMode.Procedural;
     public ulong AssetRevision => unchecked((ulong)System.Threading.Interlocked.Read(ref _assetRevision));
 
@@ -574,6 +576,16 @@ public class EditorAssetService : IDisposable
             Logger.Warn($"Blowtorch ocean rendering disabled: {ex.Message}");
         }
 
+        try
+        {
+            _grassRenderer = new ProceduralGrassRenderer(_gl);
+        }
+        catch (Exception ex)
+        {
+            _grassRenderer = null;
+            Logger.Warn($"Blowtorch procedural grass disabled: {ex.Message}");
+        }
+
         string crateTexPath = Path.Combine(_fuseResPath, "Textures", "dev_measurecrate01.bmp");
         if (File.Exists(crateTexPath))
         {
@@ -1031,6 +1043,7 @@ public class EditorAssetService : IDisposable
         _fogRenderer?.Dispose();
         _cloudRenderer?.Dispose();
         _oceanRenderer?.Dispose();
+        _grassRenderer?.Dispose();
         _imageBasedLighting?.Dispose();
         _assets.Clear();
     }

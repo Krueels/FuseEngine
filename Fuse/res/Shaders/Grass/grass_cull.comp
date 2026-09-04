@@ -1,0 +1,77 @@
+#version 430 core
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct CandidateData {
+    vec4 offsetHeight;
+    vec4 normalWidth;
+    vec4 parameters;
+    vec4 metadata;
+};
+
+struct PatchData {
+    vec4 relativeOriginVisible;
+    vec4 relativeCenterRadius;
+};
+
+struct InstanceData {
+    vec4 positionHeight;
+    vec4 normalWidth;
+    vec4 parameters;
+};
+
+layout(std430, binding = 0) readonly buffer CandidateBuffer { CandidateData candidates[]; };
+layout(std430, binding = 1) readonly buffer PatchBuffer { PatchData patches[]; };
+layout(std430, binding = 2) writeonly buffer Lod0Buffer { InstanceData lod0Instances[]; };
+layout(std430, binding = 3) writeonly buffer Lod1Buffer { InstanceData lod1Instances[]; };
+layout(std430, binding = 4) writeonly buffer Lod2Buffer { InstanceData lod2Instances[]; };
+layout(std430, binding = 5) buffer IndirectBuffer { uint commands[]; };
+
+uniform int uCandidateCount;
+uniform float uDensity;
+uniform float uFarDensity;
+uniform float uLod0Distance;
+uniform float uLod1Distance;
+uniform float uMaximumDistance;
+
+void main()
+{
+    uint candidateIndex = gl_GlobalInvocationID.x;
+    if (candidateIndex >= uint(uCandidateCount))
+        return;
+
+    CandidateData candidate = candidates[candidateIndex];
+    int patchIndex = int(candidate.metadata.x + 0.5);
+    PatchData patchData = patches[patchIndex];
+    if (patchData.relativeOriginVisible.w < 0.0)
+        return;
+
+    vec3 position = patchData.relativeOriginVisible.xyz + candidate.offsetHeight.xyz;
+    float distanceToCamera = length(position);
+    if (distanceToCamera > uMaximumDistance)
+        return;
+
+    float distanceFade = smoothstep(uLod0Distance, uMaximumDistance, distanceToCamera);
+    float density = uDensity * candidate.parameters.w * mix(1.0, uFarDensity, distanceFade);
+    if (candidate.parameters.z > density)
+        return;
+
+    InstanceData instance;
+    instance.positionHeight = vec4(position, candidate.offsetHeight.w);
+    instance.normalWidth = candidate.normalWidth;
+
+    int species = int(candidate.metadata.y + 0.5);
+    if (distanceToCamera < uLod0Distance) {
+        instance.parameters = vec4(candidate.parameters.xyz, float(species * 4));
+        uint destination = atomicAdd(commands[1], 1u);
+        lod0Instances[destination] = instance;
+    } else if (distanceToCamera < uLod1Distance) {
+        instance.parameters = vec4(candidate.parameters.xyz, float(1 + species * 4));
+        uint destination = atomicAdd(commands[6], 1u);
+        lod1Instances[destination] = instance;
+    } else {
+        instance.parameters = vec4(candidate.parameters.xyz, float(2 + species * 4));
+        uint destination = atomicAdd(commands[11], 1u);
+        lod2Instances[destination] = instance;
+    }
+}

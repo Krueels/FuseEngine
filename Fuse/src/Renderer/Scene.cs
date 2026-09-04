@@ -362,6 +362,11 @@ public class Scene
                     layer.CollisionTiles.Remove(coordinate);
                 }
             }
+
+            Vector3 grassLocalCamera = Vector3.Transform(
+                cameraPosition - layer.WorldPosition,
+                Quaternion.Inverse(layer.WorldRotation));
+            layer.GrassPatches.Update(grassLocalCamera.X, grassLocalCamera.Z);
         }
 
         return changed;

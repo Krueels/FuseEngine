@@ -1,0 +1,19 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D uSourceDepth;
+layout(r32f, binding = 0) writeonly uniform image2D uDestination;
+
+uniform vec2 uDestinationSize;
+
+void main()
+{
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(uDestinationSize);
+    if (pixel.x >= size.x || pixel.y >= size.y)
+        return;
+
+    float depth = texelFetch(uSourceDepth, pixel, 0).r;
+    imageStore(uDestination, pixel, vec4(depth, 0.0, 0.0, 1.0));
+}

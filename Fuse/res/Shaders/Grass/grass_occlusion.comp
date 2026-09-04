@@ -1,0 +1,63 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct PatchData {
+    vec4 relativeOriginVisible;
+    vec4 relativeCenterRadius;
+};
+
+layout(std430, binding = 1) buffer PatchBuffer { PatchData patches[]; };
+
+uniform sampler2D uHiZ;
+uniform mat4 uView;
+uniform mat4 uProj;
+uniform vec2 uViewportSize;
+uniform int uHiZMipCount;
+uniform int uPatchCount;
+uniform float uBias;
+
+bool IsOccluded(PatchData patchData)
+{
+    vec3 viewCenter = mat3(uView) * patchData.relativeCenterRadius.xyz;
+    float radius = max(patchData.relativeCenterRadius.w, 0.01);
+    vec4 clipCenter = uProj * vec4(viewCenter, 1.0);
+    if (clipCenter.w <= 0.0)
+        return false;
+
+    vec2 uv = clipCenter.xy / clipCenter.w * 0.5 + 0.5;
+    float projectedRadius = abs(uProj[1][1] * radius / clipCenter.w) *
+                            0.5 * uViewportSize.y;
+    float footprint = max(projectedRadius * 2.0, 1.0);
+    int mip = clamp(int(floor(log2(footprint))), 0, uHiZMipCount - 1);
+    vec2 texelRadius = vec2(projectedRadius) / uViewportSize;
+
+    float pyramidDepth = textureLod(uHiZ, clamp(uv, 0.0, 1.0), mip).r;
+    pyramidDepth = max(pyramidDepth,
+        textureLod(uHiZ, clamp(uv + vec2(texelRadius.x, 0.0), 0.0, 1.0), mip).r);
+    pyramidDepth = max(pyramidDepth,
+        textureLod(uHiZ, clamp(uv - vec2(texelRadius.x, 0.0), 0.0, 1.0), mip).r);
+    pyramidDepth = max(pyramidDepth,
+        textureLod(uHiZ, clamp(uv + vec2(0.0, texelRadius.y), 0.0, 1.0), mip).r);
+    pyramidDepth = max(pyramidDepth,
+        textureLod(uHiZ, clamp(uv - vec2(0.0, texelRadius.y), 0.0, 1.0), mip).r);
+
+    vec4 clipNear = uProj * vec4(viewCenter + vec3(0.0, 0.0, radius), 1.0);
+    if (clipNear.w <= 0.0)
+        return false;
+    float nearestDepth = clipNear.z / clipNear.w * 0.5 + 0.5;
+    return nearestDepth > pyramidDepth + uBias;
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= uint(uPatchCount))
+        return;
+
+    PatchData patchData = patches[index];
+    if (patchData.relativeOriginVisible.w < 0.0)
+        return;
+    if (IsOccluded(patchData))
+        patches[index].relativeOriginVisible.w = -2.0;
+}

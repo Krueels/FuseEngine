@@ -62,6 +62,11 @@ public static class DevShortcuts
         if (Input.Input.KeyPressed(KeyCodes.F9))
         {
             debugDrawer.Toggle();
+            if (renderer.GrassRenderer is { } grassRenderer)
+            {
+                grassRenderer.DebugLodColors = debugDrawer.Enabled;
+                grassRenderer.ReadbackDiagnostics = debugDrawer.Enabled;
+            }
             GameNotify.Info($"Debug drawer {(debugDrawer.Enabled ? "ON" : "OFF")}");
         }
 

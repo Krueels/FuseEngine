@@ -17,6 +17,7 @@ public sealed class ProceduralTerrainLayer : IDisposable
     public string Id { get; }
     public ProceduralTerrainAsset Asset { get; }
     public TerrainStreamer Streamer { get; }
+    public ProceduralGrassPatchSet GrassPatches { get; }
     public Vector3 WorldPosition { get; }
     public Quaternion WorldRotation { get; }
     public bool Visible { get; }
@@ -58,6 +59,7 @@ public sealed class ProceduralTerrainLayer : IDisposable
         Asset = asset ?? throw new ArgumentNullException(nameof(asset));
         Asset.Settings.Validate();
         Streamer = new TerrainStreamer(Asset);
+        GrassPatches = new ProceduralGrassPatchSet(this);
         WorldPosition = worldPosition;
         WorldRotation = Quaternion.Normalize(worldRotation);
         Visible = visible;
@@ -80,7 +82,7 @@ public sealed class ProceduralTerrainLayer : IDisposable
         MaxTileUploadsPerFrame = Asset.Settings.MaxTileUploadsPerFrame;
     }
 
-    internal void MarkInitialTile(TerrainTile tile, bool hasCollision)
+    public void MarkInitialTile(TerrainTile tile, bool hasCollision)
     {
         var coordinate = new TerrainTileCoordinate(tile.X, tile.Z);
         Streamer.MarkResident(tile.X, tile.Z);
@@ -90,5 +92,9 @@ public sealed class ProceduralTerrainLayer : IDisposable
             CollisionTiles.Add(coordinate);
     }
 
-    public void Dispose() => Streamer.Dispose();
+    public void Dispose()
+    {
+        GrassPatches.Dispose();
+        Streamer.Dispose();
+    }
 }

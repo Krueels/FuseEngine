@@ -6,5 +6,7 @@ public enum TerrainSculptTool
     SetHeight,
     Smooth,
     Stamp,
-    Noise
+    Noise,
+    PaintGrass,
+    EraseGrass
 }

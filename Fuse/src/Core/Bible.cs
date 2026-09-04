@@ -69,6 +69,16 @@ public static class Bible
     public const string ShaderPointShadowSkinnedVert = "Shaders/point_shadow_skinned.vert";
     public const string ShaderForwardPlusCull = "Shaders/forward_plus.comp";
 
+    // Shaders - Procedural Grass
+    public const string ProceduralGrassVert = "Shaders/Grass/grass.vert";
+    public const string ProceduralGrassFrag = "Shaders/Grass/grass.frag";
+    public const string ProceduralGrassShadowVert = "Shaders/Grass/grass_shadow.vert";
+    public const string ProceduralGrassShadowFrag = "Shaders/Grass/grass_shadow.frag";
+    public const string ProceduralGrassCullCompute = "Shaders/Grass/grass_cull.comp";
+    public const string ProceduralGrassHiZCopyCompute = "Shaders/Grass/grass_hiz_copy.comp";
+    public const string ProceduralGrassHiZReduceCompute = "Shaders/Grass/grass_hiz_reduce.comp";
+    public const string ProceduralGrassOcclusionCompute = "Shaders/Grass/grass_occlusion.comp";
+
     // Shaders - billboard
     public const string ShaderBillboardVert = "Shaders/billboard.vert";
     public const string ShaderBillboardFrag = "Shaders/billboard.frag";

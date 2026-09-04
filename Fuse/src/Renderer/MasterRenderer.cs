@@ -64,6 +64,7 @@ public unsafe class MasterRenderer
     private PointShadowMap[] _staticPointShadowMaps = null!;
     private LightingBuffer _lightingBuffer = null!;
     private ImageBasedLighting? _imageBasedLighting;
+    private ProceduralGrassRenderer? _grassRenderer;
 
     private const int CascadeCount = 3;
     private const int MaxShadowedPointLightSlots = 4;
@@ -548,6 +549,7 @@ public unsafe class MasterRenderer
     public float LightSelectionHysteresis = 0.25f;
     public bool ShadowsEnabled = false;
     public bool EnableShadowFilter = true;
+    public ProceduralGrassRenderer? GrassRenderer => _grassRenderer;
 
     public MasterRenderer(GL gl)
     {
@@ -625,6 +627,16 @@ public unsafe class MasterRenderer
         _skinnedShader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
         _decalShader.BindUniformBlock("LightingBlock", LightingBuffer.BindingPoint);
         CreateDecalDepthResources();
+
+        try
+        {
+            _grassRenderer = new ProceduralGrassRenderer(_gl);
+        }
+        catch (Exception ex)
+        {
+            _grassRenderer = null;
+            Logger.Warn($"Procedural grass disabled: {ex.Message}");
+        }
 
 
 
@@ -883,6 +895,15 @@ public unsafe class MasterRenderer
         Array.Clear(_spotSpaceMatrices);
         Array.Clear(_cascadeTexelSizes);
 
+        _grassRenderer?.Prepare(
+            scene,
+            view,
+            proj,
+            camera.Position,
+            _postPipeline.HdrDepthId,
+            _scrWidth,
+            _scrHeight);
+
         if (renderDirShadows && _shadowShader.ID != 0)
         {
             using var shadowScope = _profiler.Measure(ProfilerSection.DirectionalShadows);
@@ -891,7 +912,10 @@ public unsafe class MasterRenderer
         if (ShadowsEnabled && _shadowShader.ID != 0)
         {
             using var shadowScope = _profiler.Measure(ProfilerSection.SpotShadows);
-            RenderSpotShadowPass(scene, System.Math.Min(spotCount, LightingBuffer.MaxSpotLights));
+            RenderSpotShadowPass(
+                scene,
+                System.Math.Min(spotCount, LightingBuffer.MaxSpotLights),
+                camera.Position);
         }
         if (ShadowsEnabled && _pointShadowShader.ID != 0)
         {
@@ -1024,6 +1048,17 @@ public unsafe class MasterRenderer
                 _profiler.SetRenderCounts(staticObjectsDrawn + skinnedObjectsDrawn);
             }
         }
+
+        _grassRenderer?.DrawPrepared(
+            scene,
+            view,
+            proj,
+            camera.Position,
+            lightDir,
+            directionalColor,
+            ambient,
+            outputSrgb: !_postPipeline.Settings.Enabled,
+            simulationTimeSeconds: Engine.Time);
 
         // ===== DECALS (Forward Lit in HDR FBO, after geometry) =====
         if (_decalQueue.Count > 0)
@@ -1303,10 +1338,11 @@ public unsafe class MasterRenderer
             _shadowShader.SetMat4("uLightSpaceMatrix", matrix);
             scene.RenderShadowCasters(_shadowShader, matrix, ShadowCasterFilter.Dynamic);
             RenderSkinnedShadowCasters(scene, _skinnedShadowShader, matrix, ShadowCasterFilter.Dynamic);
+            _grassRenderer?.RenderNearShadows(scene, matrix, camera.Position, Engine.Time);
         }
     }
 
-    private void RenderSpotShadowPass(Scene scene, int spotCount)
+    private void RenderSpotShadowPass(Scene scene, int spotCount, Vector3 cameraPosition)
     {
         PrepareShadowRenderState();
 
@@ -1356,6 +1392,7 @@ public unsafe class MasterRenderer
             _shadowShader.SetMat4("uLightSpaceMatrix", matrix);
             scene.RenderShadowCasters(_shadowShader, matrix, ShadowCasterFilter.Dynamic);
             RenderSkinnedShadowCasters(scene, _skinnedShadowShader, matrix, ShadowCasterFilter.Dynamic);
+            _grassRenderer?.RenderNearShadows(scene, matrix, cameraPosition, Engine.Time);
         }
     }
 
@@ -2205,6 +2242,7 @@ public unsafe class MasterRenderer
         _fogRenderer?.Dispose();
         _cloudRenderer?.Dispose();
         _oceanRenderer?.Dispose();
+        _grassRenderer?.Dispose();
         _postPipeline?.Dispose();
     }
 }

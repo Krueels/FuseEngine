@@ -111,11 +111,30 @@ public unsafe sealed class ComputeShader : IDisposable
     public void SetVec2(string name, Vector2 value) =>
         _gl.Uniform2(GetUniformLoc(name), value.X, value.Y);
 
+    public void SetVec3(string name, Vector3 value) =>
+        _gl.Uniform3(GetUniformLoc(name), value.X, value.Y, value.Z);
+
+    public void SetVec4(string name, Vector4 value) =>
+        _gl.Uniform4(GetUniformLoc(name), value.X, value.Y, value.Z, value.W);
+
     public void SetInt(string name, int value) =>
         _gl.Uniform1(GetUniformLoc(name), value);
 
     public void SetFloat(string name, float value) =>
         _gl.Uniform1(GetUniformLoc(name), value);
+
+    public void BindStorageBuffer(uint bindingPoint, uint buffer) =>
+        _gl.BindBufferBase(GLEnum.ShaderStorageBuffer, bindingPoint, buffer);
+
+    public void Dispatch(
+        uint groupsX,
+        uint groupsY = 1,
+        uint groupsZ = 1,
+        MemoryBarrierMask barrier = MemoryBarrierMask.ShaderStorageBarrierBit)
+    {
+        _gl.DispatchCompute(groupsX, groupsY, groupsZ);
+        _gl.MemoryBarrier(barrier);
+    }
 
     private readonly Dictionary<string, int> _uniformCache = new();
     private int GetUniformLoc(string name)

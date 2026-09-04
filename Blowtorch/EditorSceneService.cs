@@ -27,6 +27,7 @@ public class EditorSceneService
     private bool _isDirty;
     private readonly Dictionary<string, (TerrainTileSetAsset Asset, DateTime LastWriteUtc, long Length)> _terrainCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _terrainEditorForceLod0 = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ProceduralGrassDensityMaskStore _grassDensityMasks = new();
     private bool _proceduralPreviewActive;
 
     public MapDocument Document => _doc;
@@ -37,6 +38,9 @@ public class EditorSceneService
     public bool IsDirty => _isDirty;
     public string LastError { get; private set; } = "";
     public IReadOnlyList<string> ValidationWarnings => _doc?.ValidationWarnings ?? [];
+    public bool RequiresContinuousProceduralGrassRender =>
+        _scene != null && _scene.ProceduralTerrainLayers.Any(static layer =>
+            layer.Visible && layer.Asset.Settings.Grass.Enabled);
 
     public void LoadMap(string fuseResPath)
     {
@@ -208,6 +212,31 @@ public class EditorSceneService
                     mapObj.TerrainPixelError,
                     mapObj.TerrainCollisionLod,
                     IsTerrainEditorForceLod0(mapObj.Id));
+
+                if (terrainSet.Procedural != null && rootEntity.Visible)
+                {
+                    var proceduralLayer = new ProceduralTerrainLayer(
+                        mapObj.Id,
+                        terrainSet.Procedural,
+                        terrainPosition,
+                        terrainRotation,
+                        rootEntity.Visible,
+                        mapObj.TerrainChunkQuads,
+                        mapObj.MaterialPath ?? "",
+                        mapObj.MaterialSlots,
+                        mapObj.Texture ?? "",
+                        mapObj.UvScale,
+                        mapObj.UvOffset,
+                        mapObj.UvRotation,
+                        mapObj.ParentId ?? "",
+                        terrainFriction,
+                        terrainRestitution,
+                        mapObj.TerrainPixelError,
+                        mapObj.TerrainCollisionLod);
+                    foreach (TerrainTile tile in terrainSet.Tiles)
+                        proceduralLayer.MarkInitialTile(tile, false);
+                    _scene.RegisterProceduralTerrain(proceduralLayer);
+                }
                 continue;
             }
 
@@ -355,6 +384,30 @@ public class EditorSceneService
             settings.LodPixelError,
             TerrainSceneBuilder.DefaultCollisionLod,
             false);
+        if (chunkCount > 0)
+        {
+            var previewLayer = new ProceduralTerrainLayer(
+                ProceduralPreviewGroupId,
+                procedural,
+                Vector3.Zero,
+                Quaternion.Identity,
+                true,
+                chunkQuads,
+                materialPath ?? "",
+                materialPaths,
+                texturePath ?? "",
+                uvScale,
+                uvOffset,
+                uvRotation,
+                "",
+                0.5f,
+                0.0f,
+                settings.LodPixelError,
+                TerrainSceneBuilder.DefaultCollisionLod);
+            foreach (TerrainTile tile in preview.Tiles)
+                previewLayer.MarkInitialTile(tile, false);
+            _proceduralPreviewScene.RegisterProceduralTerrain(previewLayer);
+        }
         _proceduralPreviewActive = chunkCount > 0;
         return chunkCount;
     }
@@ -582,6 +635,77 @@ public class EditorSceneService
             mapObj.TerrainChunkQuads,
             localHit,
             radius);
+        return true;
+    }
+
+    public bool PaintProceduralGrassAtRay(
+        MapObject mapObj,
+        EditorAssetService assetService,
+        Vector3 rayOrigin,
+        Vector3 rayDirection,
+        float radius,
+        float strength,
+        bool erase)
+    {
+        TerrainTileSetAsset? terrainSet = TryLoadTerrainTileSet(mapObj, assetService);
+        ProceduralTerrainAsset? procedural = terrainSet?.Procedural;
+        if (terrainSet == null || procedural == null)
+            return false;
+
+        ProceduralGrassSettings grass = procedural.Settings.Grass;
+        if (string.IsNullOrWhiteSpace(grass.DensityMaskPath))
+        {
+            string terrainName = Path.GetFileNameWithoutExtension(mapObj.TerrainAssetPath) ?? "terrain";
+            string objectName = new(mapObj.Id
+                .Select(character => Path.GetInvalidFileNameChars().Contains(character) ? '_' : character)
+                .ToArray());
+            grass.DensityMaskPath = Path.Combine(
+                    "Terrains",
+                    "GrassMasks",
+                    $"{terrainName}_{objectName}")
+                .Replace('\\', '/');
+            grass.Validate();
+            string terrainPath = assetService.ResolveEditorAssetPath(mapObj.TerrainAssetPath!);
+            if (!SaveTerrainAsset(terrainPath))
+                return false;
+        }
+
+        Vector3 terrainPosition = mapObj.Body?.Position ?? Vector3.Zero;
+        Quaternion terrainRotation = mapObj.Body?.Rotation ?? Quaternion.Identity;
+        Quaternion inverseRotation = Quaternion.Inverse(terrainRotation);
+        Vector3 localOrigin = Vector3.Transform(rayOrigin - terrainPosition, inverseRotation);
+        Vector3 localDirection = Vector3.Normalize(Vector3.Transform(rayDirection, inverseRotation));
+        if (!terrainSet.Raycast(localOrigin, localDirection, out _, out Vector3 localHit, out _))
+            return false;
+
+        bool changed = false;
+        foreach (TerrainTile tile in terrainSet.GetTilesIntersectingCircle(localHit, radius))
+        {
+            Vector3 tileOrigin = terrainSet.GetTileOrigin(tile);
+            Vector3 tileHit = localHit - tileOrigin;
+            float tileWidth = (tile.Asset.Width - 1) * tile.Asset.CellSize;
+            float tileDepth = (tile.Asset.Depth - 1) * tile.Asset.CellSize;
+            changed |= _grassDensityMasks.PaintAndSave(
+                grass,
+                new TerrainTileCoordinate(tile.X, tile.Z),
+                tileHit.X,
+                tileHit.Z,
+                tileWidth,
+                tileDepth,
+                radius,
+                strength,
+                erase);
+        }
+
+        if (!changed)
+            return false;
+
+        foreach (ProceduralTerrainLayer layer in _scene.ProceduralTerrainLayers)
+        {
+            if (layer.Id.Equals(mapObj.Id, StringComparison.OrdinalIgnoreCase))
+                layer.GrassPatches.InvalidateDensityMasks();
+        }
+        _revision++;
         return true;
     }
 

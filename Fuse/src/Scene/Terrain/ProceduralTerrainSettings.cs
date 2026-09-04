@@ -10,7 +10,7 @@ namespace Fuse.Scene.Terrain;
 /// </summary>
 public sealed class ProceduralTerrainSettings
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 5;
 
     public long Seed { get; set; } = 1337;
 
@@ -73,7 +73,14 @@ public sealed class ProceduralTerrainSettings
     public int MaxTileUploadsPerFrame { get; set; } = 1;
     public float LodPixelError { get; set; } = 5.0f;
 
-    public ProceduralTerrainSettings Clone() => (ProceduralTerrainSettings)MemberwiseClone();
+    public ProceduralGrassSettings Grass { get; set; } = new();
+
+    public ProceduralTerrainSettings Clone()
+    {
+        var clone = (ProceduralTerrainSettings)MemberwiseClone();
+        clone.Grass = Grass.Clone();
+        return clone;
+    }
 
     public void Validate()
     {
@@ -114,6 +121,8 @@ public sealed class ProceduralTerrainSettings
         MaxGenerationTasks = System.Math.Clamp(MaxGenerationTasks, 1, 16);
         MaxTileUploadsPerFrame = System.Math.Clamp(MaxTileUploadsPerFrame, 1, 8);
         LodPixelError = MathF.Max(0.1f, LodPixelError);
+        Grass ??= new ProceduralGrassSettings();
+        Grass.Validate();
     }
 
     internal void Write(BinaryWriter writer)
@@ -158,6 +167,7 @@ public sealed class ProceduralTerrainSettings
         writer.Write(RiverOctaves);
         writer.Write(NoiseLacunarity);
         writer.Write(NoiseGain);
+        Grass.Write(writer);
     }
 
     internal static ProceduralTerrainSettings Read(BinaryReader reader)
@@ -210,6 +220,11 @@ public sealed class ProceduralTerrainSettings
             settings.NoiseLacunarity = reader.ReadSingle();
             settings.NoiseGain = reader.ReadSingle();
         }
+        if (version >= 3)
+            settings.Grass = ProceduralGrassSettings.Read(
+                reader,
+                version >= 4,
+                version >= 5);
         settings.Validate();
         return settings;
     }
