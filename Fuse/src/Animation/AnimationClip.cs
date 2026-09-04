@@ -29,14 +29,14 @@ public sealed class AnimationClip
 
     public double DurationSeconds => TicksPerSecond > 0 ? DurationTicks / TicksPerSecond : 0;
 
-    public void Apply(double timeSeconds, Skeleton skeleton)
+    public void Apply(double timeSeconds, Skeleton skeleton, bool? loopOverride = null)
     {
         if (DurationTicks <= 0)
             return;
 
         double tps = TicksPerSecond > 0 ? TicksPerSecond : 30.0;
         double ticks = timeSeconds * tps;
-        if (Loop)
+        if (loopOverride ?? Loop)
         {
             ticks %= DurationTicks;
             if (ticks < 0)
@@ -49,7 +49,7 @@ public sealed class AnimationClip
 
         foreach (var ch in Channels)
         {
-            if (ch.NodeIndex < 0)
+            if ((uint)ch.NodeIndex >= (uint)skeleton.Nodes.Length)
                 continue;
 
             // Canal sem nenhuma key não deve zerar o Local do nó — mantém o RestLocal
@@ -63,20 +63,24 @@ public sealed class AnimationClip
                 MathF.Sqrt(node.RestLocal.M11 * node.RestLocal.M11 + node.RestLocal.M12 * node.RestLocal.M12 + node.RestLocal.M13 * node.RestLocal.M13),
                 MathF.Sqrt(node.RestLocal.M21 * node.RestLocal.M21 + node.RestLocal.M22 * node.RestLocal.M22 + node.RestLocal.M23 * node.RestLocal.M23),
                 MathF.Sqrt(node.RestLocal.M31 * node.RestLocal.M31 + node.RestLocal.M32 * node.RestLocal.M32 + node.RestLocal.M33 * node.RestLocal.M33));
-            node.Local = ComposeLocal(ch, ticks, restScale);
+            node.Local = ComposeLocal(ch, ticks, node.RestLocal);
         }
     }
 
-private static Matrix4x4 ComposeLocal(AnimationChannel ch, double ticks, Vector3 restScale)
+private static Matrix4x4 ComposeLocal(AnimationChannel ch, double ticks, Matrix4x4 restLocal)
         {
+            if (!Matrix4x4.Decompose(Matrix4x4.Transpose(restLocal), out Vector3 restScale,
+                    out Quaternion restRotation, out Vector3 restPosition))
+                return restLocal;
             bool hasPos = SamplePosition(ch, ticks, out var pos);
             bool hasRot = SampleRotation(ch, ticks, out var rot);
 
             if (!hasPos && !hasRot)
-                return Matrix4x4.Identity;
+                return restLocal;
 
-            if (!hasPos) pos = Vector3.Zero;
-            if (!hasRot) rot = Quaternion.Identity;
+            if (!hasPos) pos = restPosition;
+            if (!hasRot || !float.IsFinite(rot.LengthSquared()) || rot.LengthSquared() < 0.000001f)
+                rot = restRotation;
 
             // Quaternion não-unitário vira escala fantasma no CreateFromQuaternion
             float lenSq = rot.LengthSquared();

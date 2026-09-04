@@ -16,6 +16,12 @@ public static unsafe class SkinnedModelLoader
     private static Assimp Api => s_assimp ??= Assimp.GetApi();
 
     public static SkinnedModel? Load(GL gl, string path, Func<string, Texture?>? textureResolver = null)
+        => LoadCore(gl, path, textureResolver);
+
+    /// <summary>Imports the same rig and clips without allocating GPU resources.</summary>
+    public static SkinnedModel? LoadRig(string path) => LoadCore(null, path, null);
+
+    private static SkinnedModel? LoadCore(GL? gl, string path, Func<string, Texture?>? textureResolver)
     {
         if (!File.Exists(path))
         {
@@ -113,7 +119,7 @@ public static unsafe class SkinnedModelLoader
         string modelDir = Path.GetDirectoryName(path) ?? "";
         var submeshes = new List<SkinnedSubmesh>();
 
-        for (uint m = 0; m < scene->MNumMeshes; m++)
+        for (uint m = 0; gl != null && m < scene->MNumMeshes; m++)
         {
             var mesh = scene->MMeshes[m];
 

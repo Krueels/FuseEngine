@@ -51,7 +51,7 @@ public sealed class SpiderTargetSurfaceResolver
                     searchDistance,
                     out SceneRaycastHit hit,
                     excludedBody,
-                    collideWithBackFaces: true))
+                    collideWithBackFaces: true, walkableOnly: true))
             {
                 continue;
             }

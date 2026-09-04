@@ -147,7 +147,7 @@ public sealed class EnemySystem : IDisposable
         foreach (var s in _spiders)
         {
             if (s.IsDead || !s.Body.IsBuilt) continue;
-            Vector3 spiderPos = s.Entity.Transform.Position;
+            Vector3 spiderPos = s.Body.Position(_physics);
             float dist = Vector3.Distance(playerPos, spiderPos);
             if (dist < 1.8f)
             {

@@ -122,6 +122,7 @@ public sealed class SpiderPatrol : IGizmoDrawable
             _waitDuration = RandomWaitTime();
             _targetPosition = _enemy.Body.Position(_physics);
             _initialized = true;
+            PlayIdleAnimation();
         }
 
         dt = System.Math.Clamp(dt, 0.0001f, 0.05f);
@@ -647,7 +648,11 @@ public sealed class SpiderPatrol : IGizmoDrawable
     {
         var animator = _enemy.Entity?.Animator;
         if (animator != null)
-            animator.Speed = MoveSpeed > 0.001f ? CurrentSpeed / MoveSpeed * WalkAnimSpeed : 0f;
+        {
+            if (_state == PatrolState.Walking) PlayWalkAnimation(); else PlayIdleAnimation();
+            animator.Speed = _state == PatrolState.Idle ? 1f :
+                MathF.Max(0.1f, MoveSpeed > 0.001f ? CurrentSpeed / MoveSpeed * WalkAnimSpeed : 0f);
+        }
     }
 
     private void PlayIdleAnimation()
@@ -655,17 +660,23 @@ public sealed class SpiderPatrol : IGizmoDrawable
         var animator = _enemy.Entity?.Animator;
         if (animator == null)
             return;
-        if (animator.GetClip("Idle") != null)
-            animator.CrossFade("Idle", 0.25f);
-        else if (!string.IsNullOrEmpty(animator.Model?.DefaultClipName))
-            animator.CrossFade(animator.Model.DefaultClipName, 0.25f);
+        PlayLocomotionClip("Idle");
     }
 
     private void PlayWalkAnimation()
     {
+        PlayLocomotionClip("Walk");
+    }
+
+    private void PlayLocomotionClip(string name)
+    {
         var animator = _enemy.Entity?.Animator;
-        if (animator?.GetClip("Walk") != null)
-            animator.CrossFade("Walk", 0.25f);
+        var model = animator?.Model;
+        if (animator == null || model == null) return;
+        string? clip = model.Clips.Keys.FirstOrDefault(k => k.Equals(name, StringComparison.OrdinalIgnoreCase)) ??
+            model.Clips.Keys.FirstOrDefault(k => k.Contains(name, StringComparison.OrdinalIgnoreCase)) ?? model.DefaultClipName;
+        animator.LoopOverride = true;
+        if (!string.IsNullOrEmpty(clip)) animator.CrossFade(clip, 0.25f);
     }
 
     private static void BuildTangentBasis(

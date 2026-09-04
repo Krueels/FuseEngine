@@ -13,6 +13,16 @@ public sealed class Animator
     public double TimeSeconds { get; set; }
     public float Speed { get; set; } = 1.0f;
     public bool Playing { get; set; } = true;
+    public bool? LoopOverride { get; set; }
+    private readonly HashSet<int> _proceduralNodes = new();
+
+    public void SetProceduralNodes(IEnumerable<int> nodeIndices)
+    {
+        _proceduralNodes.Clear();
+        foreach (int index in nodeIndices)
+            if ((uint)index < (uint)_skeleton.Nodes.Length)
+                _proceduralNodes.Add(index);
+    }
     public Matrix4x4[] FinalBoneMatrices { get; }
 
     // Cross-fade
@@ -140,7 +150,7 @@ public sealed class Animator
         }
 
         if (animate)
-            currentClip!.Apply(TimeSeconds, _skeleton);
+            currentClip!.Apply(TimeSeconds, _skeleton, LoopOverride);
 
         if (fading && previousClip != null &&
             _prevNodeLocals is { } previousLocals &&
@@ -151,7 +161,9 @@ public sealed class Animator
                 nextLocals[i] = _skeleton.Nodes[i].Local;
 
             // 2. Capturar pose do clip antigo
-            previousClip.Apply(_prevTime, _skeleton);
+            foreach (var node in _skeleton.Nodes)
+                node.Local = node.RestLocal;
+            previousClip.Apply(_prevTime, _skeleton, LoopOverride);
             for (int i = 0; i < _skeleton.Nodes.Length; i++)
                 previousLocals[i] = _skeleton.Nodes[i].Local;
 
@@ -197,6 +209,9 @@ public sealed class Animator
             node.Local.M24 = translation.Y;
             node.Local.M34 = translation.Z;
         }
+
+        foreach (int nodeIndex in _proceduralNodes)
+            _skeleton.Nodes[nodeIndex].Local = _skeleton.Nodes[nodeIndex].RestLocal;
 
         _skeleton.ComputeFinalBoneMatrices(FinalBoneMatrices);
 

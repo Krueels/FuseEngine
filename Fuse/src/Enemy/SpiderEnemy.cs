@@ -71,12 +71,6 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
     private SkinnedModel? _model;
     private ProceduralSpiderWalk? _proceduralWalk;
 
-    private const float SurfaceProbeDistance = 2.5f;
-    private const float SurfaceLeanStartDistance = 2.0f;
-    private const float SurfaceLeanFullDistance = 0.55f;
-    private const float MaxSurfaceLeanRadians = 72f * (MathF.PI / 180f);
-    private const float SurfaceLeanResponse = 9f;
-    private Vector3 _visualSurfaceUp;
 
     // Leg bone indices (resolved at init)
     private readonly LegData[] _legs = new LegData[8];
@@ -153,7 +147,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         Vector3 initialNormal = NormalizeOrZero(spawnNormal ?? Vector3.Zero);
         Vector3 safeSpawn = spawnPos;
-        const float initialClearance = 0.83f;
+        float initialClearance = LocomotionProfile.BodyClearance;
         if (initialNormal.LengthSquared() > 0.0001f)
         {
             // Spawn outside the selected collider. Starting exactly on a face
@@ -184,7 +178,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             .Build(physics);
 
 
-        _model = _assets.GetSkinnedModel(Bible.Model(Bible.SpiderModel));
+        _model = _assets.GetSkinnedModel(Bible.Model(Bible.SpiderModel))?.CreateInstance();
 
         if (_model != null)
         {
@@ -218,7 +212,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             // EDITAR AQUI — construir as partes físicas do ragdoll depois de resolver os ossos.
             BuildDeathRagdollDefinition();
 
-            _surfaceSolver = new SpiderSurfaceSolver(_sceneManager);
+            _surfaceSolver = new SpiderSurfaceSolver(_sceneManager, LocomotionProfile);
 
             // Hitboxes articuladas seguem a pose viva, mas são sensores
             // separados da cápsula usada pelo CharacterVirtual.
@@ -237,6 +231,8 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             _proceduralWalk = new ProceduralSpiderWalk(_sceneManager, _surfaceSolver, LocomotionProfile);
             _proceduralWalk.FootLanded += OnSpiderFootLanded;
             _proceduralWalk.Initialize(_model.Skeleton, _legs);
+            _animator.SetProceduralNodes(_proceduralWalk.OwnedNodes);
+            _animator.LoopOverride = true;
 
             // 2. Conecta o buffer de matrizes do Animator ao ProceduralSpiderWalk
             _proceduralWalk.SetFinalBoneMatrices(_animator.FinalBoneMatrices);
@@ -254,6 +250,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         }
 
         sceneManager.ActiveScene.RegisterBody(Entity);
+        sceneManager.NonWalkableBodies.Add(Body.Native);
         _surfaceSolver ??= new SpiderSurfaceSolver(sceneManager);
         _surfaceMotor = new SpiderSurfaceMotor(
             physics,
@@ -262,6 +259,11 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             safeSpawn,
             initialNormal,
             initialForward);
+        if (_proceduralWalk != null)
+        {
+            _surfaceMotor.BodyPoseValidator = _proceduralWalk.CanOccupyPose;
+            _surfaceMotor.PoseReset += _proceduralWalk.ResetContacts;
+        }
         _spiderPatrol = new SpiderPatrol(
             this,
             physics,
@@ -305,7 +307,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             // 1. Encontra a Thigh (Coxa)
             for (int n = 0; n < skeleton.Nodes.Length; n++)
             {
-                if (skeleton.Nodes[n].Name == thighName)
+                if (skeleton.Nodes[n].Name.Equals(thighName, StringComparison.OrdinalIgnoreCase))
                 {
                     _legs[leg].ThighNodeIndex = n;
                     break;
@@ -329,12 +331,14 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
             // 3. A partir do nó Leg, faz a busca dos filhos reais: Leg -> Foot -> Toes
             if (legNodeIdx >= 0)
             {
-                int footIdx = FindNonTwistChild(skeleton, legNodeIdx);
+                int footIdx = skeleton.TryGetNodeIndex(side + "foot" + suffix, out int namedFoot)
+                    ? namedFoot : FindNonTwistChild(skeleton, legNodeIdx);
                 _legs[leg].SegmentNodeIndices[1] = footIdx;
 
                 if (footIdx >= 0)
                 {
-                    int toesIdx = FindNonTwistChild(skeleton, footIdx);
+                    int toesIdx = skeleton.TryGetNodeIndex(side + "toes" + suffix, out int namedToes)
+                        ? namedToes : FindNonTwistChild(skeleton, footIdx);
                     _legs[leg].SegmentNodeIndices[2] = toesIdx;
                 }
             }
@@ -877,40 +881,23 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
         _spiderPatrol?.Update(dt);
 
-        float speed = _spiderPatrol?.CurrentSpeed ?? 0f;
-        if (_proceduralWalk != null && Entity != null)
+        if (_proceduralWalk != null && Entity != null && _surfaceMotor != null)
         {
-            Vector3 bodyPosition = Body.Position(physics) + Entity.ModelOffset;
-            Quaternion bodyRotation = Body.Rotation(physics);
-            Vector3 forward = Vector3.Transform(Vector3.UnitZ, bodyRotation);
-            Vector3 movementForward = _surfaceMotor?.MovementDirection ?? forward;
-            Vector3 totalModelScale = Entity.Transform.Scale * Entity.ModelScale;
-
-            // Only the visual model is adjusted here. The physical body,
-            // motor and leg solver keep their existing responsibilities.
-            UpdateSurfaceOrientation(
-                dt,
-                bodyRotation,
-                bodyPosition,
-                movementForward,
-                _spiderPatrol?.CurrentVelocity ?? Vector3.Zero,
-                _spiderPatrol?.SurfaceNormal ?? Vector3.Zero);
-            Quaternion modelWorldRotation = Quaternion.Concatenate(Entity.ModelRotation, bodyRotation);
-
-            Matrix4x4 modelMatrix = Matrix4x4.CreateScale(totalModelScale) *
-                                     Matrix4x4.CreateFromQuaternion(modelWorldRotation) *
-                                     Matrix4x4.CreateTranslation(bodyPosition);
-            _proceduralWalk.Update(
-                dt,
-                speed,
-                forward,
-                _spiderPatrol?.CurrentVelocity ?? forward * speed,
-                bodyPosition,
-                modelWorldRotation,
-                totalModelScale,
-                modelMatrix,
-                Body.Native,
-                _spiderPatrol?.SurfaceContact ?? default);
+            // Spider rigs use a positive uniform scale; physical dimensions are
+            // calibrated by the same profile. Imported nonuniform node transforms
+            // remain part of the rig, not a separate world-space reach estimate.
+            Vector3 totalScale = Entity.Transform.Scale * Entity.ModelScale;
+            if (!float.IsFinite(totalScale.X) || totalScale.X <= 0f ||
+                MathF.Abs(totalScale.X - totalScale.Y) > 0.0001f || MathF.Abs(totalScale.X - totalScale.Z) > 0.0001f)
+                throw new InvalidOperationException("Spider locomotion requires positive uniform entity scale.");
+            Entity.ModelRotation = Quaternion.Identity;
+            Entity.Transform.Position = Body.Position(physics);
+            Entity.Transform.Rotation = Body.Rotation(physics);
+            var pose = new SpiderLocomotionPose(
+                Entity.Transform.Position + Entity.ModelOffset, Entity.Transform.Rotation,
+                _surfaceMotor.CurrentVelocity, _surfaceMotor.CurrentAngularVelocity, totalScale.X,
+                Body.Native, _surfaceMotor.SurfaceContact, _surfaceMotor.SupportVelocity, _surfaceMotor.SupportAngularVelocity);
+            _proceduralWalk.Update(dt, pose);
         }
 
         if (_damageBody != null &&
@@ -936,196 +923,6 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         }
     }
 
-    private void UpdateSurfaceOrientation(
-        float dt,
-        Quaternion bodyRotation,
-        Vector3 bodyPosition,
-        Vector3 bodyForward,
-        Vector3 bodyVelocity,
-        Vector3 surfaceNormal)
-    {
-        surfaceNormal = NormalizeOrZero(surfaceNormal);
-        if (surfaceNormal.LengthSquared() <= 0.0001f)
-        {
-            _visualSurfaceUp = Vector3.Zero;
-            float resetBlend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
-            Entity.ModelRotation = Quaternion.Normalize(
-                Quaternion.Slerp(Entity.ModelRotation, Quaternion.Identity, resetBlend));
-            return;
-        }
-
-        bodyForward = NormalizeOrZero(bodyForward);
-        Vector3 surfaceForward = NormalizeOrZero(ProjectOnPlane(bodyForward, surfaceNormal));
-        if (surfaceForward.LengthSquared() <= 0.0001f)
-            surfaceForward = NormalizeOrZero(ProjectOnPlane(bodyVelocity, surfaceNormal));
-        if (surfaceForward.LengthSquared() <= 0.0001f)
-            surfaceForward = BuildTangent(surfaceNormal, bodyForward);
-
-        Vector3 targetWorldUp = surfaceNormal;
-        if (TryFindNearbyObstacle(
-                bodyPosition,
-                surfaceForward,
-                surfaceNormal,
-                out SceneRaycastHit obstacle,
-                out Vector3 probeDirection))
-        {
-            Vector3 awayFromObstacle = NormalizeOrZero(ProjectOnPlane(obstacle.Normal, surfaceNormal));
-            if (awayFromObstacle.LengthSquared() <= 0.0001f)
-                awayFromObstacle = NormalizeOrZero(ProjectOnPlane(-probeDirection, surfaceNormal));
-
-            if (awayFromObstacle.LengthSquared() > 0.0001f)
-            {
-                float range = MathF.Max(0.01f, SurfaceLeanStartDistance - SurfaceLeanFullDistance);
-                float proximity = System.Math.Clamp(
-                    (SurfaceLeanStartDistance - obstacle.Distance) / range,
-                    0f,
-                    1f);
-                proximity = proximity * proximity * (3f - 2f * proximity);
-
-                float angle = MaxSurfaceLeanRadians * proximity;
-                targetWorldUp = NormalizeOrZero(
-                    surfaceNormal * MathF.Cos(angle) + awayFromObstacle * MathF.Sin(angle));
-            }
-        }
-
-        // The physical motor already smooths the real surface normal, but the
-        // visual lean also receives nearby-obstacle raycast results. At a
-        // corner those rays can alternate between the two faces by one frame.
-        // Keep a filtered visual up vector so that this presentation layer does
-        // not turn a temporary probe difference into a visible rotation flip.
-        targetWorldUp = NormalizeOrZero(targetWorldUp);
-        if (targetWorldUp.LengthSquared() <= 0.0001f)
-            targetWorldUp = surfaceNormal;
-
-        if (_visualSurfaceUp.LengthSquared() <= 0.0001f)
-        {
-            _visualSurfaceUp = surfaceNormal;
-        }
-        else if (Vector3.Dot(_visualSurfaceUp, targetWorldUp) < -0.95f)
-        {
-            // Opposite normals cannot be interpolated through a useful
-            // direction. The locomotion motor must already have validated this
-            // transition, so reset the visual anchor to the new valid frame.
-            _visualSurfaceUp = targetWorldUp;
-        }
-        else
-        {
-            float visualBlend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
-            _visualSurfaceUp = NormalizeOrZero(Vector3.Lerp(
-                _visualSurfaceUp,
-                targetWorldUp,
-                visualBlend));
-        }
-
-        targetWorldUp = _visualSurfaceUp;
-
-        // Re-anchor visual forward to locomotion every frame. Reusing the
-        // previous visual rotation here accumulates yaw while the body leans.
-        Vector3 targetWorldForward = NormalizeOrZero(ProjectOnPlane(surfaceForward, targetWorldUp));
-        if (targetWorldForward.LengthSquared() <= 0.0001f)
-            targetWorldForward = NormalizeOrZero(ProjectOnPlane(bodyForward, targetWorldUp));
-        if (targetWorldForward.LengthSquared() <= 0.0001f)
-            targetWorldForward = BuildTangent(targetWorldUp, surfaceForward);
-
-        Quaternion inverseBodyRotation = Quaternion.Inverse(bodyRotation);
-        Vector3 targetLocalUp = Vector3.Transform(targetWorldUp, inverseBodyRotation);
-        Vector3 targetLocalForward = Vector3.Transform(targetWorldForward, inverseBodyRotation);
-        Quaternion targetRotation = BuildSurfaceRotation(targetLocalUp, targetLocalForward);
-
-        float blend = 1f - MathF.Exp(-SurfaceLeanResponse * dt);
-        Entity.ModelRotation = Quaternion.Normalize(Quaternion.Slerp(Entity.ModelRotation, targetRotation, blend));
-    }
-
-    private bool TryFindNearbyObstacle(
-        Vector3 origin,
-        Vector3 surfaceForward,
-        Vector3 surfaceNormal,
-        out SceneRaycastHit bestHit,
-        out Vector3 bestDirection)
-    {
-        bestHit = default;
-        bestDirection = Vector3.Zero;
-
-        if (_sceneManager == null)
-            return false;
-
-        Vector3 surfaceRight = NormalizeOrZero(Vector3.Cross(surfaceForward, surfaceNormal));
-        if (surfaceRight.LengthSquared() <= 0.0001f)
-            return false;
-
-        float bestDistance = float.MaxValue;
-        TryProbeObstacle(origin, surfaceForward, ref bestHit, ref bestDirection, ref bestDistance);
-        TryProbeObstacle(origin, -surfaceForward, ref bestHit, ref bestDirection, ref bestDistance);
-        TryProbeObstacle(origin, surfaceRight, ref bestHit, ref bestDirection, ref bestDistance);
-        TryProbeObstacle(origin, -surfaceRight, ref bestHit, ref bestDirection, ref bestDistance);
-
-        return bestDirection.LengthSquared() > 0.0001f;
-    }
-
-    private void TryProbeObstacle(
-        Vector3 origin,
-        Vector3 direction,
-        ref SceneRaycastHit bestHit,
-        ref Vector3 bestDirection,
-        ref float bestDistance)
-    {
-        if (_sceneManager == null ||
-            !_sceneManager.Raycast(
-                origin,
-                direction,
-                SurfaceProbeDistance,
-                out SceneRaycastHit hit,
-                Body.Native,
-                collideWithBackFaces: true))
-        {
-            return;
-        }
-
-        Vector3 normal = NormalizeOrZero(hit.Normal);
-        if (normal.LengthSquared() <= 0.0001f ||
-            !float.IsFinite(hit.Distance) ||
-            hit.Distance < 0f ||
-            Vector3.Dot(normal, -direction) < 0.08f ||
-            hit.Distance >= bestDistance)
-        {
-            return;
-        }
-
-        bestHit = hit;
-        bestDirection = direction;
-        bestDistance = hit.Distance;
-    }
-
-    private static Quaternion BuildSurfaceRotation(Vector3 up, Vector3 forward)
-    {
-        up = NormalizeOrZero(up);
-        if (up.LengthSquared() <= 0.0001f)
-            return Quaternion.Identity;
-
-        forward = NormalizeOrZero(ProjectOnPlane(forward, up));
-        if (forward.LengthSquared() <= 0.0001f)
-            forward = BuildTangent(up, Vector3.Zero);
-        if (forward.LengthSquared() <= 0.0001f)
-            return Quaternion.Identity;
-
-        Vector3 right = NormalizeOrZero(Vector3.Cross(forward, up));
-        if (right.LengthSquared() <= 0.0001f)
-            return Quaternion.Identity;
-
-        forward = NormalizeOrZero(Vector3.Cross(up, right));
-        if (forward.LengthSquared() <= 0.0001f)
-            return Quaternion.Identity;
-
-        // Keep the same right-handed convention used by the existing
-        // surface motor: local +Y maps to up and local +Z maps to forward.
-        Vector3 matrixRight = -right;
-        Matrix4x4 rotation = new(
-            matrixRight.X, matrixRight.Y, matrixRight.Z, 0f,
-            up.X, up.Y, up.Z, 0f,
-            forward.X, forward.Y, forward.Z, 0f,
-            0f, 0f, 0f, 1f);
-        return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(rotation));
-    }
 
     private static Quaternion RotationBetween(Vector3 from, Vector3 to)
     {
@@ -1305,6 +1102,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
         // O corpo antigo era apenas o proxy cinemático da locomotion.
         if (Body.IsBuilt)
         {
+            _sceneManager?.NonWalkableBodies.Remove(Body.Native);
             physics.DestroyBody(Body.Native);
             Body.Destroy();
         }
@@ -1362,6 +1160,7 @@ public sealed class SpiderEnemy : IEnemy, Debug.IGizmoDrawable
 
     public void Dispose()
     {
+        if (Body.IsBuilt) _sceneManager?.NonWalkableBodies.Remove(Body.Native);
         _surfaceMotor?.Dispose();
         _surfaceMotor = null;
 

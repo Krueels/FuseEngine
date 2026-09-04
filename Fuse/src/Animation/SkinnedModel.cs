@@ -14,6 +14,7 @@ public sealed class SkinnedSubmesh
 
 public sealed class SkinnedModel : IDisposable
 {
+    private bool _ownsMeshes = true;
     public required string SourcePath { get; init; }
     public required Skeleton Skeleton { get; init; }
     public required SkinnedSubmesh[] Submeshes { get; init; }
@@ -26,8 +27,23 @@ public sealed class SkinnedModel : IDisposable
         animator.Model = this;
     }
 
+    public SkinnedModel CreateInstance() => new()
+    {
+        SourcePath = SourcePath,
+        Skeleton = Skeleton.CreateInstance(),
+        Submeshes = Submeshes.Select(s => new SkinnedSubmesh
+        {
+            Name = s.Name, MaterialSlot = s.MaterialSlot, MaterialPath = s.MaterialPath,
+            Material = s.Material, Mesh = s.Mesh, Texture = s.Texture
+        }).ToArray(),
+        Clips = Clips, DefaultClipName = DefaultClipName,
+        HiddenSubmeshes = new HashSet<string>(HiddenSubmeshes, HiddenSubmeshes.Comparer),
+        _ownsMeshes = false
+    };
+
     public void Dispose()
     {
+        if (!_ownsMeshes) return;
         foreach (var sub in Submeshes)
             sub.Mesh.Dispose();
     }

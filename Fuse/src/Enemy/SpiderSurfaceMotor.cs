@@ -51,6 +51,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private SpiderSurfaceContact _transitionPreviousContact;
     private float _lostSurfaceTime;
     private float _transitionElapsed;
+    private float _transitionApproachDistance;
     private float _transitionCooldown;
     private int _transitionStableFrames;
     private bool _transitionActive;
@@ -59,6 +60,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     private SpiderSurfaceContact _transitionGuide;
     private bool _hasTransitionGuide;
     private bool _disposed;
+    private BodyID _previousSupportId = BodyID.Invalid;
+    private Quaternion _previousSupportRotation = Quaternion.Identity;
 
     public CharacterVirtual Character { get; }
     public SpiderSurfaceContact SurfaceContact => _surfaceContact;
@@ -70,6 +73,11 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     public Vector3 MovementDirection => _movementDirection;
     public Vector3 CurrentVelocity { get; private set; }
     public float CurrentSpeed { get; private set; }
+    public Vector3 CurrentAngularVelocity { get; private set; }
+    public Vector3 SupportVelocity { get; private set; }
+    public Vector3 SupportAngularVelocity { get; private set; }
+    public Func<Vector3, Quaternion, bool>? BodyPoseValidator { get; set; }
+    public event Action? PoseReset;
     public bool IsBlocked { get; private set; }
     public bool HasSurface => _surfaceContact.IsValid && _lostSurfaceTime <= SurfaceLostGrace;
     public bool IsTransitioning => _transitionActive;
@@ -137,6 +145,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         _surfaceContact = default;
         _lostSurfaceTime = SurfaceLostGrace + 0.001f;
+        _previousSupportId = BodyID.Invalid;
+        CurrentAngularVelocity = SupportVelocity = SupportAngularVelocity = Vector3.Zero;
         _surfaceNormal = surfaceNormal;
         _desiredSurfaceNormal = surfaceNormal;
         _surfaceForward = forward;
@@ -166,6 +176,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         Character.Rotation = RotationFromSurface(surfaceNormal, forward, forward);
         Character.LinearVelocity = Vector3.Zero;
         SyncBody();
+        PoseReset?.Invoke();
     }
 
     public SpiderSurfaceMotor(
@@ -198,7 +209,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         float halfHeight = MathF.Max(0.01f, body.CapsuleHeight * 0.5f);
         float radius = MathF.Max(0.05f, body.CapsuleRadius);
-        Clearance = halfHeight + radius + 0.08f;
+        Clearance = halfHeight + radius + _solver.Profile.BodySurfaceMargin;
         _shape = new CapsuleShape(halfHeight, radius);
 
         var settings = new CharacterVirtualSettings
@@ -268,14 +279,36 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         if (_transitionActive)
         {
             _transitionElapsed += dt;
-            if (_transitionElapsed >= TransitionMaxDuration)
+            if (_transitionElapsed >= _solver.Profile.MaximumSurfaceTransitionSeconds)
                 CancelSurfaceTransition();
         }
 
         Vector3 startPosition = Character.Position;
+        Vector3 simulationStartPosition = startPosition;
+        Quaternion startRotation = Character.Rotation;
+        SupportVelocity = SupportAngularVelocity = Vector3.Zero;
         if (_surfaceContact.IsValid)
         {
+            SpiderSurfaceContact previousContact = _surfaceContact;
             _surfaceContact = _solver.Refresh(_surfaceContact);
+            if (_surfaceContact.IsValid && _surfaceContact.BodyId == _previousSupportId)
+            {
+                Quaternion supportRotation = _physics.GetBodyRotation(_surfaceContact.BodyId);
+                Quaternion delta = Quaternion.Normalize(supportRotation * Quaternion.Inverse(_previousSupportRotation));
+                Vector3 carried = _surfaceContact.Point + Vector3.Transform(startPosition - previousContact.Point, delta);
+                Vector3 displacement = carried - startPosition;
+                Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(Character.Rotation) * Matrix4x4.CreateTranslation(startPosition);
+                float fraction = _solver.ShapeTravelFraction(_shape, transform, displacement, _body.Native);
+                startPosition += displacement * fraction;
+                Character.Position = startPosition;
+                Character.Rotation = Quaternion.Normalize(delta * Character.Rotation);
+                _surfaceNormal = Vector3.Transform(_surfaceNormal, delta);
+                _surfaceForward = Vector3.Transform(_surfaceForward, delta);
+                _movementDirection = Vector3.Transform(_movementDirection, delta);
+                if (intendedSpeed <= Epsilon) intendedDirection = Vector3.Transform(intendedDirection, delta);
+                SupportVelocity = (startPosition - simulationStartPosition) / dt;
+                SupportAngularVelocity = Animation.SpiderLocomotionMath.AngularVelocity(Quaternion.Identity, delta, dt);
+            }
             if (!_transitionActive)
                 SetDesiredSurfaceNormal(_surfaceContact.Normal);
             else if (IsAlignedWithTransitionTarget(_surfaceContact.Normal))
@@ -289,7 +322,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         RefreshOrAcquireSupport(startPosition, up, tangent);
         Vector3 normalTarget = _transitionActive
-            ? _transitionTargetNormal
+            ? GetTransitionOrientationTarget(startPosition)
             : _desiredSurfaceNormal;
         up = SmoothSurfaceNormal(up, normalTarget, dt);
         _surfaceNormal = up;
@@ -385,7 +418,12 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         Quaternion targetRotation = RotationFromSurface(up, tangent, _surfaceForward);
         Character.Up = up;
-        Character.Rotation = SmoothRotation(Character.Rotation, targetRotation, dt);
+        Vector3 oldForward = BuildTangent(up, Vector3.Transform(Vector3.UnitZ, Character.Rotation), tangent);
+        float turn = MathF.Atan2(Vector3.Dot(Vector3.Cross(oldForward, tangent), up), Vector3.Dot(oldForward, tangent));
+        float turnLimit = float.DegreesToRadians(_solver.Profile.MaximumTurnSpeedDegrees) * dt;
+        Vector3 turnedForward = Vector3.Transform(oldForward, Quaternion.CreateFromAxisAngle(up, System.Math.Clamp(turn, -turnLimit, turnLimit)));
+        Character.Rotation = RotationFromSurface(up, turnedForward, oldForward);
+        commandSpeed *= MathF.Max(0f, Vector3.Dot(turnedForward, tangent));
 
         if (HasSurface)
         {
@@ -402,16 +440,39 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         }
 
         Character.LinearVelocity = _requestedVelocity;
-        using (var bodyFilter = new EnemyBodyFilter(_body.Native))
+        using (var bodyFilter = _solver.CreateBodyFilter(_body.Native))
         using (var shapeFilter = new DefaultShapeFilter())
         {
             Character.Update(dt, in _objectLayer, _physics.Native, bodyFilter, shapeFilter);
         }
 
         Vector3 endPosition = Character.Position;
-        Vector3 actualVelocity = (endPosition - startPosition) / dt;
+        UpdatePostMoveContact(dt, ref endPosition, up);
+        if (HasSurface && BodyPoseValidator != null && !BodyPoseValidator(endPosition, Character.Rotation))
+        {
+            Vector3 requestedEnd = endPosition;
+            Quaternion requestedRotation = Character.Rotation;
+            float accepted = 0f;
+            // Keep the largest safe portion of the fixed-step body motion.
+            for (float fraction = 0.5f; fraction >= 0.0625f; fraction *= 0.5f)
+            {
+                var candidatePosition = Vector3.Lerp(startPosition, requestedEnd, fraction);
+                var candidateRotation = Quaternion.Slerp(startRotation, requestedRotation, fraction);
+                if (!BodyPoseValidator(candidatePosition, candidateRotation)) continue;
+                accepted = fraction;
+                break;
+            }
+            endPosition = Vector3.Lerp(startPosition, requestedEnd, accepted);
+            Character.Position = endPosition;
+            Character.Rotation = Quaternion.Slerp(startRotation, requestedRotation, accepted);
+            Character.Up = _surfaceNormal = Vector3.Transform(Vector3.UnitY, Character.Rotation);
+            IsBlocked = true;
+        }
+        Vector3 actualVelocity = (endPosition - simulationStartPosition) / dt;
         CurrentVelocity = actualVelocity;
-        Vector3 actualTangent = ProjectOnPlane(actualVelocity, _surfaceNormal);
+        CurrentAngularVelocity = Animation.SpiderLocomotionMath.AngularVelocity(startRotation, Character.Rotation, dt);
+        if (_transitionActive && _surfaceContact.IsValid) UpdateTransitionStability(_surfaceContact.Normal);
+        Vector3 actualTangent = ProjectOnPlane(actualVelocity - SupportVelocity, _surfaceNormal);
         CurrentSpeed = HasSurface ? actualTangent.Length() : actualVelocity.Length();
 
         if (actualTangent.LengthSquared() > Epsilon * Epsilon)
@@ -429,7 +490,6 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             IsBlocked = false;
         }
 
-        UpdatePostMoveContact(dt, ref endPosition, up);
 
         // Recovery is based on distance from the known safe spawn, never on a
         // world coordinate. This keeps the motor valid in every orientation.
@@ -441,6 +501,9 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             _airVelocity = Vector3.Zero;
             _surfaceContact = default;
             _lostSurfaceTime = SurfaceLostGrace;
+            CurrentVelocity = CurrentAngularVelocity = Vector3.Zero;
+            CurrentSpeed = 0f;
+            PoseReset?.Invoke();
         }
 
         SyncBody();
@@ -513,7 +576,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
             _desiredSurfaceNormal = _transitionTargetNormal;
             _surfaceNormal = SmoothSurfaceNormal(
                 previousNormal,
-                _transitionTargetNormal,
+                GetTransitionOrientationTarget(Character.Position),
                 dt);
         }
         else
@@ -542,6 +605,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _transitionStartNormal = previousNormal;
         _transitionTargetNormal = nextNormal;
         _transitionTargetPoint = contact.Point;
+        _transitionApproachDistance = MathF.Max(Clearance,
+            Vector3.Dot(Character.Position - contact.Point, nextNormal));
         _transitionElapsed = 0f;
         _transitionStableFrames = 0;
         _transitionActive = true;
@@ -555,7 +620,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         _surfaceContact = contact;
         _lostSurfaceTime = 0f;
         _desiredSurfaceNormal = nextNormal;
-        _surfaceNormal = SmoothSurfaceNormal(previousNormal, nextNormal, dt);
+        _surfaceNormal = SmoothSurfaceNormal(previousNormal, GetTransitionOrientationTarget(Character.Position), dt);
         tangent = BuildTangent(_surfaceNormal, tangent, _surfaceForward);
     }
 
@@ -666,8 +731,6 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
                 dt,
                 _transitionActive);
 
-            if (_transitionActive)
-                UpdateTransitionStability(support.Normal);
             return;
         }
 
@@ -744,8 +807,24 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         if (MathF.Abs(correction) <= 0.0001f)
             return;
 
-        position += supportNormal * correction;
+        Vector3 displacement = supportNormal * correction;
+        Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(Character.Rotation) * Matrix4x4.CreateTranslation(position);
+        float fraction = _solver.ShapeTravelFraction(_shape, transform, displacement, _body.Native);
+        position += displacement * fraction;
         Character.Position = position;
+    }
+
+    private Vector3 GetTransitionOrientationTarget(Vector3 position)
+    {
+        // At an inside corner the front legs meet the wall well before the
+        // capsule. Rotate as the body approaches, not all at once while its
+        // rear hips are still over the floor.
+        if (_transitionApproachDistance <= Clearance + 0.1f) return _transitionTargetNormal;
+        float distance = Vector3.Dot(position - _transitionTargetPoint, _transitionTargetNormal);
+        float progress = System.Math.Clamp((_transitionApproachDistance - distance) /
+            (_transitionApproachDistance - Clearance), 0f, 1f);
+        return Animation.SpiderLocomotionMath.Normal(Vector3.Lerp(_transitionStartNormal, _transitionTargetNormal,
+            0.1f + progress * 0.9f), _transitionTargetNormal);
     }
 
     private Vector3 GetTransitionCorrectionVelocity(Vector3 position, float dt)
@@ -760,7 +839,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
         Vector3 desiredCenter = _transitionTargetPoint + normal * Clearance;
         float normalError = Vector3.Dot(desiredCenter - position, normal);
         if (!float.IsFinite(normalError) ||
-            MathF.Abs(normalError) > Clearance * 1.5f)
+            MathF.Abs(normalError) > MathF.Max(Clearance * 1.5f, _transitionApproachDistance))
         {
             return Vector3.Zero;
         }
@@ -786,7 +865,8 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         if (_transitionElapsed >= TransitionMinDuration &&
             supportAlignment >= TransitionSupportAlignment &&
-            normalAlignment >= TransitionCompletionAlignment)
+            normalAlignment >= TransitionCompletionAlignment &&
+            MathF.Abs(Vector3.Dot(Character.Position - _transitionTargetPoint, _transitionTargetNormal) - Clearance) < 0.15f)
         {
             _transitionStableFrames++;
         }
@@ -817,7 +897,7 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
 
         _transitionActive = false;
         _transitionCooldown = TransitionCooldownDuration;
-        _surfaceNormal = _transitionTargetNormal;
+        _surfaceNormal = Vector3.Transform(Vector3.UnitY, Character.Rotation);
         _desiredSurfaceNormal = _transitionTargetNormal;
         _transitionStartNormal = Vector3.Zero;
         _transitionTargetNormal = Vector3.Zero;
@@ -867,6 +947,9 @@ public sealed class SpiderSurfaceMotor : IGizmoDrawable, IDisposable
     {
         if (!_body.IsBuilt)
             return;
+
+        _previousSupportId = _surfaceContact.IsValid ? _surfaceContact.BodyId : BodyID.Invalid;
+        if (_surfaceContact.IsValid) _previousSupportRotation = _physics.GetBodyRotation(_surfaceContact.BodyId);
 
         _physics.BodyInterface.SetPositionAndRotation(
             _body.Native,

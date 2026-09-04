@@ -21,6 +21,7 @@ public class SceneManager
     public Renderer.Scene ActiveScene => _scene;
     public MasterRenderer Renderer => _renderer;
     public PhysicsWorld Physics => _physics;
+    public HashSet<BodyID> NonWalkableBodies { get; } = new();
 
     private readonly List<RigidBody> _bodies = [];
     private readonly List<IInteractable> _interactables = [];
@@ -204,6 +205,7 @@ private void ClearCurrentMap()
         }
     }
     _bodies.Clear();
+    NonWalkableBodies.Clear();
         
     _scene.Clear();
 }
@@ -391,9 +393,13 @@ private void ClearCurrentMap()
         out SceneRaycastHit hitResult,
         BodyID? excludedBody = null,
         bool collideWithBackFaces = false,
-        IReadOnlySet<BodyID>? excludedBodies = null)
+        IReadOnlySet<BodyID>? excludedBodies = null,
+        bool walkableOnly = false)
     {
         hitResult = default;
+        if (!float.IsFinite(direction.LengthSquared()) || direction.LengthSquared() < 0.000001f ||
+            !float.IsFinite(maxDistance) || maxDistance <= 0f)
+            return false;
         Vector3 dirNormalized = Vector3.Normalize(direction);
         Vector3 dirScaled = dirNormalized * maxDistance;
         var ray = new Ray(in origin, in dirScaled);
@@ -403,7 +409,9 @@ private void ClearCurrentMap()
         // Procedural animation probes must never use their own collider as a
         // landing surface. Keeping this optional preserves the normal scene
         // raycast behaviour for every other caller.
-        using BodyFilter bodyFilter = excludedBody.HasValue
+        using BodyFilter bodyFilter = walkableOnly
+            ? new SurfaceBodyFilter(excludedBody, excludedBodies, NonWalkableBodies)
+            : excludedBody.HasValue
             ? new Physics.EnemyBodyFilter(
                 excludedBody.Value,
                 excludedBodies)
@@ -446,94 +454,26 @@ private void ClearCurrentMap()
         }
 
         Vector3 hitPos = origin + dirNormalized * maxDistance * hit.Fraction;
-        Vector3 hitNormal = -dirNormalized;
+        // Ask the hit subshape itself: this covers compounds, capsules, rotated
+        // planes and mesh triangle normals without an O(triangle-count) search.
         var rigidBody = GetRigidBody(hit.BodyID);
-
-        if (rigidBody != null)
+        Vector3 hitNormal;
+        _physics.BodyLockInterface.LockRead(hit.BodyID, out BodyLockRead readLock);
+        if (!readLock.Succeeded)
+            return false;
+        try
         {
-            Vector3 bodyPos = rigidBody.Position(_physics);
-            Quaternion bodyRot = rigidBody.Rotation(_physics);
-
-            switch (rigidBody.Type)
-            {
-                case RigidBody.ShapeType.Box:
-                {
-                    Vector3 localHit = Vector3.Transform(hitPos - bodyPos, Quaternion.Inverse(bodyRot));
-                    Vector3 ext = rigidBody.BoxHalfExtents;
-                    if (ext.X <= 0.0001f) ext.X = 0.0001f;
-                    if (ext.Y <= 0.0001f) ext.Y = 0.0001f;
-                    if (ext.Z <= 0.0001f) ext.Z = 0.0001f;
-
-                    float rx = MathF.Abs(localHit.X) / ext.X;
-                    float ry = MathF.Abs(localHit.Y) / ext.Y;
-                    float rz = MathF.Abs(localHit.Z) / ext.Z;
-
-                    Vector3 localNormal;
-                    if (ry >= rx && ry >= rz)
-                        localNormal = localHit.Y >= 0 ? Vector3.UnitY : -Vector3.UnitY;
-                    else if (rx >= ry && rx >= rz)
-                        localNormal = localHit.X >= 0 ? Vector3.UnitX : -Vector3.UnitX;
-                    else
-                        localNormal = localHit.Z >= 0 ? Vector3.UnitZ : -Vector3.UnitZ;
-
-                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                    break;
-                }
-                case RigidBody.ShapeType.Plane:
-                {
-                    hitNormal = rigidBody.PlaneNormal;
-                    break;
-                }
-                case RigidBody.ShapeType.Sphere:
-                {
-                    hitNormal = Vector3.Normalize(hitPos - bodyPos);
-                    break;
-                }
-                case RigidBody.ShapeType.HeightField:
-                {
-                    Vector3 localHit = Vector3.Transform(
-                        hitPos - bodyPos,
-                        Quaternion.Inverse(bodyRot));
-                    Vector3 localNormal = rigidBody.GetHeightFieldSurfaceNormal(localHit);
-                    hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                    break;
-                }
-                case RigidBody.ShapeType.Trimesh:
-                case RigidBody.ShapeType.ConvexHull:
-                {
-                    if (rigidBody.TrimeshVertices != null && rigidBody.TrimeshVertices.Length >= 3)
-                    {
-                        var invRot = Quaternion.Inverse(bodyRot);
-                        Vector3 localOrigin = Vector3.Transform(origin - bodyPos, invRot);
-                        Vector3 localDir = Vector3.Transform(dirNormalized, invRot);
-                        Vector3 localHit = Vector3.Transform(hitPos - bodyPos, invRot);
-
-                        Vector3 localNormal = FindClosestTriangleNormal(
-                            rigidBody.TrimeshVertices,
-                            rigidBody.TrimeshIndices,
-                            rigidBody.TrimeshScale,
-                            localOrigin,
-                            localDir,
-                            localHit);
-
-                        hitNormal = Vector3.Normalize(Vector3.Transform(localNormal, bodyRot));
-                    }
-                    else
-                    {
-                        hitNormal = -dirNormalized;
-                    }
-                    break;
-                }
-                default:
-                {
-                    hitNormal = -dirNormalized;
-                    break;
-                }
-            }
-
-            if (Vector3.Dot(hitNormal, dirNormalized) > 0)
-                hitNormal = -hitNormal;
+            if (readLock.Body is not { } body)
+                return false;
+            var subShape = new SubShapeID(hit.subShapeID2);
+            hitNormal = body.GetWorldSpaceSurfaceNormal(in subShape, in hitPos);
         }
+        finally { _physics.BodyLockInterface.UnlockRead(readLock); }
+        if (!float.IsFinite(hitNormal.LengthSquared()) || hitNormal.LengthSquared() < 0.000001f)
+            return false;
+        hitNormal = Vector3.Normalize(hitNormal);
+        if (Vector3.Dot(hitNormal, dirNormalized) > 0f)
+            hitNormal = -hitNormal;
 
         hitResult = new SceneRaycastHit
         {

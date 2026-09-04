@@ -26,6 +26,7 @@ public sealed class Skeleton
         Nodes = nodes;
         _nodeMap = nodeMap;
         Bones = bones;
+        GlobalInverse = globalInverse;
 
         foreach (var n in Nodes)
         {
@@ -39,6 +40,15 @@ public sealed class Skeleton
         foreach (var n in Nodes)
             n.RestGlobal = n.Global;
     }
+
+    /// <summary>Animation locals are instance state; cached mesh assets must not share them.</summary>
+    public Skeleton CreateInstance() => new(
+        Nodes.Select(n => new AnimationNode
+        {
+            Name = n.Name, Parent = n.Parent, RestLocal = n.RestLocal
+        }).ToArray(),
+        new Dictionary<string, int>(_nodeMap, _nodeMap.Comparer),
+        Bones, GlobalInverse);
 
     public bool TryGetNodeIndex(string name, out int index)
     {

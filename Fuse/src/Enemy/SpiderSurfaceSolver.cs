@@ -25,16 +25,23 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     private const float SameSurfaceDetourMaximumOffset = 12.0f;
 
     private readonly SceneManager _scene;
+    private readonly SpiderLocomotionProfile _profile;
+    private readonly List<ShapeCastResult> _castHits = new(16);
+    private readonly List<CollideShapeResult> _overlapHits = new(16);
     private readonly List<DebugProbe> _debugProbes = new();
     private readonly List<SpiderSurfaceContact> _debugCandidates = new();
     private readonly HashSet<BodyID> _ignoredBodies = new();
     private SpiderSurfaceContact _lastBodyContact;
 
     public SpiderSurfaceContact LastBodyContact => _lastBodyContact;
+    public BodyFilter CreateBodyFilter(BodyID self) =>
+        new SurfaceBodyFilter(self, _ignoredBodies, _scene.NonWalkableBodies);
+    public SpiderLocomotionProfile Profile => _profile;
 
-    public SpiderSurfaceSolver(SceneManager scene)
+    public SpiderSurfaceSolver(SceneManager scene, SpiderLocomotionProfile? profile = null)
     {
         _scene = scene;
+        _profile = profile ?? SpiderLocomotionProfile.Default;
         Debug.DebugDrawer.Register(this);
     }
 
@@ -66,14 +73,19 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
 
     public SpiderSurfaceContact Refresh(in SpiderSurfaceContact contact)
     {
-        if (!contact.IsValid || contact.SupportBody == null)
-            return contact;
-
-        Vector3 bodyPosition = contact.SupportBody.Position(_scene.Physics);
-        Quaternion bodyRotation = contact.SupportBody.Rotation(_scene.Physics);
-        return contact.WithWorldPose(
-            bodyPosition + Vector3.Transform(contact.LocalPoint, bodyRotation),
-            NormalizeOrFallback(Vector3.Transform(contact.LocalNormal, bodyRotation), contact.Normal));
+        if (!contact.IsValid || !contact.BodyId.IsValid ||
+            (contact.SupportBody != null && (!contact.SupportBody.IsBuilt || contact.SupportBody.Native != contact.BodyId)))
+            return default;
+        _scene.Physics.BodyLockInterface.LockRead(contact.BodyId, out BodyLockRead readLock);
+        if (!readLock.Succeeded) return default;
+        try
+        {
+            if (readLock.Body is not { } body || body.IsSensor) return default;
+            return contact.WithWorldPose(
+                body.Position + Vector3.Transform(contact.LocalPoint, body.Rotation),
+                NormalizeOrFallback(Vector3.Transform(contact.LocalNormal, body.Rotation), contact.Normal));
+        }
+        finally { _scene.Physics.BodyLockInterface.UnlockRead(readLock); }
     }
 
     /// <summary>
@@ -177,7 +189,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         if (TryProbeContact(
                 forwardOrigin,
                 movementDirection,
-                clearance + MathF.Max(0.12f, lookAhead),
+                MathF.Max(clearance + MathF.Max(0.12f, lookAhead), _profile.SurfaceTransitionProbeWorld),
                 selfBody,
                 out SpiderSurfaceContact forwardContact,
                 out _) &&
@@ -610,212 +622,184 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
     /// Finds a foot target from a local, surface-relative fan. A candidate must
     /// be inside the chain reach band and is scored against the desired stride.
     /// </summary>
-    public bool TryFindFootContact(
-        Vector3 hipPosition,
-        Vector3 desiredPosition,
-        Vector3 expectedNormal,
-        Vector3 strideDirection,
-        float minReach,
-        float maxReach,
-        BodyID selfBody,
-        SpiderSurfaceContact preferredContact,
-        out SpiderSurfaceContact contact)
+    public bool TryFindFootContact(Vector3 hipPosition, Vector3 desiredPosition, Vector3 expectedNormal,
+        Vector3 strideDirection, float minReach, float maxReach, BodyID selfBody,
+        SpiderSurfaceContact preferredContact, out SpiderSurfaceContact contact,
+        float footprintRadius = 0f, Func<SpiderSurfaceContact, bool>? accept = null)
     {
+        contact = default;
         expectedNormal = NormalizeOrZero(expectedNormal);
-        if (expectedNormal.LengthSquared() <= Epsilon * Epsilon ||
-            !BuildTangentBasis(expectedNormal, strideDirection, out Vector3 forward, out Vector3 right))
-        {
-            contact = default;
+        if (maxReach <= 0f || !BuildTangentBasis(expectedNormal, strideDirection, out Vector3 forward, out Vector3 right))
             return false;
-        }
-
         var hits = new List<ProbeHit>(16);
-        Vector3[] offsets =
-        {
-            Vector3.Zero,
-            forward * 0.32f,
-            -forward * 0.20f,
-            right * 0.28f,
-            -right * 0.28f,
-            (forward + right) * 0.22f,
-            (forward - right) * 0.22f
-        };
-
+        float spread = maxReach * 0.09f;
+        float height = maxReach * _profile.ProbeHeightFractionOfReach;
+        float distance = maxReach * _profile.ProbeDistanceFractionOfReach;
+        ReadOnlySpan<Vector3> offsets = [Vector3.Zero, forward * spread, -forward * spread,
+            right * spread, -right * spread, (forward + right) * spread, (forward - right) * spread];
         foreach (Vector3 offset in offsets)
+            AddProbe(hits, desiredPosition + offset + expectedNormal * height, -expectedNormal,
+                distance, selfBody, expectedNormal, 0f);
+        AddProbe(hits, hipPosition, NormalizeOrFallback(desiredPosition - hipPosition, -expectedNormal),
+            maxReach, selfBody, expectedNormal, 0.1f);
+        AddProbe(hits, desiredPosition + expectedNormal * height * 0.3f,
+            NormalizeOrFallback(-expectedNormal + forward, -expectedNormal), distance, selfBody, expectedNormal, 0.2f);
+        AddProbe(hits, desiredPosition + expectedNormal * height * 0.3f,
+            NormalizeOrFallback(-expectedNormal - forward, -expectedNormal), distance, selfBody, expectedNormal, 0.2f);
+        foreach (Vector3 side in new[] { forward, -forward, right, -right })
+            AddProbe(hits, hipPosition, side, maxReach, selfBody, expectedNormal, 0.4f);
+
+        float Score(ProbeHit hit)
         {
-            AddProbe(
-                hits,
-                desiredPosition + offset + expectedNormal * FootProbeHeight,
-                -expectedNormal,
-                FootProbeDistance,
-                selfBody,
-                expectedNormal,
-                0f);
+            float score = Vector3.DistanceSquared(hit.Hit.Position, desiredPosition) / (maxReach * maxReach) +
+                (1f - Vector3.Dot(hit.Hit.Normal, expectedNormal)) * 0.35f + hit.Priority * 0.1f;
+            if (preferredContact.IsValid && hit.Hit.BodyID == preferredContact.BodyId)
+                score -= 0.08f * MathF.Max(0f, Vector3.Dot(hit.Hit.Normal, preferredContact.Normal));
+            return score;
         }
-
-        // Two diagonal probes are needed at a convex edge, where the next face
-        // is neither directly below the foot nor directly in front of the hip.
-        AddProbe(hits, desiredPosition + expectedNormal * 0.30f, NormalizeOrFallback(-expectedNormal + forward * 0.95f, -expectedNormal), FootProbeDistance, selfBody, expectedNormal, 0.15f);
-        AddProbe(hits, desiredPosition + expectedNormal * 0.30f, NormalizeOrFallback(-expectedNormal - forward * 1.25f, -expectedNormal), FootProbeDistance, selfBody, expectedNormal, 0.30f);
-
-        // Clearance probes are especially important in a narrow corridor. A
-        // ground candidate remains preferred when it is available, but a foot
-        // blocked by a nearby side wall can now acquire that wall as support
-        // instead of forcing the IK chain through it.
-        AddProbe(hits, desiredPosition + expectedNormal * 0.22f, forward, 1.20f, selfBody, expectedNormal, 0.40f);
-        AddProbe(hits, desiredPosition + expectedNormal * 0.22f, -forward, 1.00f, selfBody, expectedNormal, 0.55f);
-        AddProbe(hits, desiredPosition + expectedNormal * 0.22f, right, 0.95f, selfBody, expectedNormal, 0.60f);
-        AddProbe(hits, desiredPosition + expectedNormal * 0.22f, -right, 0.95f, selfBody, expectedNormal, 0.60f);
-
-        ProbeHit? best = null;
-        float bestScore = float.MaxValue;
+        hits.Sort((a, b) => Score(a).CompareTo(Score(b)));
         foreach (ProbeHit hit in hits)
         {
             float reach = Vector3.Distance(hipPosition, hit.Hit.Position);
-            if (reach < minReach || reach > maxReach)
-                continue;
-
-            float normalPenalty = 1f - MathF.Max(-1f, Vector3.Dot(hit.Hit.Normal, expectedNormal));
-            // Feet follow the same surface anchor as the body. A different
-            // normal remains possible at an edge, but can no longer beat the
-            // active surface merely because the world floor is nearby.
-            float normalWeight = MathF.Max(1.50f, maxReach * 0.65f);
-            float score = Vector3.DistanceSquared(hit.Hit.Position, desiredPosition) +
-                          normalPenalty * normalWeight +
-                          hit.Priority * 0.20f;
-            if (preferredContact.IsValid)
-            {
-                float preferredAlignment = MathF.Max(-1f, Vector3.Dot(
-                    NormalizeOrFallback(hit.Hit.Normal, expectedNormal),
-                    NormalizeOrFallback(preferredContact.Normal, expectedNormal)));
-                score += (1f - preferredAlignment) * 0.55f;
-                if (hit.Hit.BodyID == preferredContact.BodyId)
-                    score -= 0.30f;
-            }
-            if (score < bestScore)
-            {
-                best = hit;
-                bestScore = score;
-            }
+            if (reach < minReach || reach > maxReach ||
+                Vector3.Dot(hit.Hit.Normal, expectedNormal) < _profile.MinimumContactNormalAlignment) continue;
+            var candidate = CreateContact(hit.Hit, 1f / (1f + hit.Priority));
+            if (!candidate.IsValid || footprintRadius > 0f && !HasSupportPatch(candidate, footprintRadius, selfBody) ||
+                accept?.Invoke(candidate) == false) continue;
+            contact = candidate;
+            _debugCandidates.Add(contact);
+            return true;
         }
+        return false;
+    }
 
-        if (best == null)
-        {
-            contact = default;
-            return false;
-        }
-
-        ProbeHit selected = best.Value;
-        contact = CreateContact(selected.Hit, 1f / (1f + selected.Priority));
-        _debugCandidates.Add(contact);
+    /// <summary>Overlap and swept capsule queries used by the complete IK chain.</summary>
+    public bool IsSegmentClear(Vector3 a, Vector3 b, float radius, BodyID selfBody, float skin = 0.004f)
+    {
+        using Shape shape = SegmentShape(a, b, radius, out Matrix4x4 transform);
+        using var bp = new DefaultBroadPhaseLayerFilter();
+        using var ol = new DefaultObjectLayerFilter();
+        using var bodies = CreateBodyFilter(selfBody);
+        using var shapes = new DefaultShapeFilter();
+        Vector3 scale = Vector3.One, offset = Vector3.Zero;
+        transform = Matrix4x4.Transpose(transform);
+        _overlapHits.Clear();
+        var settings = new CollideShapeSettings { BackFaceMode = BackFaceMode.CollideWithBackFaces };
+        _scene.Physics.NarrowPhaseQuery.CollideShape(shape, in scale, in transform, in settings, in offset,
+            CollisionCollectorType.AllHit, _overlapHits, bp, ol, bodies, shapes);
+        foreach (var hit in _overlapHits)
+            if (hit.PenetrationDepth > skin) return false;
         return true;
     }
 
-    /// <summary>
-    /// Sweeps a sphere through the same curved path used by the procedural
-    /// step. Contacts with the supporting surface are ignored only when their
-    /// penetration axis agrees with that surface normal; a wall belonging to
-    /// the same static mesh can therefore still block the step.
-    /// </summary>
-    public bool IsFootStepPathClear(
-        Vector3 start,
-        Vector3 end,
-        Vector3 startNormal,
-        Vector3 endNormal,
-        float liftHeight,
-        float radius,
-        BodyID selfBody,
-        SpiderSurfaceContact startContact,
-        SpiderSurfaceContact endContact,
-        out float blockedFraction)
+    public bool IsSegmentMotionClear(Vector3 a, Vector3 b, Vector3 nextA, Vector3 nextB,
+        float radius, BodyID selfBody, float skin = 0.004f)
     {
-        blockedFraction = 1f;
-        radius = MathF.Max(radius, 0.01f);
-
-        using var sphere = new SphereShape(radius);
-        using var broadPhaseFilter = new DefaultBroadPhaseLayerFilter();
-        using var objectLayerFilter = new DefaultObjectLayerFilter();
-        using var bodyFilter = new EnemyBodyFilter(selfBody, _ignoredBodies);
-        using var shapeFilter = new DefaultShapeFilter();
-
-        const int segmentCount = 4;
-        Vector3 previous = start;
-        for (int segment = 0; segment < segmentCount; segment++)
+        Vector3 translation = ((nextA - a) + (nextB - b)) * 0.5f;
+        // A translated capsule inflated by the non-translational endpoint
+        // motion contains the entire linearly swept rotating segment.
+        float expansion = MathF.Max((nextA - a - translation).Length(), (nextB - b - translation).Length());
+        using Shape shape = SegmentShape(a, b, radius + expansion, out Matrix4x4 transform);
+        return ShapeTravelFraction(shape, transform, translation, selfBody, skin, hit =>
         {
-            float t = (segment + 1f) / segmentCount;
-            Vector3 normal = NormalizeOrFallback(
-                Vector3.Lerp(startNormal, endNormal, t),
-                endNormal);
-            Vector3 next = Vector3.Lerp(start, end, t) +
-                           normal * (MathF.Sin(t * MathF.PI) * liftHeight);
-            Vector3 direction = next - previous;
-            if (direction.LengthSquared() <= Epsilon * Epsilon)
+            // Inflation bounds the rotating capsule, but can overlap a floor
+            // that the actual segment never approaches. Reject that false
+            // positive only with a separating plane for all four endpoints.
+            _scene.Physics.BodyLockInterface.LockRead(hit.BodyID2, out BodyLockRead readLock);
+            if (!readLock.Succeeded) return false;
+            try
             {
-                previous = next;
-                continue;
+                if (readLock.Body is not { } body) return false;
+                Vector3 point = hit.ContactPointOn2;
+                Vector3 normal = body.GetWorldSpaceSurfaceNormal(hit.SubShapeID2, point);
+                normal = NormalizeOrZero(normal);
+                if (Vector3.Dot((a + b) * 0.5f - point, normal) < 0f) normal = -normal;
+                float minimum = MathF.Min(MathF.Min(Vector3.Dot(a - point, normal), Vector3.Dot(b - point, normal)),
+                    MathF.Min(Vector3.Dot(nextA - point, normal), Vector3.Dot(nextB - point, normal)));
+                return normal.LengthSquared() > 0.5f && minimum >= radius - skin;
             }
+            finally { _scene.Physics.BodyLockInterface.UnlockRead(readLock); }
+        }) >= 1f;
+    }
 
-            Matrix4x4 transform = Matrix4x4.CreateTranslation(previous);
-            Vector3 scale = Vector3.One;
-            var hits = new List<ShapeCastResult>(8);
-            _scene.Physics.NarrowPhaseQuery.CastShape(
-                sphere,
-                in transform,
-                in scale,
-                in direction,
-                CollisionCollectorType.AllHit,
-                hits,
-                broadPhaseFilter,
-                objectLayerFilter,
-                bodyFilter,
-                shapeFilter);
+    public float ShapeTravelFraction(Shape shape, Matrix4x4 transform, Vector3 displacement,
+        BodyID selfBody, float skin = 0.004f, Func<ShapeCastResult, bool>? separatedFromHit = null)
+    {
+        using var bp = new DefaultBroadPhaseLayerFilter();
+        using var ol = new DefaultObjectLayerFilter();
+        using var bodies = CreateBodyFilter(selfBody);
+        using var shapes = new DefaultShapeFilter();
+        Vector3 baseOffset = Vector3.Zero;
+        // JoltPhysicsSharp's shape-query ABI consumes column-major transforms.
+        // Passing System.Numerics translation in M41 casts at the origin.
+        transform = Matrix4x4.Transpose(transform);
+        _castHits.Clear();
+        var settings = new ShapeCastSettings
+        {
+            BackFaceModeTriangles = BackFaceMode.CollideWithBackFaces,
+            BackFaceModeConvex = BackFaceMode.CollideWithBackFaces,
+            ReturnDeepestPoint = true
+        };
+        _scene.Physics.NarrowPhaseQuery.CastShape(shape, in transform, in displacement, settings, in baseOffset,
+            CollisionCollectorType.AllHit, _castHits, bp, ol, bodies, shapes);
+        float fraction = 1f;
+        foreach (var hit in _castHits)
+        {
+            if (separatedFromHit?.Invoke(hit) == true) continue;
+            // Tangency is allowed only when moving away/parallel. Body identity
+            // or proximity to the endpoints never makes a wall benign.
+            if (hit.Fraction <= 0f && hit.PenetrationDepth <= skin &&
+                Vector3.Dot(displacement, hit.PenetrationAxis) <= 0.000001f) continue;
+            fraction = MathF.Min(fraction, MathF.Max(0f, hit.Fraction - skin / MathF.Max(displacement.Length(), 0.001f)));
+        }
+        return fraction;
+    }
 
-            foreach (ShapeCastResult hit in hits)
+    private static Shape SegmentShape(Vector3 a, Vector3 b, float radius, out Matrix4x4 transform)
+    {
+        Vector3 delta = b - a;
+        float length = delta.Length();
+        Quaternion rotation = Animation.SpiderLocomotionMath.RotationBetween(Vector3.UnitY, delta, Vector3.UnitX);
+        transform = Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation((a + b) * 0.5f);
+        return length < 0.0001f ? new SphereShape(MathF.Max(radius, 0.001f)) :
+            new CapsuleShape(length * 0.5f, MathF.Max(radius, 0.001f));
+    }
+
+    public bool IsFootStepPathClear(Vector3 start, Vector3 end, Vector3 startNormal, Vector3 endNormal,
+        float liftHeight, float radius, BodyID selfBody, SpiderSurfaceContact startContact,
+        SpiderSurfaceContact endContact, out float blockedFraction)
+    {
+        int samples = System.Math.Clamp((int)MathF.Ceiling((Vector3.Distance(start, end) + liftHeight * 2f) /
+            MathF.Max(radius, 0.03f)), 8, 64);
+        Vector3 previous = start;
+        for (int i = 1; i <= samples; i++)
+        {
+            Vector3 next = Animation.SpiderLocomotionMath.StepPoint(start, end, startNormal, endNormal, liftHeight, (float)i / samples);
+            if (!IsSegmentClear(next, next, radius, selfBody) ||
+                !IsSegmentMotionClear(previous, previous, next, next, radius, selfBody))
             {
-                float pathFraction = (segment + System.Math.Clamp(hit.Fraction, 0f, 1f)) / segmentCount;
-                if (IsBenignSupportHit(
-                        hit,
-                        pathFraction,
-                        normal,
-                        startContact,
-                        endContact))
-                {
-                    continue;
-                }
-
-                blockedFraction = pathFraction;
+                blockedFraction = (float)(i - 1) / samples;
                 return false;
             }
-
             previous = next;
         }
-
+        blockedFraction = 1f;
         return true;
     }
 
-    private static bool IsBenignSupportHit(
-        in ShapeCastResult hit,
-        float pathFraction,
-        Vector3 pathNormal,
-        in SpiderSurfaceContact startContact,
-        in SpiderSurfaceContact endContact)
+    public bool HasSupportPatch(in SpiderSurfaceContact contact, float radius, BodyID selfBody)
     {
-        bool isStartSupport = startContact.IsValid && hit.BodyID2 == startContact.BodyId;
-        bool isEndSupport = endContact.IsValid && hit.BodyID2 == endContact.BodyId;
-        if (!isStartSupport && !isEndSupport)
-            return false;
-
-        Vector3 supportNormal = isEndSupport && pathFraction > 0.5f
-            ? endContact.Normal
-            : startContact.Normal;
-        Vector3 axis = NormalizeOrZero(hit.PenetrationAxis);
-        float surfaceAlignment = axis.LengthSquared() > Epsilon * Epsilon
-            ? MathF.Abs(Vector3.Dot(axis, NormalizeOrFallback(supportNormal, pathNormal)))
-            : 0f;
-
-        bool touchesPathSurface = surfaceAlignment >= 0.68f;
-        bool endpointContact = pathFraction <= 0.06f || pathFraction >= 0.94f;
-        return touchesPathSurface || endpointContact;
+        if (!Refresh(contact).IsValid) return false;
+        if (!BuildTangentBasis(contact.Normal, Vector3.UnitX, out Vector3 x, out Vector3 z)) return false;
+        ReadOnlySpan<Vector3> offsets = [x * radius, -x * radius, z * radius, -z * radius];
+        foreach (Vector3 offset in offsets)
+        {
+            if (!_scene.Raycast(contact.Point + offset + contact.Normal * (radius + 0.04f), -contact.Normal,
+                    radius + 0.08f, out var hit, selfBody, true, _ignoredBodies, walkableOnly: true) ||
+                hit.BodyID != contact.BodyId || Vector3.Dot(hit.Normal, contact.Normal) < _profile.ContactPatchNormalAlignment)
+                return false;
+        }
+        return true;
     }
 
     private bool IsSameSurfaceDetourPathClear(
@@ -843,6 +827,12 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             return false;
 
         float laneOffset = MathF.Max(0.12f, bodyRadius * 0.82f);
+        using (var capsule = new CapsuleShape(_profile.BodyCylinderHeight * 0.5f, bodyRadius))
+        {
+            Quaternion rotation = Animation.SpiderLocomotionMath.RotationBetween(Vector3.UnitY, surfaceNormal, direction);
+            Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(start);
+            if (ShapeTravelFraction(capsule, transform, direction * pathLength, selfBody) < 1f) return false;
+        }
         float[] lanes = { -laneOffset, 0f, laneOffset };
         foreach (float lane in lanes)
         {
@@ -855,7 +845,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
                     out SceneRaycastHit hit,
                     selfBody,
                     collideWithBackFaces: true,
-                    excludedBodies: _ignoredBodies))
+                    excludedBodies: _ignoredBodies, walkableOnly: true))
             {
                 _debugProbes.Add(new DebugProbe(laneStart, laneEnd, false));
                 continue;
@@ -902,7 +892,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             out SceneRaycastHit hit,
             selfBody,
             collideWithBackFaces: true,
-            excludedBodies: _ignoredBodies);
+            excludedBodies: _ignoredBodies, walkableOnly: true);
 
         _debugProbes.Add(new DebugProbe(
             origin,
@@ -959,7 +949,7 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
             out SceneRaycastHit hit,
             selfBody,
             collideWithBackFaces: true,
-            excludedBodies: _ignoredBodies);
+            excludedBodies: _ignoredBodies, walkableOnly: true);
         _debugProbes.Add(new DebugProbe(origin, didHit ? hit.Position : origin + direction * distance, didHit));
         if (!didHit)
             return;
@@ -986,10 +976,10 @@ public sealed class SpiderSurfaceSolver : IGizmoDrawable
         RigidBody? supportBody = hit.RigidBody;
         Vector3 localPoint = point;
         Vector3 localNormal = normal;
-        if (supportBody != null)
+        if (hit.BodyID.IsValid)
         {
-            Quaternion inverse = Quaternion.Inverse(supportBody.Rotation(_scene.Physics));
-            localPoint = Vector3.Transform(point - supportBody.Position(_scene.Physics), inverse);
+            Quaternion inverse = Quaternion.Inverse(_scene.Physics.GetBodyRotation(hit.BodyID));
+            localPoint = Vector3.Transform(point - _scene.Physics.GetBodyPosition(hit.BodyID), inverse);
             localNormal = Vector3.Transform(normal, inverse);
         }
 
