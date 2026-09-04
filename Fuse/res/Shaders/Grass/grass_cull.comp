@@ -33,11 +33,49 @@ uniform float uFarDensity;
 uniform float uLod0Distance;
 uniform float uLod1Distance;
 uniform float uMaximumDistance;
+uniform int uCandidateStart;
+uniform mat4 uView;
+uniform mat4 uProj;
+uniform float uBladePadding;
+
+bool OutsidePlane(vec4 plane, vec3 point, float radius)
+{
+    float planeLength = length(plane.xyz);
+    return dot(plane.xyz, point) + plane.w < -radius * planeLength;
+}
+
+bool OutsideFrustum(vec3 relativePosition, float radius)
+{
+    // Grass positions are camera-relative, just like grass.vert. The view
+    // translation is therefore intentionally omitted here.
+    vec3 viewPosition = mat3(uView) * relativePosition;
+
+    // The projection uses the same 0..w depth convention as ViewFrustum:
+    // left/right, bottom/top, near and far are the six clip inequalities.
+    // GLSL's mat4[index] returns a column, so reconstruct rows explicitly.
+    vec4 row0 = vec4(uProj[0][0], uProj[1][0], uProj[2][0], uProj[3][0]);
+    vec4 row1 = vec4(uProj[0][1], uProj[1][1], uProj[2][1], uProj[3][1]);
+    vec4 row2 = vec4(uProj[0][2], uProj[1][2], uProj[2][2], uProj[3][2]);
+    vec4 row3 = vec4(uProj[0][3], uProj[1][3], uProj[2][3], uProj[3][3]);
+    vec4 left = row3 + row0;
+    vec4 right = row3 - row0;
+    vec4 bottom = row3 + row1;
+    vec4 top = row3 - row1;
+    vec4 nearPlane = row2;
+    vec4 farPlane = row3 - row2;
+
+    return OutsidePlane(left, viewPosition, radius) ||
+           OutsidePlane(right, viewPosition, radius) ||
+           OutsidePlane(bottom, viewPosition, radius) ||
+           OutsidePlane(top, viewPosition, radius) ||
+           OutsidePlane(nearPlane, viewPosition, radius) ||
+           OutsidePlane(farPlane, viewPosition, radius);
+}
 
 void main()
 {
-    uint candidateIndex = gl_GlobalInvocationID.x;
-    if (candidateIndex >= uint(uCandidateCount))
+    uint candidateIndex = uint(uCandidateStart) + gl_GlobalInvocationID.x;
+    if (gl_GlobalInvocationID.x >= uint(uCandidateCount))
         return;
 
     CandidateData candidate = candidates[candidateIndex];
@@ -47,8 +85,14 @@ void main()
         return;
 
     vec3 position = patchData.relativeOriginVisible.xyz + candidate.offsetHeight.xyz;
+    float bladeRadius = candidate.offsetHeight.w +
+                        candidate.normalWidth.w * 1.1 +
+                        uBladePadding;
+    if (OutsideFrustum(position, bladeRadius))
+        return;
+
     float distanceToCamera = length(position);
-    if (distanceToCamera > uMaximumDistance)
+    if (distanceToCamera - bladeRadius > uMaximumDistance)
         return;
 
     float distanceFade = smoothstep(uLod0Distance, uMaximumDistance, distanceToCamera);

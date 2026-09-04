@@ -25,9 +25,9 @@ public readonly record struct ProceduralGrassDiagnostics(
 
 /// <summary>
 /// GPU-driven procedural grass pass. Terrain tiles own CPU patch residency;
-/// this renderer uploads immutable candidates, performs per-frame density and
-/// distance LOD selection in compute, then submits three indirect draws per
-/// terrain layer.
+/// this renderer uploads immutable candidates, performs per-frame frustum,
+/// density and distance LOD selection in compute, then submits three indirect
+/// draws per terrain layer.
 /// </summary>
 public unsafe sealed class ProceduralGrassRenderer : IDisposable
 {
@@ -80,6 +80,7 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
         public int Lod0Count;
         public int Lod1Count;
         public int Lod2Count;
+        public int[] PatchCandidateStarts = [];
         public byte[] PatchCullReasons = [];
         public float[] PatchDistances = [];
 
@@ -292,11 +293,12 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
                 continue;
 
             UpdatePatchDescriptors(layer, state, localCamera, cameraPosition, settings, frustum);
-            if (settings.HiZOcclusion && hiZReady)
+            if (settings.HiZOcclusion && hiZReady && state.VisiblePatchCount > 0)
                 DispatchPatchOcclusion(state, view, projection, settings, sceneDepthWidth, sceneDepthHeight);
-            DispatchCulling(state, settings);
+            DispatchCulling(state, settings, view, projection);
 
-            if (ReadbackDiagnostics || !_indirectDrawSupported)
+            if (state.VisiblePatchCount > 0 &&
+                (ReadbackDiagnostics || !_indirectDrawSupported))
                 ReadLodCounts(state);
 
             residentPatches += layer.GrassPatches.ResidentCount;
@@ -354,7 +356,7 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
             ProceduralGrassSettings settings = layer.Asset.Settings.Grass;
             if (!layer.Visible || !settings.Enabled ||
                 !_layers.TryGetValue(layer, out LayerGpuState? state) ||
-                state.CandidateCount == 0)
+                state.CandidateCount == 0 || state.VisiblePatchCount == 0)
                 continue;
 
             DrawLayer(
@@ -396,7 +398,7 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
             ProceduralGrassSettings settings = layer.Asset.Settings.Grass;
             if (!layer.Visible || !settings.Enabled || !settings.CastNearShadows ||
                 !_layers.TryGetValue(layer, out LayerGpuState? state) ||
-                state.CandidateCount == 0)
+                state.CandidateCount == 0 || state.VisiblePatchCount == 0)
                 continue;
 
             _shadowShader.Use();
@@ -504,6 +506,13 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
 
         state.CandidateCount = totalCandidates;
         state.Patches = patches;
+        state.PatchCandidateStarts = new int[patches.Length];
+        int candidateStart = 0;
+        for (int index = 0; index < patches.Length; index++)
+        {
+            state.PatchCandidateStarts[index] = candidateStart;
+            candidateStart += patches[index].Candidates.Count;
+        }
         state.PatchDescriptors = new PatchGpu[patches.Length];
         state.PatchCullReasons = new byte[patches.Length];
         state.PatchDistances = new float[patches.Length];
@@ -524,10 +533,15 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
         state.VisibleCandidateCount = 0;
         state.DensityCulledBladeCount = 0;
         state.OcclusionCulledPatchCount = 0;
+        state.Lod0Count = 0;
+        state.Lod1Count = 0;
+        state.Lod2Count = 0;
         float maximumSpeciesHeight = settings.Species.Count == 0
             ? 1.0f
             : settings.Species.Max(static species => species.HeightMultiplier);
-        float bladePadding = settings.BladeHeightMax * maximumSpeciesHeight + 1.0f;
+        float maximumWindReach = CalculateMaximumWindReach(settings);
+        float bladePadding = settings.BladeHeightMax * maximumSpeciesHeight +
+                             1.0f + maximumWindReach;
 
         for (int index = 0; index < state.Patches.Length; index++)
         {
@@ -555,7 +569,7 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
                 float sphereRadius = MathF.Sqrt(
                     patch.Width * patch.Width * 0.25f +
                     patch.Depth * patch.Depth * 0.25f +
-                    heightExtent * heightExtent) + 0.5f;
+                    heightExtent * heightExtent) + 0.5f + maximumWindReach;
                 visible = frustum.Intersects(new Fuse.Math.BoundingSphere(worldCenter, sphereRadius));
                 if (!visible)
                 {
@@ -583,7 +597,7 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
             float occlusionSphereRadius = MathF.Sqrt(
                 patch.Width * patch.Width * 0.25f +
                 patch.Depth * patch.Depth * 0.25f +
-                occlusionHeightExtent * occlusionHeightExtent) + 0.5f;
+                occlusionHeightExtent * occlusionHeightExtent) + 0.5f + maximumWindReach;
             state.PatchDescriptors[index].RelativeOriginVisible =
                 new Vector4(relativeOrigin, visible ? 1.0f : -1.0f);
             state.PatchDescriptors[index].RelativeCenterRadius =
@@ -795,7 +809,11 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
         _hizHistoryValid = false;
     }
 
-    private void DispatchCulling(LayerGpuState state, ProceduralGrassSettings settings)
+    private void DispatchCulling(
+        LayerGpuState state,
+        ProceduralGrassSettings settings,
+        Matrix4x4 view,
+        Matrix4x4 projection)
     {
         uint[] commands =
         [
@@ -812,12 +830,14 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
                 pointer);
 
         _cullShader.Use();
-        _cullShader.SetInt("uCandidateCount", state.CandidateCount);
         _cullShader.SetFloat("uDensity", settings.Density);
         _cullShader.SetFloat("uFarDensity", settings.FarDensity);
         _cullShader.SetFloat("uLod0Distance", settings.Lod0Distance);
         _cullShader.SetFloat("uLod1Distance", settings.Lod1Distance);
         _cullShader.SetFloat("uMaximumDistance", settings.MaximumDistance);
+        _cullShader.SetMat4("uView", view);
+        _cullShader.SetMat4("uProj", projection);
+        _cullShader.SetFloat("uBladePadding", CalculateMaximumWindReach(settings));
         _cullShader.BindStorageBuffer(CandidateBinding, state.CandidateBuffer);
         _cullShader.BindStorageBuffer(PatchBinding, state.PatchBuffer);
         _cullShader.BindStorageBuffer(Lod0Binding, state.LodBuffers[0]);
@@ -825,12 +845,55 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
         _cullShader.BindStorageBuffer(Lod2Binding, state.LodBuffers[2]);
         _cullShader.BindStorageBuffer(IndirectBinding, state.IndirectBuffer);
 
-        _cullShader.Dispatch(
-            (uint)((state.CandidateCount + 127) / 128),
-            barrier: MemoryBarrierMask.ShaderStorageBarrierBit |
-                     MemoryBarrierMask.CommandBarrierBit |
-                     MemoryBarrierMask.VertexAttribArrayBarrierBit |
-                     MemoryBarrierMask.BufferUpdateBarrierBit);
+        // Candidates are stored patch-by-patch. Dispatch only contiguous runs
+        // of CPU-visible patches so looking away from the terrain also avoids
+        // walking every resident candidate in the compute shader. The shader
+        // still performs per-blade frustum and distance tests for the edges.
+        bool dispatched = false;
+        int patchIndex = 0;
+        while (patchIndex < state.Patches.Length)
+        {
+            if (state.PatchCandidateStarts.Length <= patchIndex ||
+                state.PatchDescriptors[patchIndex].RelativeOriginVisible.W < 0.0f)
+            {
+                patchIndex++;
+                continue;
+            }
+
+            int candidateStart = state.PatchCandidateStarts[patchIndex];
+            int candidateEnd = candidateStart + state.Patches[patchIndex].Candidates.Count;
+            int nextPatch = patchIndex + 1;
+            while (nextPatch < state.Patches.Length &&
+                   state.PatchCandidateStarts.Length > nextPatch &&
+                   state.PatchDescriptors[nextPatch].RelativeOriginVisible.W >= 0.0f &&
+                   state.PatchCandidateStarts[nextPatch] == candidateEnd)
+            {
+                candidateEnd += state.Patches[nextPatch].Candidates.Count;
+                nextPatch++;
+            }
+
+            int candidateCount = candidateEnd - candidateStart;
+            if (candidateCount > 0)
+            {
+                _cullShader.SetInt("uCandidateStart", candidateStart);
+                _cullShader.SetInt("uCandidateCount", candidateCount);
+                _cullShader.Dispatch(
+                    (uint)((candidateCount + 127) / 128),
+                    barrier: MemoryBarrierMask.ShaderStorageBarrierBit);
+                dispatched = true;
+            }
+
+            patchIndex = nextPatch;
+        }
+
+        if (dispatched)
+        {
+            _gl.MemoryBarrier(
+                MemoryBarrierMask.ShaderStorageBarrierBit |
+                MemoryBarrierMask.CommandBarrierBit |
+                MemoryBarrierMask.VertexAttribArrayBarrierBit |
+                MemoryBarrierMask.BufferUpdateBarrierBit);
+        }
         // Some Intel drivers do not reliably consume a buffer that is both an
         // SSBO write target and the active GL_DRAW_INDIRECT_BUFFER in the next
         // command. Keep the GPU-driven counters, but copy the tiny argument
@@ -848,6 +911,17 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
             _gl.BindBuffer(GLEnum.CopyReadBuffer, 0);
             _gl.BindBuffer(GLEnum.CopyWriteBuffer, 0);
         }
+    }
+
+    private static float CalculateMaximumWindReach(ProceduralGrassSettings settings)
+    {
+        float maximumSpeciesHeight = settings.Species.Count == 0
+            ? 1.0f
+            : settings.Species.Max(static species => species.HeightMultiplier);
+        float maximumBend =
+            (settings.WindStrength * 1.12f + settings.GustStrength) * 1.18f;
+        return maximumBend * settings.BladeHeightMax * maximumSpeciesHeight *
+               (0.34f + maximumBend * 0.055f) + 0.25f;
     }
 
     private void ResolveGpuComputeTimer()
@@ -1024,7 +1098,8 @@ public unsafe sealed class ProceduralGrassRenderer : IDisposable
         state.DensityCulledBladeCount = System.Math.Max(
             0,
             state.VisibleCandidateCount - state.Lod0Count - state.Lod1Count - state.Lod2Count);
-        ReadPatchCullReasons(state);
+        if (ReadbackDiagnostics)
+            ReadPatchCullReasons(state);
     }
 
     private void ReadPatchCullReasons(LayerGpuState state)

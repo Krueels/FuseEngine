@@ -175,7 +175,7 @@ public unsafe class ImGuiBackEnd : IDisposable
             ImGui.Text($"Patches: {grass.VisiblePatches} visíveis / {grass.ResidentPatches} residentes / {grass.PendingPatches} pendentes");
             ImGui.Text($"Lâminas candidatas: {grass.CandidateBlades:N0}");
             ImGui.Text($"LOD 0: {grass.Lod0Blades:N0}   LOD 1: {grass.Lod1Blades:N0}   LOD 2: {grass.Lod2Blades:N0}");
-            ImGui.Text($"Eliminados: frustum {grass.FrustumCulledPatches}, distância {grass.DistanceCulledPatches}, densidade {grass.DensityCulledBlades:N0}, Hi-Z {grass.OcclusionCulledPatches}");
+            ImGui.Text($"Eliminados: frustum {grass.FrustumCulledPatches}, distância {grass.DistanceCulledPatches}, GPU (frustum/distância/densidade) {grass.DensityCulledBlades:N0}, Hi-Z {grass.OcclusionCulledPatches}");
             ImGui.Text($"Compute GPU: {grass.ComputeMilliseconds:0.000} ms");
             ImGui.Text($"Draw calls: {grass.DrawCalls}");
             ImGui.Text($"Memória GPU: {grass.GpuBytes / (1024.0 * 1024.0):0.00} MiB");
