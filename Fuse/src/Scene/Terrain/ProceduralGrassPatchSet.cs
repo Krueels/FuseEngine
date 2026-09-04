@@ -409,14 +409,14 @@ public sealed class ProceduralGrassPatchSet : IDisposable
             float localPatchZ = (cellZ + jitterZ) / gridSide * depth;
             float localTileX = (float)(originX - tileOriginX) + localPatchX;
             float localTileZ = (float)(originZ - tileOriginZ) + localPatchZ;
-            float height = tile.GetInterpolatedHeight(localTileX, localTileZ);
+            float height = tile.GetTriangulatedSurfaceHeight(localTileX, localTileZ);
             if (height < minimumHeight || height > grass.MaximumHeight)
                 continue;
 
-            float left = tile.GetInterpolatedHeight(localTileX - sampleDistance, localTileZ);
-            float right = tile.GetInterpolatedHeight(localTileX + sampleDistance, localTileZ);
-            float back = tile.GetInterpolatedHeight(localTileX, localTileZ - sampleDistance);
-            float front = tile.GetInterpolatedHeight(localTileX, localTileZ + sampleDistance);
+            float left = tile.GetTriangulatedSurfaceHeight(localTileX - sampleDistance, localTileZ);
+            float right = tile.GetTriangulatedSurfaceHeight(localTileX + sampleDistance, localTileZ);
+            float back = tile.GetTriangulatedSurfaceHeight(localTileX, localTileZ - sampleDistance);
+            float front = tile.GetTriangulatedSurfaceHeight(localTileX, localTileZ + sampleDistance);
             Vector3 normal = Vector3.Normalize(new Vector3(left - right, sampleDistance * 2.0f, back - front));
             if (normal.Y < minimumUp)
                 continue;

@@ -74,6 +74,35 @@ public sealed class TerrainAsset
         return near + (far - near) * tz;
     }
 
+    /// <summary>
+    /// Samples the same piecewise-linear surface used by the terrain mesh.
+    /// Each heightmap cell is split from its top-left sample to its
+    /// bottom-right sample, so this must not be replaced with bilinear
+    /// interpolation when placing geometry on the rendered terrain.
+    /// </summary>
+    public float GetTriangulatedSurfaceHeight(float localX, float localZ)
+    {
+        float sampleX = System.Math.Clamp(localX / CellSize, 0f, Width - 1);
+        float sampleZ = System.Math.Clamp(localZ / CellSize, 0f, Depth - 1);
+        int x0 = System.Math.Clamp((int)MathF.Floor(sampleX), 0, Width - 2);
+        int z0 = System.Math.Clamp((int)MathF.Floor(sampleZ), 0, Depth - 2);
+        int x1 = x0 + 1;
+        int z1 = z0 + 1;
+        float tx = sampleX - x0;
+        float tz = sampleZ - z0;
+
+        float h00 = GetHeight(x0, z0);
+        float h10 = GetHeight(x1, z0);
+        float h01 = GetHeight(x0, z1);
+        float h11 = GetHeight(x1, z1);
+
+        // TerrainMeshGenerator uses triangles (b, a, c) and (d, c, a),
+        // which share the a-c diagonal. The first triangle occupies tz <= tx.
+        return tz <= tx
+            ? h00 + (h10 - h00) * tx + (h11 - h10) * tz
+            : h00 + (h01 - h00) * tz + (h11 - h01) * tx;
+    }
+
     public void SetNormalizedHeight(int x, int z, float value)
     {
         x = System.Math.Clamp(x, 0, Width - 1);
