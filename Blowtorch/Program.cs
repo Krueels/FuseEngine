@@ -4,6 +4,7 @@ namespace Blowtorch;
 
 internal static class Program
 {
+    [STAThread]
     private static void Main()
     {
         string splashPath = Path.Combine(Fuse.ResPath.Path, "splash.txt");

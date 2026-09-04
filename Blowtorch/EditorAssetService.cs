@@ -21,6 +21,10 @@ public class EditorAssetService : IDisposable
 {
     public const string DefaultSkyboxPath = "Textures/" + Bible.Skybox;
     private const int PreviewTextureMaxDimension = 256;
+    private static readonly string[] SupportedTextureExtensions =
+        [".png", ".jpg", ".jpeg", ".bmp", ".tga", ".dds"];
+    private static readonly string[] SupportedModelExtensions =
+        [".obj", ".fbx", ".gltf", ".glb"];
 
     private readonly GL _gl;
     private readonly AssetManager _assets;
@@ -133,9 +137,8 @@ public class EditorAssetService : IDisposable
         string textureDirectory = Path.Combine(_fuseResPath, "Textures");
         if (!Directory.Exists(textureDirectory))
             return [];
-        string[] extensions = [".png", ".jpg", ".jpeg", ".bmp", ".tga", ".dds"];
         IReadOnlyList<string> catalog = Directory.EnumerateFiles(textureDirectory, "*.*", SearchOption.AllDirectories)
-            .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            .Where(IsSupportedTexturePath)
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -270,11 +273,10 @@ public class EditorAssetService : IDisposable
             Path.Combine(_fuseResPath, "Models"),
             Path.Combine(_fuseResPath, "skinned_models")
         ];
-        string[] extensions = [".obj", ".fbx", ".gltf", ".glb"];
         return directories
             .Where(Directory.Exists)
             .SelectMany(directory => Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories))
-            .Where(path => extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+            .Where(IsSupportedModelPath)
             .Select(path => Path.GetRelativePath(_fuseResPath, path).Replace('\\', '/'))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
@@ -323,6 +325,467 @@ public class EditorAssetService : IDisposable
         if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
             normalized = normalized[4..];
         return Path.GetFullPath(Path.Combine(_fuseResPath, normalized.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    public static bool IsSupportedTexturePath(string path) =>
+        SupportedTextureExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsSupportedModelPath(string path) =>
+        SupportedModelExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Converts a file-system drop into a resource-relative texture path. Files
+    /// already inside Fuse/res are referenced in place; files from elsewhere
+    /// are copied into Fuse/res/Textures without overwriting an existing asset.
+    /// </summary>
+    public bool TryImportTextureFile(
+        string sourcePath,
+        out string relativePath,
+        out string error)
+    {
+        relativePath = "";
+        error = "";
+
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            error = "The dropped texture path is empty.";
+            return false;
+        }
+
+        string sourceFullPath;
+        try
+        {
+            sourceFullPath = Path.GetFullPath(sourcePath.Trim());
+        }
+        catch (Exception ex)
+        {
+            error = $"Invalid texture path: {ex.Message}";
+            return false;
+        }
+
+        if (!File.Exists(sourceFullPath))
+        {
+            error = $"Texture file not found: {sourcePath}";
+            return false;
+        }
+
+        if (!IsSupportedTexturePath(sourceFullPath))
+        {
+            error = $"Unsupported texture format: {Path.GetExtension(sourceFullPath)}";
+            return false;
+        }
+
+        string resourceRoot = Path.GetFullPath(_fuseResPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (sourceFullPath.StartsWith(resourceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            relativePath = Path.GetRelativePath(_fuseResPath, sourceFullPath).Replace('\\', '/');
+            return true;
+        }
+
+        try
+        {
+            string textureDirectory = Path.Combine(_fuseResPath, "Textures");
+            Directory.CreateDirectory(textureDirectory);
+
+            string fileName = Path.GetFileName(sourceFullPath);
+            string name = Path.GetFileNameWithoutExtension(fileName);
+            string extension = Path.GetExtension(fileName);
+            string destination = Path.Combine(textureDirectory, fileName);
+            int suffix = 1;
+            while (File.Exists(destination))
+            {
+                destination = Path.Combine(textureDirectory, $"{name}_{suffix++}{extension}");
+            }
+
+            File.Copy(sourceFullPath, destination, overwrite: false);
+            relativePath = Path.GetRelativePath(_fuseResPath, destination).Replace('\\', '/');
+            RefreshCatalogs();
+            Logger.Info($"Imported texture '{sourceFullPath}' as '{relativePath}'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not import texture: {ex.Message}";
+            Logger.Warn($"Texture import failed for '{sourceFullPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Converts a file selected outside the project into a resource-relative
+    /// model path. Models already inside Fuse/res are referenced in place;
+    /// external files are copied into Fuse/res/Models without overwriting an
+    /// existing asset.
+    /// </summary>
+    public bool TryImportModelFile(
+        string sourcePath,
+        out string relativePath,
+        out string error)
+    {
+        relativePath = "";
+        error = "";
+
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            error = "The selected model path is empty.";
+            return false;
+        }
+
+        string sourceFullPath;
+        try
+        {
+            sourceFullPath = Path.GetFullPath(sourcePath.Trim());
+        }
+        catch (Exception ex)
+        {
+            error = $"Invalid model path: {ex.Message}";
+            return false;
+        }
+
+        if (!File.Exists(sourceFullPath))
+        {
+            error = $"Model file not found: {sourcePath}";
+            return false;
+        }
+
+        if (!IsSupportedModelPath(sourceFullPath))
+        {
+            error = $"Unsupported model format: {Path.GetExtension(sourceFullPath)}";
+            return false;
+        }
+
+        string resourceRoot = Path.GetFullPath(_fuseResPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (sourceFullPath.StartsWith(resourceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            relativePath = Path.GetRelativePath(_fuseResPath, sourceFullPath).Replace('\\', '/');
+            return true;
+        }
+
+        try
+        {
+            string modelDirectory = Path.Combine(_fuseResPath, "Models");
+            Directory.CreateDirectory(modelDirectory);
+
+            string fileName = Path.GetFileName(sourceFullPath);
+            string name = Path.GetFileNameWithoutExtension(fileName);
+            string extension = Path.GetExtension(fileName);
+            string destination = Path.Combine(modelDirectory, fileName);
+            int suffix = 1;
+            while (File.Exists(destination))
+                destination = Path.Combine(modelDirectory, $"{name}_{suffix++}{extension}");
+
+            File.Copy(sourceFullPath, destination, overwrite: false);
+            relativePath = Path.GetRelativePath(_fuseResPath, destination).Replace('\\', '/');
+            RefreshCatalogs();
+            Logger.Info($"Imported model '{sourceFullPath}' as '{relativePath}'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not import model: {ex.Message}";
+            Logger.Warn($"Model import failed for '{sourceFullPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Validates and creates a folder below Fuse/res/Materials. The returned
+    /// path is relative to the Materials folder and uses forward slashes.
+    /// </summary>
+    public bool TryCreateMaterialFolder(
+        string folderPath,
+        out string normalizedFolder,
+        out string error)
+    {
+        normalizedFolder = "";
+        error = "";
+
+        if (!TryResolveMaterialFolder(folderPath, out normalizedFolder, out string fullPath, out error))
+            return false;
+
+        try
+        {
+            Directory.CreateDirectory(fullPath);
+            RefreshCatalogs();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not create material folder: {ex.Message}";
+            Logger.Warn($"Material folder creation failed for '{fullPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Moves a material to another folder below Fuse/res/Materials. Existing
+    /// files are never overwritten and the material cache is invalidated for
+    /// the old path.
+    /// </summary>
+    public bool TryMoveMaterial(
+        string relativePath,
+        string targetFolder,
+        out string newRelativePath,
+        out string error)
+    {
+        newRelativePath = "";
+        error = "";
+
+        string oldFullPath = Path.GetFullPath(ResolveEditorAssetPath(relativePath));
+        string materialsRoot = GetMaterialsRootPath();
+        string materialsRootWithSeparator = materialsRoot + Path.DirectorySeparatorChar;
+        if (!oldFullPath.StartsWith(materialsRootWithSeparator, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "The material must be inside Fuse/res/Materials.";
+            return false;
+        }
+
+        if (!File.Exists(oldFullPath))
+        {
+            error = $"Material not found: {relativePath}";
+            RefreshCatalogs();
+            return false;
+        }
+
+        if (!Path.GetExtension(oldFullPath).Equals(".fmat", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Only .fmat files can be moved as materials.";
+            return false;
+        }
+
+        if (!TryResolveMaterialFolder(targetFolder, out string normalizedFolder, out string destinationDirectory, out error))
+            return false;
+
+        string destination = Path.Combine(destinationDirectory, Path.GetFileName(oldFullPath));
+        if (string.Equals(oldFullPath, destination, StringComparison.OrdinalIgnoreCase))
+        {
+            newRelativePath = Path.GetRelativePath(_fuseResPath, oldFullPath).Replace('\\', '/');
+            return true;
+        }
+
+        if (File.Exists(destination))
+        {
+            error = $"A material named '{Path.GetFileName(oldFullPath)}' already exists in that folder.";
+            return false;
+        }
+
+        bool moved = false;
+        try
+        {
+            Directory.CreateDirectory(destinationDirectory);
+            File.Move(oldFullPath, destination);
+            moved = true;
+            _assets.RemoveMaterialCacheEntry(oldFullPath);
+            newRelativePath = Path.GetRelativePath(_fuseResPath, destination).Replace('\\', '/');
+            RefreshCatalogs();
+            Logger.Info($"Moved material '{relativePath}' to '{newRelativePath}' (folder '{normalizedFolder}').");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (moved)
+            {
+                try
+                {
+                    if (File.Exists(destination) && !File.Exists(oldFullPath))
+                        File.Move(destination, oldFullPath);
+                    RefreshCatalogs();
+                }
+                catch (Exception rollbackEx)
+                {
+                    Logger.Error($"Material move rollback failed: {rollbackEx.Message}");
+                }
+            }
+
+            error = $"Could not move material: {ex.Message}";
+            Logger.Warn($"Material move failed for '{oldFullPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Renames a material asset without leaving the resource tree. The
+    /// material cache is invalidated so future lookups use the new path.
+    /// </summary>
+    public bool TryRenameMaterial(
+        string relativePath,
+        string requestedName,
+        out string newRelativePath,
+        out string error)
+    {
+        newRelativePath = "";
+        error = "";
+
+        string oldFullPath = ResolveEditorAssetPath(relativePath);
+        string materialsRoot = Path.GetFullPath(Path.Combine(_fuseResPath, "Materials"))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        string normalizedOldPath = Path.GetFullPath(oldFullPath);
+        if (!normalizedOldPath.StartsWith(materialsRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "The material must be inside Fuse/res/Materials.";
+            return false;
+        }
+
+        if (!File.Exists(normalizedOldPath))
+        {
+            error = $"Material not found: {relativePath}";
+            RefreshCatalogs();
+            return false;
+        }
+
+        if (!Path.GetExtension(normalizedOldPath).Equals(".fmat", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Only .fmat files can be renamed as materials.";
+            return false;
+        }
+
+        string name = requestedName.Trim();
+        if (name.EndsWith(".fmat", StringComparison.OrdinalIgnoreCase))
+            name = name[..^5].TrimEnd();
+
+        if (string.IsNullOrWhiteSpace(name) || name is "." or "..")
+        {
+            error = "Enter a valid material name.";
+            return false;
+        }
+
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            name.EndsWith(".", StringComparison.Ordinal) ||
+            name.EndsWith(" ", StringComparison.Ordinal))
+        {
+            error = "The material name contains invalid filename characters.";
+            return false;
+        }
+
+        string? directory = Path.GetDirectoryName(normalizedOldPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            error = "The material directory could not be resolved.";
+            return false;
+        }
+
+        string destination = Path.Combine(directory, name + ".fmat");
+        if (string.Equals(normalizedOldPath, destination, StringComparison.OrdinalIgnoreCase))
+        {
+            newRelativePath = Path.GetRelativePath(_fuseResPath, normalizedOldPath).Replace('\\', '/');
+            return true;
+        }
+
+        if (File.Exists(destination))
+        {
+            error = $"A material named '{name}' already exists in this folder.";
+            return false;
+        }
+
+        bool moved = false;
+        try
+        {
+            File.Move(normalizedOldPath, destination);
+            moved = true;
+            _assets.RemoveMaterialCacheEntry(normalizedOldPath);
+            newRelativePath = Path.GetRelativePath(_fuseResPath, destination).Replace('\\', '/');
+            RefreshCatalogs();
+            Logger.Info($"Renamed material '{relativePath}' to '{newRelativePath}'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (moved)
+            {
+                try
+                {
+                    if (File.Exists(destination) && !File.Exists(normalizedOldPath))
+                        File.Move(destination, normalizedOldPath);
+                    RefreshCatalogs();
+                }
+                catch (Exception rollbackEx)
+                {
+                    Logger.Error($"Material rename rollback failed: {rollbackEx.Message}");
+                }
+            }
+
+            error = $"Could not rename material: {ex.Message}";
+            Logger.Warn($"Material rename failed for '{normalizedOldPath}': {ex.Message}");
+            return false;
+        }
+    }
+
+    private string GetMaterialsRootPath() =>
+        Path.GetFullPath(Path.Combine(_fuseResPath, "Materials"))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    private bool TryResolveMaterialFolder(
+        string folderPath,
+        out string normalizedFolder,
+        out string fullPath,
+        out string error)
+    {
+        normalizedFolder = "";
+        fullPath = "";
+        error = "";
+
+        string rawFolder = (folderPath ?? "").Trim();
+        if (Path.IsPathRooted(rawFolder))
+        {
+            error = "Material folders must be relative to Fuse/res/Materials.";
+            return false;
+        }
+
+        string normalized = rawFolder.Replace('\\', '/');
+        if (normalized.StartsWith("/", StringComparison.Ordinal) ||
+            normalized.Contains("//", StringComparison.Ordinal))
+        {
+            error = "Enter a relative material folder path using single '/' separators.";
+            return false;
+        }
+
+        if (normalized.Equals("res", StringComparison.OrdinalIgnoreCase))
+            normalized = "";
+        else if (normalized.StartsWith("res/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[4..];
+
+        if (normalized.Equals("Materials", StringComparison.OrdinalIgnoreCase))
+            normalized = "";
+        else if (normalized.StartsWith("Materials/", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["Materials/".Length..];
+
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string segment in segments)
+        {
+            if (segment is "." or ".." ||
+                segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                segment.EndsWith(".", StringComparison.Ordinal) ||
+                segment.EndsWith(" ", StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(segment))
+            {
+                error = "The material folder contains an invalid folder name.";
+                return false;
+            }
+        }
+
+        normalizedFolder = string.Join('/', segments);
+        string materialsRoot = GetMaterialsRootPath();
+        fullPath = segments.Length == 0
+            ? materialsRoot
+            : Path.GetFullPath(Path.Combine(
+                new[] { materialsRoot }.Concat(segments.Select(segment => segment)).ToArray()));
+
+        string rootWithSeparator = materialsRoot + Path.DirectorySeparatorChar;
+        if (!fullPath.Equals(materialsRoot, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedFolder = "";
+            fullPath = "";
+            error = "The material folder must stay inside Fuse/res/Materials.";
+            return false;
+        }
+
+        return true;
     }
 
     public bool GetAssetStatus(

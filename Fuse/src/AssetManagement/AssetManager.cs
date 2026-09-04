@@ -716,6 +716,21 @@ public class AssetManager
         }
     }
 
+    /// <summary>
+    /// Removes a material from the runtime cache after its source file has
+    /// been moved or renamed by an editor. The next lookup loads it from the
+    /// new path.
+    /// </summary>
+    public bool RemoveMaterialCacheEntry(string path)
+    {
+        string fullPath = MaterialRuntime.ResolveAssetPath(path);
+        if (!_materials.Remove(fullPath, out MaterialRuntime? material))
+            return false;
+
+        material.Dispose();
+        return true;
+    }
+
     public Renderer.LoadedModel? ReloadModel(string path)
     {
         string cleanPath = ResolveAssetPath(path);

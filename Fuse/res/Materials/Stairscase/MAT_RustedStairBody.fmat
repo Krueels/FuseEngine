@@ -1,0 +1,137 @@
+{
+  "version": 2,
+  "name": "MAT_RustedStairBody",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "parent_material": null,
+  "exposed_parameters": [],
+  "parameter_overrides": {},
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          720,
+          80
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "519c8df0ab2d4468a9ffc68ac9af468c",
+        "type": "Texture2D",
+        "name": "RustedStairBody_BaseColor",
+        "position": [
+          378.00504,
+          -11.252492
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/RustedStairBody_BaseColor.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "13207ccb6151497aa2e2819ebcf0cbd2",
+        "type": "Texture2D",
+        "name": "BR_StairFrame_1_RustedStairBody_Normal",
+        "position": [
+          71.178535,
+          71.22454
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/BR_StairFrame_1_RustedStairBody_Normal.png",
+          "color_space": "linear"
+        }
+      },
+      {
+        "id": "77663d0224c0481f82090c690e39ad64",
+        "type": "Texture2D",
+        "name": "RustedStairBody_Metallic",
+        "position": [
+          368.74097,
+          315.88693
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/RustedStairBody_Metallic.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "ff32b42253714c6abb8a37b50a9433f6",
+        "type": "Texture2D",
+        "name": "RustedStairBody_Roughness",
+        "position": [
+          360.80594,
+          206.11952
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/RustedStairBody_Roughness.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "5c5747ced1b248298cd1c6e8f4accb63",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          337.001,
+          93.70701
+        ],
+        "properties": {
+          "strength": 1
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "519c8df0ab2d4468a9ffc68ac9af468c",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "13207ccb6151497aa2e2819ebcf0cbd2",
+        "from_socket": "Color",
+        "to_node": "5c5747ced1b248298cd1c6e8f4accb63",
+        "to_socket": "Color"
+      },
+      {
+        "from_node": "5c5747ced1b248298cd1c6e8f4accb63",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "ff32b42253714c6abb8a37b50a9433f6",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Roughness"
+      },
+      {
+        "from_node": "77663d0224c0481f82090c690e39ad64",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Metallic"
+      }
+    ]
+  }
+}

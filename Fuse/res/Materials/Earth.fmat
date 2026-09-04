@@ -1,0 +1,105 @@
+{
+  "version": 2,
+  "name": "Earth",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "parent_material": null,
+  "exposed_parameters": [],
+  "parameter_overrides": {},
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "43cb448649e54e4695ace2aeac68ef76",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          -2,
+          171
+        ],
+        "properties": {
+          "path": "Textures/Earth/2k_earth_nightmap.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "21fbbfe119144e84abea7009e51ba71f",
+        "type": "Texture2D",
+        "name": "Texture",
+        "position": [
+          -1,
+          297
+        ],
+        "properties": {
+          "path": "Textures/Earth/2k_earth_normal_map.png",
+          "color_space": "linear"
+        }
+      },
+      {
+        "id": "fbe065b9ce024311b9315a064cf01c57",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          272,
+          361
+        ],
+        "properties": {
+          "strength": 1
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "43cb448649e54e4695ace2aeac68ef76",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "43cb448649e54e4695ace2aeac68ef76",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Emission"
+      },
+      {
+        "from_node": "21fbbfe119144e84abea7009e51ba71f",
+        "from_socket": "Color",
+        "to_node": "fbe065b9ce024311b9315a064cf01c57",
+        "to_socket": "Color"
+      },
+      {
+        "from_node": "fbe065b9ce024311b9315a064cf01c57",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      }
+    ]
+  }
+}

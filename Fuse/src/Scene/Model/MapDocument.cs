@@ -354,6 +354,14 @@ public class MapDocument
             ["visible"] = obj.Visible
         };
 
+        bool isHierarchyGroup =
+            !obj.IsLight &&
+            !obj.IsTerrain &&
+            !obj.IsModel &&
+            obj is not Brush &&
+            string.IsNullOrEmpty(obj.Mesh) &&
+            string.IsNullOrEmpty(obj.GeometryGraphPath);
+
         if (!string.IsNullOrEmpty(obj.ParentId))
             j["parent"] = obj.ParentId;
 
@@ -389,8 +397,6 @@ public class MapDocument
         if (obj.IsModel)
         {
             j["model"] = obj.Model!;
-            if (obj.ModelScale != System.Numerics.Vector3.One)
-                j["model_scale"] = new JsonArray { obj.ModelScale.X, obj.ModelScale.Y, obj.ModelScale.Z };
         }
         else if (obj.Mesh != null)
         {
@@ -401,6 +407,21 @@ public class MapDocument
                 j["uv_offset"] = Vec2ToJson(obj.UvOffset);
             if (obj.UvRotation != 0f)
                 j["uv_rotation"] = obj.UvRotation;
+        }
+
+        // ModelScale is also the authored scale of renderless hierarchy
+        // groups. Keeping it in the document lets the editor preserve the
+        // root scale while the group operation bakes that factor into the
+        // descendants' visual and collision data.
+        if ((obj.IsModel || isHierarchyGroup) &&
+            obj.ModelScale != System.Numerics.Vector3.One)
+        {
+            j["model_scale"] = new JsonArray
+            {
+                obj.ModelScale.X,
+                obj.ModelScale.Y,
+                obj.ModelScale.Z
+            };
         }
 
         if (obj.IsTerrain)

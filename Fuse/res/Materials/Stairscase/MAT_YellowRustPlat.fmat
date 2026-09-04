@@ -1,0 +1,137 @@
+{
+  "version": 2,
+  "name": "MAT_YellowRustPlat",
+  "alpha_mode": "opaque",
+  "alpha_cutoff": 0.5,
+  "two_sided": false,
+  "cast_shadows": true,
+  "receive_shadows": true,
+  "parent_material": null,
+  "exposed_parameters": [],
+  "parameter_overrides": {},
+  "graph": {
+    "nodes": [
+      {
+        "id": "output",
+        "type": "PBROutput",
+        "name": "Material Output",
+        "position": [
+          520,
+          160
+        ],
+        "properties": {
+          "base_color": [
+            1,
+            1,
+            1
+          ],
+          "roughness": 0.5,
+          "metallic": 0,
+          "emission": [
+            0,
+            0,
+            0
+          ],
+          "alpha": 1,
+          "ao": 1
+        }
+      },
+      {
+        "id": "a3974e8ea3994ff68c56ce787492382f",
+        "type": "NormalMap",
+        "name": "Normal Map",
+        "position": [
+          215,
+          197
+        ],
+        "properties": {
+          "strength": 1
+        }
+      },
+      {
+        "id": "5774fdf15a9c4788ba3a641d6f855f6e",
+        "type": "Texture2D",
+        "name": "YellowRustStepsPlat_BaseColor",
+        "position": [
+          134,
+          92
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/YellowRustStepsPlat_BaseColor.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "098d01a5bb134441a648f23da7836bb4",
+        "type": "Texture2D",
+        "name": "YellowRustStepsPlat_Metallic",
+        "position": [
+          215,
+          411
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/YellowRustStepsPlat_Metallic.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "46cb74ba9d0242e5bb8c4eb706437617",
+        "type": "Texture2D",
+        "name": "YellowRustStepsPlat_Roughness",
+        "position": [
+          198,
+          307
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/YellowRustStepsPlat_Roughness.jpg",
+          "color_space": "sRGB"
+        }
+      },
+      {
+        "id": "9185e1667f74498ea46642d3b6582d63",
+        "type": "Texture2D",
+        "name": "BR_StairFrame_2_YellowRustStepsPlat_Normal",
+        "position": [
+          -45,
+          204
+        ],
+        "properties": {
+          "path": "Textures/Staircase Textures/BR_StairFrame_2_YellowRustStepsPlat_Normal.png",
+          "color_space": "linear"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from_node": "a3974e8ea3994ff68c56ce787492382f",
+        "from_socket": "Normal",
+        "to_node": "output",
+        "to_socket": "Normal"
+      },
+      {
+        "from_node": "5774fdf15a9c4788ba3a641d6f855f6e",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "BaseColor"
+      },
+      {
+        "from_node": "9185e1667f74498ea46642d3b6582d63",
+        "from_socket": "Color",
+        "to_node": "a3974e8ea3994ff68c56ce787492382f",
+        "to_socket": "Color"
+      },
+      {
+        "from_node": "46cb74ba9d0242e5bb8c4eb706437617",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Roughness"
+      },
+      {
+        "from_node": "098d01a5bb134441a648f23da7836bb4",
+        "from_socket": "Color",
+        "to_node": "output",
+        "to_socket": "Metallic"
+      }
+    ]
+  }
+}

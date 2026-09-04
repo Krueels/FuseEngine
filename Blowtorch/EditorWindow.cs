@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using Silk.NET.GLFW;
 using Silk.NET.OpenGL;
 
@@ -10,6 +13,8 @@ public unsafe class EditorWindow : IDisposable
     private readonly Glfw _glfw;
     private readonly WindowHandle* _handle;
     private readonly GL _gl;
+    private readonly ConcurrentQueue<string> _droppedFiles = new();
+    private readonly GlfwCallbacks.DropCallback _dropCallback;
     private bool _forceClose;
     private bool _closeRequested;
 
@@ -32,6 +37,9 @@ public unsafe class EditorWindow : IDisposable
             _glfw.Terminate();
             throw new Exception("Failed to create window");
         }
+
+        _dropCallback = HandleFileDrop;
+        _glfw.SetDropCallback(_handle, _dropCallback);
 
         _glfw.MakeContextCurrent(_handle);
         _glfw.SwapInterval(1);
@@ -74,6 +82,15 @@ public unsafe class EditorWindow : IDisposable
     }
     public void SwapBuffers() => _glfw.SwapBuffers(_handle);
     public void PollEvents() => _glfw.PollEvents();
+
+    public IReadOnlyList<string> ConsumeDroppedFiles()
+    {
+        var files = new List<string>();
+        while (_droppedFiles.TryDequeue(out string? path))
+            files.Add(path);
+        return files;
+    }
+
     public bool ConsumeCloseRequest()
     {
         bool requested = _closeRequested;
@@ -85,6 +102,17 @@ public unsafe class EditorWindow : IDisposable
     {
         _forceClose = true;
         _glfw.SetWindowShouldClose(_handle, true);
+    }
+
+    private void HandleFileDrop(WindowHandle* window, int count, IntPtr paths)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            IntPtr pathPointer = Marshal.ReadIntPtr(paths, i * IntPtr.Size);
+            string? path = Marshal.PtrToStringUTF8(pathPointer);
+            if (!string.IsNullOrWhiteSpace(path))
+                _droppedFiles.Enqueue(path);
+        }
     }
 
     private void SetWindowIcon()
@@ -123,6 +151,7 @@ public unsafe class EditorWindow : IDisposable
 
     public void Dispose()
     {
+        _glfw.SetDropCallback(_handle, null);
         _glfw.DestroyWindow(_handle);
         _glfw.Terminate();
     }

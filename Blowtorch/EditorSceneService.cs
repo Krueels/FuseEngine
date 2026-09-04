@@ -5,6 +5,7 @@ using System.Numerics;
 using Fuse.Math;
 using Fuse.Scene.Model;
 using Fuse.Renderer;
+using Fuse.Renderer.Materials;
 using Fuse.Core;
 using Fuse.Scene.Terrain;
 using Brush = Fuse.Scene.Model.Brush;
@@ -241,7 +242,14 @@ public class EditorSceneService
             }
 
             var mesh = assetService.GetOrCreateMesh(mapObj);
-            if (mesh == null) continue;
+            bool isRenderlessGroup =
+                !mapObj.IsLight &&
+                !mapObj.IsTerrain &&
+                !mapObj.IsModel &&
+                mapObj is not Brush &&
+                string.IsNullOrEmpty(mapObj.Mesh) &&
+                string.IsNullOrEmpty(mapObj.GeometryGraphPath);
+            if (mesh == null && !isRenderlessGroup) continue;
 
             var entity = _scene.Add(mesh, mapObj.Id);
             entity.ParentId = mapObj.ParentId ?? "";
@@ -797,6 +805,60 @@ public class EditorSceneService
 
         _mapPath = previousPath;
         return false;
+    }
+
+    public int ReplaceMaterialReferences(string oldMaterialPath, string newMaterialPath)
+    {
+        string oldPath = MaterialAsset.NormalizeAssetPath(oldMaterialPath);
+        string newPath = MaterialAsset.NormalizeAssetPath(newMaterialPath);
+        if (string.IsNullOrWhiteSpace(oldPath) ||
+            string.IsNullOrWhiteSpace(newPath) ||
+            oldPath.Equals(newPath, StringComparison.OrdinalIgnoreCase) ||
+            _doc == null)
+            return 0;
+
+        int changed = 0;
+        foreach (MapObject mapObject in _doc.Objects)
+        {
+            if (mapObject.MaterialPath != null &&
+                MaterialAsset.NormalizeAssetPath(mapObject.MaterialPath)
+                    .Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+            {
+                mapObject.MaterialPath = newPath;
+                changed++;
+            }
+
+            for (int i = 0; i < mapObject.MaterialSlots.Count; i++)
+            {
+                if (!MaterialAsset.NormalizeAssetPath(mapObject.MaterialSlots[i])
+                        .Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                mapObject.MaterialSlots[i] = newPath;
+                changed++;
+            }
+        }
+
+        if (_scene != null)
+        {
+            foreach (Entity entity in _scene.Entities)
+            {
+                if (MaterialAsset.NormalizeAssetPath(entity.MaterialPath)
+                        .Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                    entity.MaterialPath = newPath;
+
+                for (int i = 0; i < entity.MaterialPaths.Count; i++)
+                {
+                    if (MaterialAsset.NormalizeAssetPath(entity.MaterialPaths[i])
+                            .Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                        entity.MaterialPaths[i] = newPath;
+                }
+            }
+        }
+
+        if (changed > 0)
+            MarkModified();
+        return changed;
     }
 
     public void RefreshMaterials(EditorAssetService assetService)

@@ -53,6 +53,7 @@ public unsafe class EditorUI : IDisposable
     private ViewportLayout _viewportLayout = ViewportLayout.Quad;
 
     private bool _showMapWindow = true;
+    private bool _showInspectorWindow = true;
     private bool _showJsonWindow = false;
     private bool _showAssetBrowser = false;
     private readonly MaterialEditorWindow _materialEditor = new();
@@ -60,7 +61,12 @@ public unsafe class EditorUI : IDisposable
     private readonly AssetBrowserWindow _assetBrowser = new();
     private bool _newMaterialPopupRequested;
     private string _newMaterialName = "NewMaterial";
+    private string _newMaterialFolder = "";
     private string _newMaterialTexture = "";
+    private string _newMaterialError = "";
+    private bool _newMaterialFolderPopupRequested;
+    private string _newMaterialFolderName = "";
+    private string _newMaterialFolderError = "";
     private readonly List<MapObject> _newMaterialTargets = [];
 
     // Snapping
@@ -92,7 +98,6 @@ public unsafe class EditorUI : IDisposable
     private Vector3 _selectionBoundsCacheMin;
     private Vector3 _selectionBoundsCacheMax;
     private double _lastSelectionTime = 0.0;
-    private bool _showModelImportDialog = false;
     private bool _showTerrainCreateDialog;
     private bool _terrainCreateWaitingForHeightmap;
     private string _terrainName = "terrain";
@@ -176,9 +181,6 @@ public unsafe class EditorUI : IDisposable
     private string _terrainSculptAssetPath = "";
     private TerrainTileSetAsset? _terrainSculptAsset;
     private TerrainTileSetSnapshot? _terrainSculptBefore;
-    private List<string> _modelFiles = new();
-    private int _selectedModelIndex = -1;
-    private string? _detectedTexturePath = null;
     private bool _wasUsingGizmo = false;
     private EditorViewport? _activeDraggingViewport;
 
@@ -365,6 +367,7 @@ public unsafe class EditorUI : IDisposable
             ExecutePendingDocumentAction(window, sceneService, assetService, history);
         DrawHollowDialog(sceneService, assetService, history);
         DrawNewMaterialDialog(sceneService, assetService, history);
+        DrawNewMaterialFolderDialog(assetService);
         DrawTerrainCreateDialog(window, sceneService, assetService, history);
         //DrawLaunchErrorDialog();
 
@@ -382,6 +385,10 @@ public unsafe class EditorUI : IDisposable
         DrawBlowtorchSettingsWindow();
 
         SyncSkyboxPreview(sceneService, assetService, viewport3D, viewportTop, viewportFront, viewportSide);
+
+        IReadOnlyList<string> droppedFiles = window.ConsumeDroppedFiles();
+        if (droppedFiles.Count > 0)
+            _materialEditor.QueueExternalTextureFiles(droppedFiles);
 
         // Draw the graph before map input is processed so it can claim the
         // MaterialGraph context in the same frame when it has focus.
@@ -422,6 +429,9 @@ public unsafe class EditorUI : IDisposable
 
         if (_showMapWindow)
             DrawMapWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
+
+        if (_showInspectorWindow)
+            DrawInspectorWindow(sceneService, assetService, history, viewport3D, viewportTop, viewportFront, viewportSide);
 
         DrawBrushEditWindow(sceneService, assetService, history);
 
@@ -807,11 +817,11 @@ public unsafe class EditorUI : IDisposable
 
     private void UpdateEntitiesVisibilityRecursive(MapDocument doc, Fuse.Renderer.Scene scene, MapObject obj)
     {
-        // A group does not have a render entity of its own. Recalculate the
-        // complete sub-tree and update both mesh entities and light objects.
-        // The previous implementation only visited descendants and only
-        // touched Scene.Entities, so hidden groups could still render lights
-        // and some descendants could keep their old visibility state.
+        // Recalculate the complete sub-tree and update both hierarchy/mesh
+        // entities and light objects. The previous implementation only
+        // visited descendants and only touched Scene.Entities, so hidden
+        // groups could still render lights and some descendants could keep
+        // their old visibility state.
         foreach (MapObject candidate in doc.Objects)
         {
             if (!candidate.Id.Equals(obj.Id, StringComparison.OrdinalIgnoreCase) &&
@@ -1306,7 +1316,38 @@ public unsafe class EditorUI : IDisposable
                     MathF.Abs(firstScale.Y) > 0.0001f ? scale.Y / firstScale.Y : 1.0f,
                     MathF.Abs(firstScale.Z) > 0.0001f ? scale.Z / firstScale.Z : 1.0f);
 
-                foreach (MapObject obj in GetObjectsToTransform(doc).ToList())
+                List<MapObject> objectsToTransform = GetObjectsToTransform(doc).ToList();
+                HashSet<MapObject> objectsScaledThroughGroup = new();
+                if (scaleChanged)
+                {
+                    // A group scale is authored on the root but must be baked
+                    // into every descendant because render and physics bodies
+                    // are stored as independent objects in the map.
+                    foreach (MapObject group in selection.Where(IsGroupObject))
+                    {
+                        bool isNestedSelectedGroup = selection.Any(other =>
+                            other != group &&
+                            IsGroupObject(other) &&
+                            IsDescendantOf(group, other, doc));
+                        if (isNestedSelectedGroup)
+                            continue;
+
+                        ApplyGroupScale(
+                            group,
+                            scaleFactor,
+                            doc,
+                            scene,
+                            sceneService,
+                            assetService);
+                        foreach (MapObject candidate in objectsToTransform)
+                        {
+                            if (candidate == group || IsDescendantOf(candidate, group, doc))
+                                objectsScaledThroughGroup.Add(candidate);
+                        }
+                    }
+                }
+
+                foreach (MapObject obj in objectsToTransform)
                 {
                     Vector3 objectPosition = GetInspectorWorldPosition(obj, scene);
                     Quaternion objectRotation = GetInspectorWorldRotation(obj, scene);
@@ -1322,7 +1363,7 @@ public unsafe class EditorUI : IDisposable
                     if (positionChanged || rotationChanged)
                         SetInspectorWorldPose(obj, objectPosition, objectRotation, scene, sceneService);
 
-                    if (scaleChanged)
+                    if (scaleChanged && !objectsScaledThroughGroup.Contains(obj))
                         ApplyInspectorScale(obj, scaleFactor, scene, sceneService, assetService);
                 }
             }
@@ -1843,7 +1884,7 @@ public unsafe class EditorUI : IDisposable
 
     private static bool CanEditInspectorScale(MapObject obj)
     {
-        if (obj.IsModel)
+        if (obj.IsModel || IsGroupObject(obj))
             return true;
         if (obj.Body == null)
             return false;
@@ -1858,7 +1899,7 @@ public unsafe class EditorUI : IDisposable
 
     private static Vector3 GetInspectorScale(MapObject obj, Fuse.Renderer.Scene scene)
     {
-        if (obj.IsModel)
+        if (obj.IsModel || IsGroupObject(obj))
             return obj.ModelScale;
         if (obj.Body != null)
         {
@@ -1879,7 +1920,7 @@ public unsafe class EditorUI : IDisposable
         EditorSceneService sceneService,
         EditorAssetService assetService)
     {
-        if (obj.IsModel)
+        if (obj.IsModel || IsGroupObject(obj))
         {
             obj.ModelScale = Vector3.Max(new Vector3(0.01f), obj.ModelScale * factor);
         }
@@ -1917,6 +1958,8 @@ public unsafe class EditorUI : IDisposable
             }
         }
 
+        ScaleBuoyancyVolume(obj.Body, factor);
+
         Entity? entity = scene.Entities.FirstOrDefault(candidate => candidate.Id == obj.Id);
         if (entity != null)
         {
@@ -1935,6 +1978,137 @@ public unsafe class EditorUI : IDisposable
                 entity.Mesh = assetService.GetOrCreateMesh(brushObject);
         }
         SyncLight(sceneService, obj);
+    }
+
+    private void ApplyGroupScale(
+        MapObject group,
+        Vector3 factor,
+        MapDocument doc,
+        Fuse.Renderer.Scene scene,
+        EditorSceneService sceneService,
+        EditorAssetService assetService)
+    {
+        Vector3 safeFactor = SanitizeScaleFactor(factor);
+        group.ModelScale = SanitizeScale(group.ModelScale * safeFactor);
+        ScaleBuoyancyVolume(group.Body, safeFactor);
+
+        Vector3 pivot = group.Body?.Position ??
+            scene.Entities.FirstOrDefault(entity =>
+                entity.Id.Equals(group.Id, StringComparison.OrdinalIgnoreCase))?.Transform.Position ??
+            Vector3.Zero;
+        Quaternion pivotRotation = group.Body?.Rotation ??
+            scene.Entities.FirstOrDefault(entity =>
+                entity.Id.Equals(group.Id, StringComparison.OrdinalIgnoreCase))?.Transform.Rotation ??
+            Quaternion.Identity;
+        Quaternion inversePivotRotation = Quaternion.Inverse(pivotRotation);
+
+        foreach (MapObject candidate in doc.Objects)
+        {
+            if (candidate == group || !IsDescendantOf(candidate, group, doc))
+                continue;
+
+            if (candidate.Body != null)
+            {
+                Vector3 localPosition = Vector3.Transform(
+                    candidate.Body.Position - pivot,
+                    inversePivotRotation);
+                candidate.Body.Position = pivot + Vector3.Transform(
+                    localPosition * safeFactor,
+                    pivotRotation);
+            }
+
+            if (IsGroupObject(candidate))
+            {
+                candidate.ModelScale = SanitizeScale(candidate.ModelScale * safeFactor);
+                ScaleBuoyancyVolume(candidate.Body, safeFactor);
+            }
+            else
+            {
+                ApplyInspectorScale(candidate, safeFactor, scene, sceneService, assetService);
+            }
+
+            Entity? entity = scene.Entities.FirstOrDefault(item =>
+                item.Id.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase));
+            if (entity != null)
+            {
+                if (candidate.Body != null)
+                {
+                    entity.Transform.Position = candidate.Body.Position;
+                    entity.Transform.Rotation = candidate.Body.Rotation;
+                }
+
+                if (IsGroupObject(candidate))
+                    entity.Transform.Scale = candidate.ModelScale;
+            }
+        }
+
+        Entity? groupEntity = scene.Entities.FirstOrDefault(entity =>
+            entity.Id.Equals(group.Id, StringComparison.OrdinalIgnoreCase));
+        if (groupEntity != null)
+        {
+            if (group.Body != null)
+            {
+                groupEntity.Transform.Position = group.Body.Position;
+                groupEntity.Transform.Rotation = group.Body.Rotation;
+            }
+            groupEntity.Transform.Scale = group.ModelScale;
+        }
+
+        // Scene.UpdateTransforms resolves non-physics children from these
+        // cached relative transforms every frame. Refresh them after baking
+        // the group scale so the editor keeps the new arrangement visible.
+        foreach (MapObject candidate in doc.Objects)
+        {
+            if (candidate != group && !IsDescendantOf(candidate, group, doc))
+                continue;
+
+            Entity? entity = scene.Entities.FirstOrDefault(item =>
+                item.Id.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase));
+            if (entity == null || string.IsNullOrEmpty(entity.ParentId))
+                continue;
+
+            Entity? parentEntity = scene.Entities.FirstOrDefault(item =>
+                item.Id.Equals(entity.ParentId, StringComparison.OrdinalIgnoreCase));
+            if (parentEntity == null)
+                continue;
+
+            Quaternion inverseParentRotation = Quaternion.Inverse(parentEntity.Transform.Rotation);
+            entity.InitialRelativePosition = Vector3.Transform(
+                entity.Transform.Position - parentEntity.Transform.Position,
+                inverseParentRotation);
+            entity.InitialRelativeRotation = Quaternion.Normalize(
+                inverseParentRotation * entity.Transform.Rotation);
+        }
+    }
+
+    private static Vector3 SanitizeScale(Vector3 scale) => new(
+        float.IsFinite(scale.X) ? MathF.Max(MathF.Abs(scale.X), 0.01f) : 1.0f,
+        float.IsFinite(scale.Y) ? MathF.Max(MathF.Abs(scale.Y), 0.01f) : 1.0f,
+        float.IsFinite(scale.Z) ? MathF.Max(MathF.Abs(scale.Z), 0.01f) : 1.0f);
+
+    private static Vector3 SanitizeScaleFactor(Vector3 factor) => new(
+        float.IsFinite(factor.X) ? MathF.Max(MathF.Abs(factor.X), 0.0001f) : 1.0f,
+        float.IsFinite(factor.Y) ? MathF.Max(MathF.Abs(factor.Y), 0.0001f) : 1.0f,
+        float.IsFinite(factor.Z) ? MathF.Max(MathF.Abs(factor.Z), 0.0001f) : 1.0f);
+
+    private static Vector3 GetScaleFactor(Vector3 previousScale, Vector3 desiredScale)
+    {
+        Vector3 safePrevious = SanitizeScale(previousScale);
+        Vector3 safeDesired = SanitizeScale(desiredScale);
+        return new Vector3(
+            safeDesired.X / safePrevious.X,
+            safeDesired.Y / safePrevious.Y,
+            safeDesired.Z / safePrevious.Z);
+    }
+
+    private static void ScaleBuoyancyVolume(MapBody? body, Vector3 factor)
+    {
+        if (body?.BuoyancyVolume is not float volume || !float.IsFinite(volume))
+            return;
+
+        float volumeFactor = MathF.Abs(factor.X * factor.Y * factor.Z);
+        if (float.IsFinite(volumeFactor) && volumeFactor > 0.0001f)
+            body.BuoyancyVolume = volume * volumeFactor;
     }
 
     private static void SyncPrimitiveVisualScale(MapObject obj, Entity entity)
@@ -2818,6 +2992,7 @@ public unsafe class EditorUI : IDisposable
             if (ImGui.BeginMenu("View"))
             {
                 ImGui.MenuItem("Map Objects", "", ref _showMapWindow);
+                ImGui.MenuItem("Inspector", "", ref _showInspectorWindow);
                 ImGui.MenuItem("Asset Browser", "", ref _showAssetBrowser);
                 ImGui.MenuItem("Raw JSON", "", ref _showJsonWindow);
                 ImGui.MenuItem("Diagnostics", "", ref _showDiagnostics);
@@ -3807,7 +3982,8 @@ public unsafe class EditorUI : IDisposable
                 else if (_gizmoOperation == GizmoOperation.Scale)
                 {
                     Vector3 currentScale = Vector3.One;
-                    if ((body.Shape == MapShapeType.Box || body.Shape == MapShapeType.Trimesh) && body.HalfExtents.HasValue) currentScale = body.HalfExtents.Value * 2.0f;
+                    if (IsGroupObject(_selectedObject)) currentScale = _selectedObject.ModelScale;
+                    else if ((body.Shape == MapShapeType.Box || body.Shape == MapShapeType.Trimesh) && body.HalfExtents.HasValue) currentScale = body.HalfExtents.Value * 2.0f;
                     else if (body.Shape == MapShapeType.Sphere && body.Radius.HasValue) currentScale = new Vector3(body.Radius.Value * 2.0f);
                     else if (body.Shape == MapShapeType.Capsule && body.Radius.HasValue && body.Height.HasValue)
                         currentScale = new Vector3(body.Radius.Value * 2.0f, body.Height.Value, body.Radius.Value * 2.0f);
@@ -3821,40 +3997,53 @@ public unsafe class EditorUI : IDisposable
                             currentScale.Z > 0.0001f ? newScale.Z / currentScale.Z : 1f
                         );
 
-                        Vector3 pivot = body.Position;
-
-                        foreach (var obj in objectsToTransform)
+                        if (IsGroupObject(_selectedObject))
                         {
-                            if (obj.Body != null)
-                            {
-                                if (obj != _selectedObject)
-                                {
-                                    Vector3 relativePos = obj.Body.Position - pivot;
-                                    obj.Body.Position = pivot + relativePos * scaleMult;
-                                }
+                            ApplyGroupScale(
+                                _selectedObject,
+                                scaleMult,
+                                sceneService.Document,
+                                sceneService.Scene,
+                                sceneService,
+                                assetService);
+                        }
+                        else
+                        {
+                            Vector3 pivot = body.Position;
 
-                                if ((obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
+                            foreach (var obj in objectsToTransform)
+                            {
+                                if (obj.Body != null)
                                 {
-                                    Vector3 oldExtents = obj.Body.HalfExtents.Value;
-                                    obj.Body.HalfExtents = Vector3.Max(new Vector3(0.05f), obj.Body.HalfExtents.Value * scaleMult);
-                                    if (obj is Brush b) b.ScalePlanes(obj.Body.HalfExtents.Value / oldExtents);
-                                }
-                                else if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
-                                {
-                                    float avgMult = (scaleMult.X + scaleMult.Y + scaleMult.Z) / 3.0f;
-                                    obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value * avgMult);
-                                }
-                                else if (obj.Body.Shape == MapShapeType.Capsule &&
-                                         obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
-                                {
-                                    obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value *
-                                        (scaleMult.X + scaleMult.Z) * 0.5f);
-                                    obj.Body.Height = MathF.Max(0.05f, obj.Body.Height.Value * scaleMult.Y);
-                                }
-                                else
-                                {
-                                    float maxMult = MathF.Max(scaleMult.X, MathF.Max(scaleMult.Y, scaleMult.Z));
-                                    obj.ModelScale = Vector3.Max(new Vector3(0.01f), obj.ModelScale * maxMult);
+                                    if (obj != _selectedObject)
+                                    {
+                                        Vector3 relativePos = obj.Body.Position - pivot;
+                                        obj.Body.Position = pivot + relativePos * scaleMult;
+                                    }
+
+                                    if ((obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
+                                    {
+                                        Vector3 oldExtents = obj.Body.HalfExtents.Value;
+                                        obj.Body.HalfExtents = Vector3.Max(new Vector3(0.05f), obj.Body.HalfExtents.Value * scaleMult);
+                                        if (obj is Brush b) b.ScalePlanes(obj.Body.HalfExtents.Value / oldExtents);
+                                    }
+                                    else if (obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue)
+                                    {
+                                        float avgMult = (scaleMult.X + scaleMult.Y + scaleMult.Z) / 3.0f;
+                                        obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value * avgMult);
+                                    }
+                                    else if (obj.Body.Shape == MapShapeType.Capsule &&
+                                             obj.Body.Radius.HasValue && obj.Body.Height.HasValue)
+                                    {
+                                        obj.Body.Radius = MathF.Max(0.05f, obj.Body.Radius.Value *
+                                            (scaleMult.X + scaleMult.Z) * 0.5f);
+                                        obj.Body.Height = MathF.Max(0.05f, obj.Body.Height.Value * scaleMult.Y);
+                                    }
+                                    else
+                                    {
+                                        float maxMult = MathF.Max(scaleMult.X, MathF.Max(scaleMult.Y, scaleMult.Z));
+                                        obj.ModelScale = Vector3.Max(new Vector3(0.01f), obj.ModelScale * maxMult);
+                                    }
                                 }
                             }
                         }
@@ -5096,6 +5285,38 @@ public unsafe class EditorUI : IDisposable
         camera.Position = center - front * distance;
     }
 
+    private static Vector3 QuaternionToEuler(Quaternion q)
+    {
+        float t0 = 2.0f * (q.W * q.X + q.Y * q.Z);
+        float t1 = 1.0f - 2.0f * (q.X * q.X + q.Y * q.Y);
+        float pitch = MathF.Atan2(t0, t1);
+
+        float t2 = 2.0f * (q.W * q.Y - q.Z * q.X);
+        t2 = float.Clamp(t2, -1.0f, 1.0f);
+        float yaw = MathF.Asin(t2);
+
+        float t3 = 2.0f * (q.W * q.Z + q.X * q.Y);
+        float t4 = 1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z);
+        float roll = MathF.Atan2(t3, t4);
+
+        return new Vector3(
+            float.RadiansToDegrees(pitch),
+            float.RadiansToDegrees(yaw),
+            float.RadiansToDegrees(roll));
+    }
+
+    private static Quaternion EulerToQuaternion(Vector3 euler)
+    {
+        float pitch = float.DegreesToRadians(euler.X);
+        float yaw = float.DegreesToRadians(euler.Y);
+        float roll = float.DegreesToRadians(euler.Z);
+
+        var qx = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch);
+        var qy = Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw);
+        var qz = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, roll);
+        return qz * qy * qx;
+    }
+
     private void DrawMapWindow(
         EditorSceneService sceneService, 
         EditorAssetService assetService, 
@@ -5107,39 +5328,6 @@ public unsafe class EditorUI : IDisposable
     {
         var doc = sceneService.Document;
         var scene = sceneService.Scene;
-
-        static Vector3 QuaternionToEuler(Quaternion q)
-        {
-            float t0 = 2.0f * (q.W * q.X + q.Y * q.Z);
-            float t1 = 1.0f - 2.0f * (q.X * q.X + q.Y * q.Y);
-            float pitch = MathF.Atan2(t0, t1);
-
-            float t2 = 2.0f * (q.W * q.Y - q.Z * q.X);
-            t2 = float.Clamp(t2, -1.0f, 1.0f);
-            float yaw = MathF.Asin(t2);
-
-            float t3 = 2.0f * (q.W * q.Z + q.X * q.Y);
-            float t4 = 1.0f - 2.0f * (q.Y * q.Y + q.Z * q.Z);
-            float roll = MathF.Atan2(t3, t4);
-
-            return new Vector3(
-                float.RadiansToDegrees(pitch),
-                float.RadiansToDegrees(yaw),
-                float.RadiansToDegrees(roll)
-            );
-        }
-
-        static Quaternion EulerToQuaternion(Vector3 euler)
-        {
-            float pitch = float.DegreesToRadians(euler.X);
-            float yaw = float.DegreesToRadians(euler.Y);
-            float roll = float.DegreesToRadians(euler.Z);
-
-            var qx = Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitch);
-            var qy = Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw);
-            var qz = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, roll);
-            return qz * qy * qx;
-        }
 
         ImGui.SetNextWindowSize(new Vector2(400, 600), ImGuiCond.FirstUseEver);
 
@@ -5237,13 +5425,10 @@ public unsafe class EditorUI : IDisposable
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.38f, 0.27f, 0.50f, 1.0f));
             ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.46f, 0.34f, 0.60f, 1.0f));
             if (ImGui.Button("Model...", new Vector2(-1, 0)))
-            {
-                _showModelImportDialog = true;
-                RefreshModelFileList(assetService.FuseResPath);
-            }
+                OpenNativeModelFileDialog(sceneService, assetService, history);
             ImGui.PopStyleColor(3);
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Import a model from the project assets.");
+                ImGui.SetTooltip("Import a model using the Windows file dialog.");
 
             ImGui.Spacing();
             if (ImGui.Button("Terrain...", new Vector2(-1, 0)))
@@ -6516,7 +6701,7 @@ public unsafe class EditorUI : IDisposable
         if (ImGui.Button("X##ClearHierarchyFilter", new Vector2(26, 0)))
             _hierarchyFilter = "";
 
-        float listHeight = ImGui.GetContentRegionAvail().Y * 0.5f - 10;
+        float listHeight = ImGui.GetContentRegionAvail().Y - 10;
         if (listHeight < 150f) listHeight = 150f; // Ensure minimum height
 
         ImGui.BeginChild("HierarchyTree", new Vector2(0, listHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.HorizontalScrollbar);
@@ -6591,6 +6776,41 @@ public unsafe class EditorUI : IDisposable
         }
 
         ImGui.EndChild();
+
+        // Inspector is a separate dockable window so it can be arranged independently from Map Objects.
+        // Its controls are drawn below by DrawInspectorWindow.
+
+        // Apply Deletion or Duplication
+        if (objectToDelete != null)
+        {
+            DeleteObject(objectToDelete, sceneService, assetService, history);
+        }
+        else if (objectToDuplicate != null)
+        {
+            DuplicateObject(objectToDuplicate, sceneService, assetService, history);
+        }
+
+        ImGui.End();
+    }
+
+    private void DrawInspectorWindow(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history,
+        EditorViewport viewport3D,
+        EditorViewport viewportTop,
+        EditorViewport viewportFront,
+        EditorViewport viewportSide)
+    {
+        var doc = sceneService.Document;
+        var scene = sceneService.Scene;
+        ImGui.SetNextWindowSize(new Vector2(400, 600), ImGuiCond.FirstUseEver);
+
+        if (!ImGui.Begin("Inspector", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
 
         // --- Inspector / Properties Window ---
         ImGui.Spacing();
@@ -6724,7 +6944,8 @@ public unsafe class EditorUI : IDisposable
                     Quaternion rot = entity != null ? entity.Transform.Rotation : (obj.Body != null ? obj.Body.Rotation : Quaternion.Identity);
                     
                     Vector3 currentScale = Vector3.One;
-                    if (!obj.IsModel && obj.Body != null && (obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue) currentScale = obj.Body.HalfExtents.Value * 2.0f;
+                    if (IsGroupObject(obj)) currentScale = obj.ModelScale;
+                    else if (!obj.IsModel && obj.Body != null && (obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue) currentScale = obj.Body.HalfExtents.Value * 2.0f;
                     else if (!obj.IsModel && obj.Body != null && obj.Body.Shape == MapShapeType.Sphere && obj.Body.Radius.HasValue) currentScale = new Vector3(obj.Body.Radius.Value * 2.0f);
                     else if (obj.IsModel) currentScale = obj.ModelScale;
 
@@ -6785,7 +7006,28 @@ public unsafe class EditorUI : IDisposable
 
                         if (sChanged)
                         {
-                            if (obj.IsModel) obj.ModelScale = currentScale;
+                            if (IsGroupObject(obj))
+                            {
+                                Vector3 previousScale = obj.ModelScale;
+                                currentScale = SanitizeScale(currentScale);
+                                ApplyGroupScale(
+                                    obj,
+                                    GetScaleFactor(previousScale, currentScale),
+                                    sceneService.Document,
+                                    scene,
+                                    sceneService,
+                                    assetService);
+                                currentScale = obj.ModelScale;
+                            }
+                            else if (obj.IsModel)
+                            {
+                                Vector3 previousScale = obj.ModelScale;
+                                currentScale = SanitizeScale(currentScale);
+                                obj.ModelScale = currentScale;
+                                ScaleBuoyancyVolume(
+                                    obj.Body,
+                                    GetScaleFactor(previousScale, currentScale));
+                            }
                             else if (obj.Body != null && (obj.Body.Shape == MapShapeType.Box || obj.Body.Shape == MapShapeType.Trimesh) && obj.Body.HalfExtents.HasValue)
                             {
                                 Vector3 oldExtents = obj.Body.HalfExtents.Value;
@@ -7615,18 +7857,6 @@ public unsafe class EditorUI : IDisposable
         ImGui.PopStyleColor(3);
         ImGui.PopStyleVar();
         ImGui.EndChild();
-
-        // Apply Deletion or Duplication
-        if (objectToDelete != null)
-        {
-            DeleteObject(objectToDelete, sceneService, assetService, history);
-        }
-        else if (objectToDuplicate != null)
-        {
-            DuplicateObject(objectToDuplicate, sceneService, assetService, history);
-        }
-
-        DrawModelImportDialog(sceneService, assetService, history);
 
         ImGui.End();
     }
@@ -8815,24 +9045,47 @@ public unsafe class EditorUI : IDisposable
         sceneService.PopulateScene(assetService);
     }
 
-    private void RefreshModelFileList(string fuseResPath)
+    private void OpenNativeModelFileDialog(
+        EditorSceneService sceneService,
+        EditorAssetService assetService,
+        CommandHistory history)
     {
-        _modelFiles.Clear();
-        _selectedModelIndex = -1;
-        _detectedTexturePath = null;
-
-        string modelsDir = Path.Combine(fuseResPath, "Models");
-        if (Directory.Exists(modelsDir))
+        string modelsDirectory = Path.Combine(assetService.FuseResPath, "Models");
+        using var dialog = new System.Windows.Forms.OpenFileDialog
         {
-            var files = Directory.GetFiles(modelsDir, "*.*", SearchOption.AllDirectories)
-                                 .Where(f => f.EndsWith(".obj", StringComparison.OrdinalIgnoreCase) || 
-                                             f.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase) || 
-                                             f.EndsWith(".glb", StringComparison.OrdinalIgnoreCase));
-            foreach (var f in files)
+            Title = "Import Model",
+            Filter = "Supported models (*.obj;*.fbx;*.gltf;*.glb)|*.obj;*.fbx;*.gltf;*.glb|OBJ (*.obj)|*.obj|FBX (*.fbx)|*.fbx|glTF (*.gltf;*.glb)|*.gltf;*.glb|All files (*.*)|*.*",
+            InitialDirectory = Directory.Exists(modelsDirectory) ? modelsDirectory : assetService.FuseResPath,
+            CheckFileExists = true,
+            CheckPathExists = true,
+            Multiselect = false,
+            RestoreDirectory = true
+        };
+
+        try
+        {
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                return;
+
+            // Resolve texture references while the model still lives beside
+            // its source files. The copied model is then imported from the
+            // project resource tree so the map remains portable.
+            string? detectedTexturePath = FindTextureInModel(dialog.FileName, assetService.FuseResPath);
+            if (!assetService.TryImportModelFile(
+                    dialog.FileName,
+                    out string relativePath,
+                    out string error))
             {
-                string relPath = Path.GetRelativePath(modelsDir, f).Replace('\\', '/');
-                _modelFiles.Add(relPath);
+                ShowDocumentError(error);
+                return;
             }
+
+            ImportSelectedModel(relativePath, detectedTexturePath, sceneService, assetService, history);
+        }
+        catch (Exception ex)
+        {
+            ShowDocumentError($"Model import failed: {ex.Message}");
+            Logger.Error($"Native model dialog import failed: {ex.Message}");
         }
     }
 
@@ -8942,12 +9195,13 @@ public unsafe class EditorUI : IDisposable
     {
         var doc = sceneService.Document;
         var pre = doc.Serialize();
+        string modelAssetPath = filename.Replace('\\', '/');
 
         var obj = new MapObject
         {
             Id = Path.GetFileNameWithoutExtension(filename),
             Visible = true,
-            Model = $"Models/{filename}",
+            Model = modelAssetPath,
             ModelScale = Vector3.One,
             MaterialPath = !string.IsNullOrEmpty(texturePath)
                 ? EnsureMaterialForTexture(assetService, texturePath, Path.GetFileNameWithoutExtension(texturePath))
@@ -8983,7 +9237,8 @@ public unsafe class EditorUI : IDisposable
 
     private unsafe void ImportSelectedModel(string filename, string? texturePath, EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
     {
-        string modelFullPath = Path.Combine(assetService.FuseResPath, "Models", filename);
+        string modelAssetPath = filename.Replace('\\', '/');
+        string modelFullPath = assetService.ResolveEditorAssetPath(modelAssetPath);
         if (!File.Exists(modelFullPath)) return;
 
         try
@@ -9157,7 +9412,7 @@ public unsafe class EditorUI : IDisposable
                         Id = mId,
                         Visible = true,
                         ParentId = currentObjId,
-                        Model = $"Models/{filename}#{meshIndex}",
+                        Model = $"{modelAssetPath}#{meshIndex}",
                         ModelScale = scale,
                         Texture = meshTexturePath,
                         MaterialPath = !string.IsNullOrEmpty(meshTexturePath)
@@ -9212,77 +9467,6 @@ public unsafe class EditorUI : IDisposable
         {
             Logger.Error($"Error importing model meshes: {ex.Message}");
             ImportSingleModel(filename, texturePath, sceneService, assetService, history);
-        }
-    }
-
-    private void DrawModelImportDialog(EditorSceneService sceneService, EditorAssetService assetService, CommandHistory history)
-    {
-        if (!_showModelImportDialog) return;
-
-        ImGui.OpenPopup("Import Model");
-        
-        bool open = true;
-        if (ImGui.BeginPopupModal("Import Model", ref open, ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            ImGui.Text("Select a model file from the Models directory:");
-            ImGui.Separator();
-
-            if (_modelFiles.Count == 0)
-            {
-                ImGui.TextColored(new Vector4(1, 0, 0, 1), "No models found in Models/ directory.");
-            }
-            else
-            {
-                string[] filesArray = _modelFiles.ToArray();
-                if (ImGui.ListBox("##ModelsList", ref _selectedModelIndex, filesArray, filesArray.Length, 6))
-                {
-                    if (_selectedModelIndex >= 0 && _selectedModelIndex < _modelFiles.Count)
-                    {
-                        string selectedFile = _modelFiles[_selectedModelIndex];
-                        string modelFullPath = Path.Combine(assetService.FuseResPath, "Models", selectedFile);
-                        _detectedTexturePath = FindTextureInModel(modelFullPath, assetService.FuseResPath);
-                    }
-                }
-            }
-
-            ImGui.Separator();
-
-            if (_selectedModelIndex >= 0 && _selectedModelIndex < _modelFiles.Count)
-            {
-                ImGui.Text($"Selected: {_modelFiles[_selectedModelIndex]}");
-                if (!string.IsNullOrEmpty(_detectedTexturePath))
-                {
-                    ImGui.TextColored(new Vector4(0, 1, 0, 1), $"Texture found: {_detectedTexturePath}");
-                }
-                else
-                {
-                    ImGui.TextColored(new Vector4(1, 1, 0, 1), "No texture associated (or not found in res/Textures).");
-                }
-            }
-
-            ImGui.Separator();
-
-            ImGui.BeginDisabled(_selectedModelIndex < 0);
-            if (ImGui.Button("Import", new Vector2(120, 0)))
-            {
-                string selectedFile = _modelFiles[_selectedModelIndex];
-                ImportSelectedModel(selectedFile, _detectedTexturePath, sceneService, assetService, history);
-                _showModelImportDialog = false;
-            }
-            ImGui.EndDisabled();
-
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel", new Vector2(120, 0)))
-            {
-                _showModelImportDialog = false;
-            }
-
-            ImGui.EndPopup();
-        }
-
-        if (!open)
-        {
-            _showModelImportDialog = false;
         }
     }
 
@@ -11365,7 +11549,12 @@ public unsafe class EditorUI : IDisposable
         _newMaterialTargets.Clear();
         _newMaterialTargets.AddRange(targets.Where(target => target != null).Distinct());
         _newMaterialName = "NewMaterial";
+        _newMaterialFolder = "";
         _newMaterialTexture = "";
+        _newMaterialError = "";
+        _newMaterialFolderPopupRequested = false;
+        _newMaterialFolderName = "";
+        _newMaterialFolderError = "";
         _newMaterialPopupRequested = true;
     }
 
@@ -11384,6 +11573,32 @@ public unsafe class EditorUI : IDisposable
             return;
 
         ImGui.InputText("Name", ref _newMaterialName, 128);
+        ImGui.TextUnformatted("Folder");
+        float folderButtonWidth = MathF.Max(110.0f,
+            (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f);
+        if (ImGui.Button("Select Folder", new Vector2(folderButtonWidth, 0)))
+        {
+            _showAssetBrowser = true;
+            _assetBrowser.OpenMaterialFolderPicker(
+                folder =>
+                {
+                    _newMaterialFolder = folder;
+                    _newMaterialError = "";
+                    _newMaterialPopupRequested = true;
+                },
+                () => _newMaterialPopupRequested = true);
+            ImGui.CloseCurrentPopup();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("New Folder...", new Vector2(folderButtonWidth, 0)))
+        {
+            _newMaterialFolderName = "";
+            _newMaterialFolderError = "";
+            _newMaterialFolderPopupRequested = true;
+        }
+        ImGui.TextDisabled(string.IsNullOrEmpty(_newMaterialFolder)
+            ? "Materials/"
+            : $"Materials/{_newMaterialFolder}");
         ImGui.InputText("Initial Base Color Texture", ref _newMaterialTexture, 512);
         if (ImGui.BeginCombo("Browse Texture", string.IsNullOrWhiteSpace(_newMaterialTexture)
             ? "Optional..."
@@ -11400,34 +11615,61 @@ public unsafe class EditorUI : IDisposable
         }
 
         bool validName = !string.IsNullOrWhiteSpace(_newMaterialName);
+        if (!string.IsNullOrEmpty(_newMaterialError))
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), _newMaterialError);
+        }
         if (!validName)
             ImGui.BeginDisabled();
         if (ImGui.Button("Create", new Vector2(120, 0)))
         {
             string safeName = SanitizeAssetName(_newMaterialName);
-            string relativePath = $"Materials/{safeName}.fmat";
-            string fullPath = Path.Combine(assetService.FuseResPath, relativePath);
-            int suffix = 1;
-            while (File.Exists(fullPath))
+            if (!assetService.TryCreateMaterialFolder(
+                    _newMaterialFolder,
+                    out string normalizedFolder,
+                    out string folderError))
             {
-                relativePath = $"Materials/{safeName}_{suffix++}.fmat";
-                fullPath = Path.Combine(assetService.FuseResPath, relativePath);
+                _newMaterialError = folderError;
             }
-
-            MaterialAsset.CreateDefault(safeName, string.IsNullOrWhiteSpace(_newMaterialTexture) ? null : _newMaterialTexture)
-                .Save(fullPath);
-            assetService.GetOrCreateMaterial(relativePath);
-
-            if (_newMaterialTargets.Count > 0)
+            else
             {
-                Undo.RecordState(_frameBeginState);
-                foreach (MapObject target in _newMaterialTargets)
-                    AssignMaterial(target, relativePath, sceneService, assetService);
-                Undo.ForceEnd(history, sceneService, assetService);
-            }
+                string relativePath = string.IsNullOrEmpty(normalizedFolder)
+                    ? $"Materials/{safeName}.fmat"
+                    : $"Materials/{normalizedFolder}/{safeName}.fmat";
+                string fullPath = assetService.ResolveEditorAssetPath(relativePath);
+                int suffix = 1;
+                while (File.Exists(fullPath))
+                {
+                    relativePath = string.IsNullOrEmpty(normalizedFolder)
+                        ? $"Materials/{safeName}_{suffix++}.fmat"
+                        : $"Materials/{normalizedFolder}/{safeName}_{suffix++}.fmat";
+                    fullPath = assetService.ResolveEditorAssetPath(relativePath);
+                }
 
-            _materialEditor.Open(relativePath);
-            ImGui.CloseCurrentPopup();
+                try
+                {
+                    MaterialAsset.CreateDefault(safeName, string.IsNullOrWhiteSpace(_newMaterialTexture) ? null : _newMaterialTexture)
+                        .Save(fullPath);
+                    assetService.GetOrCreateMaterial(relativePath);
+
+                    if (_newMaterialTargets.Count > 0)
+                    {
+                        Undo.RecordState(_frameBeginState);
+                        foreach (MapObject target in _newMaterialTargets)
+                            AssignMaterial(target, relativePath, sceneService, assetService);
+                        Undo.ForceEnd(history, sceneService, assetService);
+                    }
+
+                    _newMaterialError = "";
+                    _materialEditor.Open(relativePath);
+                    ImGui.CloseCurrentPopup();
+                }
+                catch (Exception ex)
+                {
+                    _newMaterialError = $"Could not create material: {ex.Message}";
+                }
+            }
         }
         if (!validName)
             ImGui.EndDisabled();
@@ -11435,6 +11677,74 @@ public unsafe class EditorUI : IDisposable
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
             ImGui.CloseCurrentPopup();
         ImGui.EndPopup();
+    }
+
+    private void DrawNewMaterialFolderDialog(EditorAssetService assetService)
+    {
+        if (_newMaterialFolderPopupRequested)
+        {
+            ImGui.OpenPopup("Create Material Folder");
+            _newMaterialFolderPopupRequested = false;
+        }
+
+        bool popupOpen = true;
+        if (ImGui.BeginPopupModal("Create Material Folder", ref popupOpen,
+                ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            string parent = string.IsNullOrEmpty(_newMaterialFolder)
+                ? "Materials/"
+                : $"Materials/{_newMaterialFolder}";
+            ImGui.TextWrapped($"Create a new folder inside {parent}");
+            ImGui.InputText("Folder name", ref _newMaterialFolderName, 128);
+            if (!string.IsNullOrEmpty(_newMaterialFolderError))
+            {
+                ImGui.Spacing();
+                ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), _newMaterialFolderError);
+            }
+
+            ImGui.Separator();
+            bool validName = !string.IsNullOrWhiteSpace(_newMaterialFolderName) &&
+                !_newMaterialFolderName.Contains('/') &&
+                !_newMaterialFolderName.Contains('\\');
+            if (!validName)
+                ImGui.BeginDisabled();
+            if (ImGui.Button("Create", new Vector2(120, 0)))
+            {
+                string parentPath = _newMaterialFolder.Trim().Trim('/');
+                string requestedPath = string.IsNullOrEmpty(parentPath)
+                    ? _newMaterialFolderName.Trim()
+                    : $"{parentPath}/{_newMaterialFolderName.Trim()}";
+                if (assetService.TryCreateMaterialFolder(
+                        requestedPath,
+                        out string normalizedFolder,
+                        out string error))
+                {
+                    _newMaterialFolder = normalizedFolder;
+                    _newMaterialError = "";
+                    _newMaterialFolderError = "";
+                    ImGui.CloseCurrentPopup();
+                }
+                else
+                {
+                    _newMaterialFolderError = error;
+                }
+            }
+            if (!validName)
+                ImGui.EndDisabled();
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(120, 0)))
+            {
+                _newMaterialFolderError = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!popupOpen)
+        {
+            _newMaterialFolderPopupRequested = false;
+            _newMaterialFolderError = "";
+        }
     }
 
     private void ConvertLegacyTexturesToMaterials(

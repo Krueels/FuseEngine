@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using ImGuiNET;
 using Fuse.Core;
@@ -37,6 +38,7 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     private string _previewSignature = "";
     private string _failedPreviewSignature = "";
     private string _materialFilter = "";
+    private string _materialFolderFilter = "";
     private string _nodeSearch = "";
     private Vector2 _contextMenuPosition;
     private string _hoveredNodeId = "";
@@ -54,10 +56,19 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
     private readonly Dictionary<string, (long Stamp, Vector4 Color)> _materialSwatches = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<MaterialGraphNode> _clipboardNodes = [];
     private readonly List<MaterialGraphLink> _clipboardLinks = [];
+    private readonly Queue<string> _pendingExternalTextureFiles = new();
     private string _instanceName = "MaterialInstance";
     private bool _showCreateInstanceDialog;
     private string _pendingDeleteMaterialPath = "";
     private bool _showDeleteMaterialDialog;
+    private bool _showRenameMaterialDialog;
+    private string _renameMaterialTargetPath = "";
+    private string _renameMaterialName = "";
+    private string _renameMaterialError = "";
+    private bool _showMoveMaterialDialog;
+    private string _moveMaterialTargetPath = "";
+    private string _moveMaterialFolder = "";
+    private string _moveMaterialError = "";
 
     public bool IsOpen { get; private set; }
     public string CurrentPath => _path;
@@ -77,6 +88,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         _dirty = false;
         _previewSignature = "";
         _failedPreviewSignature = "";
+        _showRenameMaterialDialog = false;
+        _renameMaterialTargetPath = "";
+        _showMoveMaterialDialog = false;
+        _moveMaterialTargetPath = "";
         _status = "The open material was moved to the Recycle Bin.";
     }
 
@@ -121,6 +136,15 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         node.Properties["path"] = MaterialAsset.NormalizeAssetPath(texturePath);
         _dirty = true;
         _status = "Texture selected from Asset Browser.";
+    }
+
+    public void QueueExternalTextureFiles(IEnumerable<string> filePaths)
+    {
+        foreach (string filePath in filePaths)
+        {
+            if (!string.IsNullOrWhiteSpace(filePath))
+                _pendingExternalTextureFiles.Enqueue(filePath);
+        }
     }
 
     private void OpenImmediate(string materialPath)
@@ -186,6 +210,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             }
             ImGui.End();
             DrawUnsavedMaterialDialog(assetService, sceneService);
+            DrawRenameMaterialDialog(assetService, sceneService);
+            DrawMoveMaterialDialog(assetService, sceneService);
             DrawMaterialDeleteConfirmation(assetService, sceneService);
             return;
         }
@@ -241,6 +267,8 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         ImGui.End();
         DrawUnsavedMaterialDialog(assetService, sceneService);
         DrawCreateInstanceDialog(assetService, sceneService);
+        DrawRenameMaterialDialog(assetService, sceneService);
+        DrawMoveMaterialDialog(assetService, sceneService);
         DrawMaterialDeleteConfirmation(assetService, sceneService);
     }
 
@@ -249,18 +277,52 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
         ImGui.TextUnformatted("Materials");
         ImGui.Separator();
         ImGui.InputTextWithHint("##MaterialFilter", "Filter materials...", ref _materialFilter, 128);
+        IReadOnlyList<string> materials = assetService.EnumerateMaterials();
+        string[] folders = materials
+            .Select(GetMaterialFolder)
+            .Where(folder => !string.IsNullOrEmpty(folder))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(folder => folder, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        ImGui.SetNextItemWidth(-1);
+        string folderLabel = string.IsNullOrEmpty(_materialFolderFilter)
+            ? "All material folders"
+            : _materialFolderFilter;
+        if (ImGui.BeginCombo("Folder##MaterialFolderFilter", folderLabel))
+        {
+            if (ImGui.Selectable("All material folders", string.IsNullOrEmpty(_materialFolderFilter)))
+                _materialFolderFilter = "";
+
+            foreach (string folder in folders)
+            {
+                bool selectedFolder = _materialFolderFilter.Equals(folder, StringComparison.OrdinalIgnoreCase);
+                if (ImGui.Selectable(folder, selectedFolder))
+                    _materialFolderFilter = folder;
+                if (selectedFolder)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.TextDisabled("Right-click a material to rename, move, or delete it.");
         ImGui.Spacing();
 
-        IReadOnlyList<string> materials = assetService.EnumerateMaterials();
         bool any = false;
         foreach (string material in materials)
         {
             string fileName = Path.GetFileNameWithoutExtension(material);
+            string materialFolder = GetMaterialFolder(material);
+            bool inFolder = string.IsNullOrEmpty(_materialFolderFilter) ||
+                materialFolder.Equals(_materialFolderFilter, StringComparison.OrdinalIgnoreCase) ||
+                materialFolder.StartsWith(_materialFolderFilter + "/", StringComparison.OrdinalIgnoreCase);
+            if (!inFolder)
+                continue;
             if (!string.IsNullOrWhiteSpace(_materialFilter) &&
                 !material.Contains(_materialFilter, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             any = true;
+            ImGui.PushID(material);
             bool selected = MaterialRuntime.ResolveAssetPath(material)
                 .Equals(_path, StringComparison.OrdinalIgnoreCase);
             Vector4 swatch = GetMaterialSwatch(material);
@@ -274,6 +336,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             {
                 ImGui.TextDisabled(material);
                 ImGui.Separator();
+                if (ImGui.MenuItem("Rename material..."))
+                    RequestMaterialRename(material);
+                if (ImGui.MenuItem("Move to folder..."))
+                    RequestMaterialMove(material);
                 if (ImGui.MenuItem("Delete material..."))
                     RequestMaterialDelete(material);
                 ImGui.EndPopup();
@@ -281,16 +347,356 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             if (selected)
                 ImGui.SetItemDefaultFocus();
             ImGui.TextDisabled($"  {material}");
+            ImGui.PopID();
         }
 
         if (!any)
-            ImGui.TextDisabled(materials.Count == 0 ? "No .fmat materials found." : "No materials match the filter.");
+            ImGui.TextDisabled(materials.Count == 0
+                ? "No .fmat materials found."
+                : "No materials match the selected folder or filter.");
+    }
+
+    private static string GetMaterialFolder(string materialPath)
+    {
+        string normalized = materialPath.Replace('\\', '/');
+        const string materialsPrefix = "Materials/";
+        if (normalized.StartsWith(materialsPrefix, StringComparison.OrdinalIgnoreCase))
+            normalized = normalized[materialsPrefix.Length..];
+
+        string? directory = Path.GetDirectoryName(normalized.Replace('/', Path.DirectorySeparatorChar));
+        return string.IsNullOrWhiteSpace(directory)
+            ? ""
+            : directory.Replace(Path.DirectorySeparatorChar, '/');
     }
 
     private void RequestMaterialDelete(string materialPath)
     {
         _pendingDeleteMaterialPath = materialPath;
         _showDeleteMaterialDialog = true;
+    }
+
+    private void RequestMaterialRename()
+    {
+        if (_asset == null || string.IsNullOrWhiteSpace(_path))
+            return;
+
+        RequestMaterialRename(_path);
+    }
+
+    private void RequestMaterialRename(string materialPath)
+    {
+        if (string.IsNullOrWhiteSpace(materialPath))
+            return;
+
+        _renameMaterialTargetPath = MaterialRuntime.ResolveAssetPath(materialPath);
+        if (!File.Exists(_renameMaterialTargetPath))
+        {
+            _status = $"Material not found: {materialPath}";
+            _renameMaterialTargetPath = "";
+            return;
+        }
+
+        _renameMaterialName = Path.GetFileNameWithoutExtension(_renameMaterialTargetPath);
+        _renameMaterialError = "";
+        _showRenameMaterialDialog = true;
+    }
+
+    private void RequestMaterialMove(string materialPath)
+    {
+        if (string.IsNullOrWhiteSpace(materialPath))
+            return;
+
+        _moveMaterialTargetPath = MaterialRuntime.ResolveAssetPath(materialPath);
+        if (!File.Exists(_moveMaterialTargetPath))
+        {
+            _status = $"Material not found: {materialPath}";
+            _moveMaterialTargetPath = "";
+            return;
+        }
+
+        _moveMaterialFolder = GetMaterialFolder(materialPath);
+        _moveMaterialError = "";
+        _showMoveMaterialDialog = true;
+    }
+
+    private void DrawRenameMaterialDialog(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!_showRenameMaterialDialog || string.IsNullOrWhiteSpace(_renameMaterialTargetPath))
+            return;
+
+        ImGui.OpenPopup("Rename Material##MaterialGraph");
+        bool popupOpen = true;
+        if (ImGui.BeginPopupModal("Rename Material##MaterialGraph", ref popupOpen,
+                ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextWrapped("Rename this material asset. Its .fmat file and map references will be updated.");
+            ImGui.TextDisabled($"Current file: {Path.GetFileName(_renameMaterialTargetPath)}");
+            ImGui.InputText("New name", ref _renameMaterialName, 128);
+            ImGui.TextDisabled("The .fmat extension is added automatically.");
+            if (!string.IsNullOrEmpty(_renameMaterialError))
+            {
+                ImGui.Spacing();
+                ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), _renameMaterialError);
+            }
+
+            ImGui.Separator();
+            if (ImGui.Button("Rename", new Vector2(110, 0)))
+            {
+                if (RenameMaterial(assetService, sceneService))
+                {
+                    _showRenameMaterialDialog = false;
+                    _renameMaterialTargetPath = "";
+                    _renameMaterialError = "";
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(110, 0)))
+            {
+                _showRenameMaterialDialog = false;
+                _renameMaterialTargetPath = "";
+                _renameMaterialError = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!popupOpen)
+        {
+            _showRenameMaterialDialog = false;
+            _renameMaterialTargetPath = "";
+            _renameMaterialError = "";
+        }
+    }
+
+    private bool RenameMaterial(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (string.IsNullOrWhiteSpace(_renameMaterialTargetPath))
+            return false;
+
+        string oldFullPath = _renameMaterialTargetPath;
+        string oldRelativePath = Path.GetRelativePath(assetService.FuseResPath, oldFullPath).Replace('\\', '/');
+        bool isOpenMaterial = _asset != null &&
+            _path.Equals(oldFullPath, StringComparison.OrdinalIgnoreCase);
+        string previousAssetName = isOpenMaterial ? _asset!.Name : "";
+        bool wasDirty = isOpenMaterial && _dirty;
+        MaterialAsset assetToRename;
+        if (isOpenMaterial)
+        {
+            assetToRename = _asset!;
+        }
+        else
+        {
+            try
+            {
+                assetToRename = MaterialAsset.Load(oldFullPath);
+            }
+            catch (Exception ex)
+            {
+                _renameMaterialError = $"Could not load the material: {ex.Message}";
+                return false;
+            }
+        }
+
+        string previousFile;
+        try
+        {
+            previousFile = File.ReadAllText(oldFullPath);
+        }
+        catch (Exception ex)
+        {
+            _renameMaterialError = $"Could not read the material before renaming: {ex.Message}";
+            return false;
+        }
+
+        if (!assetService.TryRenameMaterial(
+                oldRelativePath,
+                _renameMaterialName,
+                out string newRelativePath,
+                out string error))
+        {
+            _renameMaterialError = error;
+            return false;
+        }
+
+        string newFullPath = assetService.ResolveEditorAssetPath(newRelativePath);
+        bool pathChanged = !oldFullPath.Equals(newFullPath, StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            assetToRename.Name = Path.GetFileNameWithoutExtension(newFullPath);
+            assetToRename.Save(newFullPath);
+            assetService.ReloadMaterial(newFullPath);
+        }
+        catch (Exception ex)
+        {
+            if (isOpenMaterial)
+            {
+                _path = oldFullPath;
+                _asset!.Name = previousAssetName;
+                _dirty = wasDirty;
+            }
+            _renameMaterialError = $"Could not finish the rename: {ex.Message}";
+
+            try
+            {
+                if (pathChanged)
+                {
+                    assetService.AssetManager.RemoveMaterialCacheEntry(newFullPath);
+                    if (File.Exists(newFullPath))
+                        File.Delete(newFullPath);
+                }
+                File.WriteAllText(oldFullPath, previousFile);
+                assetService.RefreshCatalogs();
+                assetService.ReloadMaterial(oldFullPath);
+                sceneService.RefreshMaterials(assetService);
+            }
+            catch (Exception rollbackEx)
+            {
+                Logger.Error($"Material rename rollback failed: {rollbackEx.Message}");
+            }
+
+            Logger.Error($"Material rename failed: {ex.Message}");
+            return false;
+        }
+
+        if (isOpenMaterial)
+        {
+            _path = newFullPath;
+            _asset!.Name = assetToRename.Name;
+        }
+
+        int referencesUpdated = 0;
+        string? sceneRefreshError = null;
+        try
+        {
+            referencesUpdated = sceneService.ReplaceMaterialReferences(oldRelativePath, newRelativePath);
+            if (referencesUpdated > 0)
+                sceneService.PopulateScene(assetService);
+        }
+        catch (Exception ex)
+        {
+            sceneRefreshError = ex.Message;
+            Logger.Warn($"Material references could not be refreshed after rename: {ex.Message}");
+        }
+
+        if (isOpenMaterial)
+        {
+            DisposePreviewMaterial();
+            _previewSignature = "";
+            _failedPreviewSignature = "";
+        }
+        _materialSwatches.Remove(oldFullPath);
+        if (isOpenMaterial)
+            _dirty = false;
+        _renameMaterialTargetPath = "";
+        _status = sceneRefreshError != null
+            ? $"Material renamed, but the scene could not be refreshed: {sceneRefreshError}"
+            : referencesUpdated == 0
+                ? $"Material renamed to {Path.GetFileName(newFullPath)}."
+                : $"Material renamed; updated {referencesUpdated} map reference(s). Save the map to keep the new path.";
+        return true;
+    }
+
+    private void DrawMoveMaterialDialog(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (!_showMoveMaterialDialog || string.IsNullOrWhiteSpace(_moveMaterialTargetPath))
+            return;
+
+        ImGui.OpenPopup("Move Material##MaterialGraph");
+        bool popupOpen = true;
+        if (ImGui.BeginPopupModal("Move Material##MaterialGraph", ref popupOpen,
+                ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextWrapped("Move this material to a folder below Fuse/res/Materials. Missing folders are created automatically.");
+            ImGui.TextDisabled($"Material: {Path.GetFileName(_moveMaterialTargetPath)}");
+            ImGui.InputText("Folder", ref _moveMaterialFolder, 256);
+            ImGui.TextDisabled("Leave empty for Materials/. Use / between nested folders.");
+            if (!string.IsNullOrEmpty(_moveMaterialError))
+            {
+                ImGui.Spacing();
+                ImGui.TextColored(new Vector4(1.0f, 0.35f, 0.25f, 1.0f), _moveMaterialError);
+            }
+
+            ImGui.Separator();
+            if (ImGui.Button("Move", new Vector2(110, 0)))
+            {
+                if (MoveMaterial(assetService, sceneService))
+                {
+                    _showMoveMaterialDialog = false;
+                    _moveMaterialTargetPath = "";
+                    _moveMaterialError = "";
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new Vector2(110, 0)))
+            {
+                _showMoveMaterialDialog = false;
+                _moveMaterialTargetPath = "";
+                _moveMaterialError = "";
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+
+        if (!popupOpen)
+        {
+            _showMoveMaterialDialog = false;
+            _moveMaterialTargetPath = "";
+            _moveMaterialError = "";
+        }
+    }
+
+    private bool MoveMaterial(EditorAssetService assetService, EditorSceneService sceneService)
+    {
+        if (string.IsNullOrWhiteSpace(_moveMaterialTargetPath))
+            return false;
+
+        string oldFullPath = _moveMaterialTargetPath;
+        string oldRelativePath = Path.GetRelativePath(assetService.FuseResPath, oldFullPath).Replace('\\', '/');
+        bool isOpenMaterial = _asset != null &&
+            _path.Equals(oldFullPath, StringComparison.OrdinalIgnoreCase);
+
+        if (!assetService.TryMoveMaterial(
+                oldRelativePath,
+                _moveMaterialFolder,
+                out string newRelativePath,
+                out string error))
+        {
+            _moveMaterialError = error;
+            return false;
+        }
+
+        string newFullPath = assetService.ResolveEditorAssetPath(newRelativePath);
+        if (isOpenMaterial)
+        {
+            _path = newFullPath;
+            DisposePreviewMaterial();
+            _previewSignature = "";
+            _failedPreviewSignature = "";
+        }
+
+        int referencesUpdated = 0;
+        string? sceneRefreshError = null;
+        try
+        {
+            referencesUpdated = sceneService.ReplaceMaterialReferences(oldRelativePath, newRelativePath);
+            if (referencesUpdated > 0)
+                sceneService.PopulateScene(assetService);
+        }
+        catch (Exception ex)
+        {
+            sceneRefreshError = ex.Message;
+            Logger.Warn($"Material references could not be refreshed after move: {ex.Message}");
+        }
+
+        _materialSwatches.Remove(oldFullPath);
+        _status = sceneRefreshError != null
+            ? $"Material moved, but the scene could not be refreshed: {sceneRefreshError}"
+            : referencesUpdated == 0
+                ? $"Material moved to {newRelativePath}."
+                : $"Material moved; updated {referencesUpdated} map reference(s). Save the map to keep the new path.";
+        return true;
     }
 
     private void DrawMaterialDeleteConfirmation(EditorAssetService assetService, EditorSceneService sceneService)
@@ -955,13 +1361,28 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             }
         }
 
-        // This target is created only during an active drag. Keeping it out of
-        // the normal item stack prevents it from overlapping node click targets.
+        ProcessExternalTextureDrops(assetService, graph, canvasMin, mouse, canvasHovered);
+
+        // This target is created only during an active Asset Browser drag.
+        // Keeping it out of the normal item stack prevents it from overlapping
+        // node click targets during ordinary graph editing.
         var activePayload = ImGui.GetDragDropPayload();
         if (activePayload.NativePtr != null && canvasHovered)
         {
             ImGui.SetCursorScreenPos(canvasMin);
             ImGui.InvisibleButton("MaterialGraphAssetDropTarget", canvasMax - canvasMin);
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem) &&
+                AssetDragDrop.CurrentKind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
+            {
+                drawList.AddRect(canvasMin, canvasMax,
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 0.75f, 1.0f, 0.95f)),
+                    4.0f,
+                    ImDrawFlags.None,
+                    2.0f);
+                drawList.AddText(canvasMin + new Vector2(16.0f, 16.0f),
+                    ImGui.ColorConvertFloat4ToU32(new Vector4(0.65f, 0.88f, 1.0f, 1.0f)),
+                    "Drop texture to create Texture node");
+            }
             if (ImGui.BeginDragDropTarget())
             {
                 var payload = ImGui.AcceptDragDropPayload("BLOWTORCH_ASSET");
@@ -971,11 +1392,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
                     if (AssetDragDrop.CurrentKind is EditorAssetKind.Texture or EditorAssetKind.Skybox)
                     {
                         Vector2 position = (mouse - canvasMin - _canvasPan) / _canvasZoom;
-                        MaterialGraphNode node = MaterialNodeCatalog.CreateNode("Texture2D", position);
-                        node.Name = Path.GetFileNameWithoutExtension(AssetDragDrop.CurrentPath);
-                        node.Properties["path"] = MaterialAsset.NormalizeAssetPath(AssetDragDrop.CurrentPath);
-                        node.Properties["color_space"] = "sRGB";
-                        graph.Nodes.Add(node);
+                        MaterialGraphNode node = AddTextureNode(
+                            graph,
+                            AssetDragDrop.CurrentPath,
+                            position);
                         SelectNode(node.Id, false);
                         _dirty = true;
                         _status = "Texture node added from Asset Browser.";
@@ -989,6 +1409,72 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             }
         }
 
+    }
+
+    private void ProcessExternalTextureDrops(
+        EditorAssetService assetService,
+        MaterialGraph graph,
+        Vector2 canvasMin,
+        Vector2 mouse,
+        bool canvasHovered)
+    {
+        if (!canvasHovered || _pendingExternalTextureFiles.Count == 0)
+            return;
+
+        Vector2 position = (mouse - canvasMin - _canvasPan) / _canvasZoom;
+        var createdNodeIds = new List<string>();
+        var errors = new List<string>();
+        int index = 0;
+        while (_pendingExternalTextureFiles.Count > 0)
+        {
+            string sourcePath = _pendingExternalTextureFiles.Dequeue();
+            if (assetService.TryImportTextureFile(sourcePath, out string relativePath, out string error))
+            {
+                MaterialGraphNode node = AddTextureNode(
+                    graph,
+                    relativePath,
+                    position + new Vector2(index * (NodeWidth + 24.0f), 0.0f));
+                createdNodeIds.Add(node.Id);
+                index++;
+            }
+            else
+            {
+                errors.Add($"{Path.GetFileName(sourcePath)}: {error}");
+            }
+        }
+
+        if (createdNodeIds.Count > 0)
+        {
+            SetSelection(createdNodeIds, false);
+            _dirty = true;
+            _status = errors.Count == 0
+                ? createdNodeIds.Count == 1
+                    ? "Texture node added from dropped file."
+                    : $"Added {createdNodeIds.Count} texture nodes from dropped files."
+                : $"Added {createdNodeIds.Count} texture node(s); {errors.Count} file(s) failed.";
+        }
+        else if (errors.Count > 0)
+        {
+            _status = errors.Count == 1
+                ? $"Texture drop failed: {errors[0]}"
+                : $"Texture drop failed for {errors.Count} file(s).";
+        }
+    }
+
+    private static MaterialGraphNode AddTextureNode(
+        MaterialGraph graph,
+        string texturePath,
+        Vector2 position)
+    {
+        string normalizedPath = MaterialAsset.NormalizeAssetPath(texturePath);
+        MaterialGraphNode node = MaterialNodeCatalog.CreateNode("Texture2D", position);
+        node.Name = Path.GetFileNameWithoutExtension(normalizedPath);
+        if (string.IsNullOrWhiteSpace(node.Name))
+            node.Name = "Texture";
+        node.Properties["path"] = normalizedPath;
+        node.Properties["color_space"] = "sRGB";
+        graph.Nodes.Add(node);
+        return node;
     }
 
     private void DrawNode(MaterialGraphNode node, Vector2 canvasMin, Vector2 mouse, ImDrawListPtr drawList)
@@ -1163,6 +1649,10 @@ public sealed unsafe class MaterialEditorWindow : IDisposable
             _asset.Name = name;
             _dirty = true;
         }
+        if (ImGui.Button("Rename Material File..."))
+            RequestMaterialRename();
+        ImGui.SameLine();
+        ImGui.TextDisabled(Path.GetFileName(_path));
 
         int alphaMode = (int)_asset.AlphaMode;
         if (ImGui.Combo("Alpha Mode", ref alphaMode, ["Opaque", "Mask", "Blend"], 3))

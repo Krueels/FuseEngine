@@ -19,6 +19,8 @@ public sealed class AssetBrowserWindow
     private bool _refreshRequested = true;
     private Action<string>? _texturePickerCallback;
     private Action<string>? _geometryPickerCallback;
+    private Action<string>? _materialFolderPickerCallback;
+    private Action? _materialFolderPickerCancelCallback;
     private string _pendingDeletePath = "";
     private EditorAssetKind _pendingDeleteKind;
     private bool _showDeleteConfirmation;
@@ -29,6 +31,8 @@ public sealed class AssetBrowserWindow
     {
         _texturePickerCallback = onSelected;
         _geometryPickerCallback = null;
+        _materialFolderPickerCallback = null;
+        _materialFolderPickerCancelCallback = null;
         _filter = 3;
         _search = "";
         _currentFolder = "";
@@ -40,10 +44,26 @@ public sealed class AssetBrowserWindow
     {
         _geometryPickerCallback = onSelected;
         _texturePickerCallback = null;
+        _materialFolderPickerCallback = null;
+        _materialFolderPickerCancelCallback = null;
         _filter = 5;
         _search = "";
         _currentFolder = "";
         _status = "Select a geometry graph.";
+        IsOpen = true;
+    }
+
+    public void OpenMaterialFolderPicker(Action<string> onSelected, Action? onCancelled = null)
+    {
+        _materialFolderPickerCallback = onSelected;
+        _materialFolderPickerCancelCallback = onCancelled;
+        _texturePickerCallback = null;
+        _geometryPickerCallback = null;
+        _filter = 2;
+        _search = "";
+        _currentFolder = "";
+        _selectedPath = "";
+        _status = "Select a material folder.";
         IsOpen = true;
     }
 
@@ -69,6 +89,7 @@ public sealed class AssetBrowserWindow
             {
                 _texturePickerCallback = null;
                 _geometryPickerCallback = null;
+                CancelMaterialFolderPicker();
             }
             ImGui.End();
             return;
@@ -78,6 +99,7 @@ public sealed class AssetBrowserWindow
         {
             _texturePickerCallback = null;
             _geometryPickerCallback = null;
+            CancelMaterialFolderPicker();
         }
 
         if (ImGui.BeginMenuBar())
@@ -91,11 +113,38 @@ public sealed class AssetBrowserWindow
             ImGui.EndMenuBar();
         }
 
+        if (_materialFolderPickerCallback != null)
+        {
+            if (ImGui.Button("Use This Folder"))
+            {
+                string selectedFolder = _currentFolder;
+                Action<string> callback = _materialFolderPickerCallback;
+                ClearMaterialFolderPicker();
+                IsOpen = false;
+                callback(selectedFolder);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel Folder Selection"))
+            {
+                CancelMaterialFolderPicker();
+                IsOpen = false;
+                _status = "Folder selection cancelled.";
+            }
+            ImGui.SameLine();
+            ImGui.TextDisabled(string.IsNullOrEmpty(_currentFolder)
+                ? "Materials/"
+                : $"Materials/{_currentFolder}");
+        }
+
         ImGui.InputTextWithHint("##AssetSearch", "Search assets...", ref _search, 256);
         ImGui.SameLine();
         string[] filters = ["All", "Models", "Materials", "Textures", "Skyboxes", "Geometry Graphs"];
         ImGui.SetNextItemWidth(130);
+        if (_materialFolderPickerCallback != null)
+            ImGui.BeginDisabled();
         ImGui.Combo("##AssetType", ref _filter, filters, filters.Length);
+        if (_materialFolderPickerCallback != null)
+            ImGui.EndDisabled();
         ImGui.SameLine();
         ImGui.TextDisabled($"{FilteredEntries().Count} assets");
         if (!string.IsNullOrEmpty(_status))
@@ -129,6 +178,19 @@ public sealed class AssetBrowserWindow
 
         ImGui.End();
         DrawDeleteConfirmation(assetService, sceneService, materialEditor);
+    }
+
+    private void ClearMaterialFolderPicker()
+    {
+        _materialFolderPickerCallback = null;
+        _materialFolderPickerCancelCallback = null;
+    }
+
+    private void CancelMaterialFolderPicker()
+    {
+        Action? callback = _materialFolderPickerCancelCallback;
+        ClearMaterialFolderPicker();
+        callback?.Invoke();
     }
 
     private void DrawTiles(EditorAssetService assetService, MaterialEditorWindow materialEditor, GeometryGraphEditorWindow geometryEditor, Action<EditorAssetEntry>? activate)
