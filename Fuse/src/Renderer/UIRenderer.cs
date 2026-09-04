@@ -73,6 +73,10 @@ public unsafe class UIRenderer : IDisposable
         // 1x1 white texture for fallback (bitmap font / rects)
         _whiteTexture = gl.GenTexture();
         gl.BindTexture(TextureTarget.Texture2D, _whiteTexture);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         byte[] white = [255];
         fixed (byte* p = white)
             gl.TexImage2D(TextureTarget.Texture2D, 0, (int)InternalFormat.R8, 1, 1, 0, PixelFormat.Red, PixelType.UnsignedByte, p);
@@ -350,13 +354,41 @@ public unsafe class UIRenderer : IDisposable
 
     public void DrawRect(float x, float y, float w, float h, Vector4 color)
     {
+        DrawSolidQuad(
+            new Vector2(x, y),
+            new Vector2(x + w, y),
+            new Vector2(x + w, y + h),
+            new Vector2(x, y + h),
+            color);
+    }
+
+    public void DrawLine(Vector2 start, Vector2 end, Vector4 color, float thickness = 1.0f)
+    {
+        Vector2 direction = end - start;
+        float length = direction.Length();
+        if (!float.IsFinite(length) || length <= 0.0001f)
+            return;
+
+        float halfThickness = MathF.Max(0.1f, thickness) * 0.5f;
+        Vector2 normal = new Vector2(-direction.Y, direction.X) / length * halfThickness;
+
+        DrawSolidQuad(
+            start + normal,
+            end + normal,
+            end - normal,
+            start - normal,
+            color);
+    }
+
+    private void DrawSolidQuad(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, Vector4 color)
+    {
         byte[] verts = new byte[4 * 16];
         fixed (byte* p = verts)
         {
-            PutVert(p, x, y, color);
-            PutVert(p + 16, x + w, y, color);
-            PutVert(p + 32, x + w, y + h, color);
-            PutVert(p + 48, x, y + h, color);
+            PutVert(p, p0.X, p0.Y, color);
+            PutVert(p + 16, p1.X, p1.Y, color);
+            PutVert(p + 32, p2.X, p2.Y, color);
+            PutVert(p + 48, p3.X, p3.Y, color);
         }
 
         _gl.BindVertexArray(_textVAO);
@@ -372,6 +404,7 @@ public unsafe class UIRenderer : IDisposable
         _gl.UseProgram(_textShader);
         _gl.UniformMatrix4(_textUProj, 1, false, GetMatrixValues(_proj));
         _gl.Uniform1(_textUTex, 0);
+        _gl.Uniform1(_textUOutlineWidth, 0.0f);
 
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture2D, _whiteTexture);

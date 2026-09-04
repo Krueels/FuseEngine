@@ -382,7 +382,8 @@ public unsafe class Application : IDisposable
                 }
 
                 // HUD Draw
-                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, player, camera, _scrWidth, _scrHeight);
+                _hud.Update(_weaponSystem, _enemySystem, _enemySelectionMode, player, camera,
+                    _scrWidth, _scrHeight, _interaction, _sceneManager.ActiveScene, _paused);
                 GameNotify.Update(dt);
                 _hud.Draw(gl, _ui, _scrWidth, _scrHeight, _paused, _interaction);
 

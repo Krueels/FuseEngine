@@ -24,6 +24,9 @@ public class PlayerInteraction
         _crosshairInteractTexture = crosshairInteract;
     }
 
+    public IInteractable? LookingAt => _lookingAt;
+    public Renderer.Entity? LookingEntity => _lookingAt?.Entity;
+
     public void Update()
     {
         Vector3 origin = _player.EyePosition;

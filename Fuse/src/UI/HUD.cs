@@ -53,6 +53,13 @@ public class HUD
         return el;
     }
 
+    public HUDWireBox AddWireBox()
+    {
+        var el = new HUDWireBox();
+        _elements.Add(el);
+        return el;
+    }
+
     public void Remove(HUDElement element)
     {
         _elements.Remove(element);
