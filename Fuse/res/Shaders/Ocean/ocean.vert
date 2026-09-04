@@ -35,6 +35,17 @@ uniform vec2 uWaveOffset1;
 uniform vec2 uWaveOffset2;
 
 const float TWO_PI = 6.28318530718;
+const float WAVE_TEXTURE_TEXEL_CENTER = 0.5 / 128.0;
+
+vec2 WaveTextureUv(vec2 worldPosition, vec2 offset, float patchSize)
+{
+    // The FFT writes one spatial sample per texel. Texture coordinates refer
+    // to texel edges, while the sample itself lives at the texel center. The
+    // half-texel correction keeps the continuous CPU sampler and the GPU
+    // surface in the same world-space phase.
+    return fract((worldPosition + offset) /
+        max(patchSize, 1.0) + vec2(WAVE_TEXTURE_TEXEL_CENTER));
+}
 
 vec2 ForwardDirection()
 {
@@ -47,19 +58,19 @@ vec4 SampleSurface(int band, vec2 worldPosition)
 {
     if (band == 0)
     {
-        vec2 uv = fract((worldPosition + uWaveOffset0) /
-            max(uWavePatchSize0, 1.0));
+        vec2 uv = WaveTextureUv(
+            worldPosition, uWaveOffset0, uWavePatchSize0);
         return textureLod(uWaveSurface0, uv, 0.0);
     }
     if (band == 1)
     {
-        vec2 uv = fract((worldPosition + uWaveOffset1) /
-            max(uWavePatchSize1, 1.0));
+        vec2 uv = WaveTextureUv(
+            worldPosition, uWaveOffset1, uWavePatchSize1);
         return textureLod(uWaveSurface1, uv, 0.0);
     }
 
-    vec2 uv = fract((worldPosition + uWaveOffset2) /
-        max(uWavePatchSize2, 1.0));
+    vec2 uv = WaveTextureUv(
+        worldPosition, uWaveOffset2, uWavePatchSize2);
     return textureLod(uWaveSurface2, uv, 0.0);
 }
 
@@ -67,19 +78,19 @@ vec2 SampleSlope(int band, vec2 worldPosition)
 {
     if (band == 0)
     {
-        vec2 uv = fract((worldPosition + uWaveOffset0) /
-            max(uWavePatchSize0, 1.0));
+        vec2 uv = WaveTextureUv(
+            worldPosition, uWaveOffset0, uWavePatchSize0);
         return textureLod(uWaveSlope0, uv, 0.0).rg;
     }
     if (band == 1)
     {
-        vec2 uv = fract((worldPosition + uWaveOffset1) /
-            max(uWavePatchSize1, 1.0));
+        vec2 uv = WaveTextureUv(
+            worldPosition, uWaveOffset1, uWavePatchSize1);
         return textureLod(uWaveSlope1, uv, 0.0).rg;
     }
 
-    vec2 uv = fract((worldPosition + uWaveOffset2) /
-        max(uWavePatchSize2, 1.0));
+    vec2 uv = WaveTextureUv(
+        worldPosition, uWaveOffset2, uWavePatchSize2);
     return textureLod(uWaveSlope2, uv, 0.0).rg;
 }
 

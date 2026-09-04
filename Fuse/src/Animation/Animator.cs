@@ -23,6 +23,7 @@ public sealed class Animator
     private float _fadeProgress;
     private Matrix4x4[]? _prevNodeLocals;
     private Matrix4x4[]? _nextNodeLocals;
+    private readonly Dictionary<int, Vector3> _nodeTranslationOverrides = new();
 
     public Animator(Skeleton skeleton)
     {
@@ -98,6 +99,24 @@ public sealed class Animator
     public bool TryGetNodeAnimationRotation(string nodeName, out Quaternion delta) =>
         _skeleton.TryGetNodeAnimationRotation(nodeName, out delta);
 
+    /// <summary>
+    /// Applies a persistent local-space translation after the active animation
+    /// has been sampled. This is useful for small procedural state changes on
+    /// a viewmodel, such as holding a weapon slide open, without replacing the
+    /// current animation or freezing the rest of the skeleton.
+    /// </summary>
+    public bool SetNodeLocalTranslationOverride(string nodeName, Vector3? translation)
+    {
+        if (!_skeleton.TryGetNodeIndex(nodeName, out int index))
+            return false;
+
+        if (translation is null)
+            _nodeTranslationOverrides.Remove(index);
+        else
+            _nodeTranslationOverrides[index] = translation.Value;
+        return true;
+    }
+
     public void Update(float dt)
     {
         //Logger.Info($"[AnimatorUpdate] clip={CurrentClip?.Name} playing={Playing} dt={dt:F4} bones={FinalBoneMatrices.Length}");
@@ -169,6 +188,14 @@ public sealed class Animator
                 _fadeDuration = 0;
                 _fadeTimer = 0;
             }
+        }
+
+        foreach ((int nodeIndex, Vector3 translation) in _nodeTranslationOverrides)
+        {
+            AnimationNode node = _skeleton.Nodes[nodeIndex];
+            node.Local.M14 = translation.X;
+            node.Local.M24 = translation.Y;
+            node.Local.M34 = translation.Z;
         }
 
         _skeleton.ComputeFinalBoneMatrices(FinalBoneMatrices);

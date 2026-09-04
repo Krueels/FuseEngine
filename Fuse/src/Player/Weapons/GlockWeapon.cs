@@ -59,6 +59,9 @@ public sealed class GlockWeapon : IWeapon
     private float _animEndTime = 0f;
     private readonly Random _fireRng = new();
     private bool _pendingAutoReload;
+    private bool _slideLockAfterFire;
+    private string? _slideNodeName;
+    private Vector3 _slideLockPosition;
     private bool _wasMoving;
     private Vector3 _lastMoveDir;
 
@@ -84,8 +87,12 @@ public sealed class GlockWeapon : IWeapon
         _isReloading = false;
         _reloadTimer = 0f;
         _nextFireTime = 0f;
+        _slideLockAfterFire = false;
+        _slideNodeName = null;
+        _slideLockPosition = Vector3.Zero;
         _wasMoving = false;
         _lastMoveDir = Vector3.UnitX;
+        ResolveSlideLock(viewmodelEntity.SkinnedModel);
 
         if (!string.IsNullOrEmpty(ViewmodelDrawAnim))
         {
@@ -105,6 +112,10 @@ public sealed class GlockWeapon : IWeapon
 
     public void OnUnequip()
     {
+        SetSlideLocked(false);
+        _slideNodeName = null;
+        _slideLockPosition = Vector3.Zero;
+        _slideLockAfterFire = false;
         _system = null;
         _animator = null;
     }
@@ -165,6 +176,8 @@ public sealed class GlockWeapon : IWeapon
         float currentTime = (float)Engine.Time;
         _nextFireTime = currentTime + (1.0f / FireRate);
         CurrentAmmo--;
+        _slideLockAfterFire = CurrentAmmo <= 0;
+        SetSlideLocked(_slideLockAfterFire);
 
         // Trigger fire animation
         if (_animator != null)
@@ -206,6 +219,8 @@ public sealed class GlockWeapon : IWeapon
         if (CurrentAmmo >= MagazineSize) return;
         if (ReserveAmmo <= 0) return;
 
+        _slideLockAfterFire = false;
+        SetSlideLocked(false);
         _isReloading = true;
         _reloadTimer = ReloadTime;
 
@@ -251,6 +266,8 @@ public sealed class GlockWeapon : IWeapon
                     }
                     else
                     {
+                        SetSlideLocked(_slideLockAfterFire);
+                        _slideLockAfterFire = false;
                         TransitionToIdle(false);
                     }
                 }
@@ -301,6 +318,76 @@ public sealed class GlockWeapon : IWeapon
     {
         // Animações são controladas via Play() nos métodos acima
         // Aqui poderia adicionar bobbing, sway, etc no futuro
+    }
+
+    private void ResolveSlideLock(SkinnedModel? model)
+    {
+        if (model == null)
+            return;
+
+        string[] candidateNames = ["GlockSlide", "Slide"];
+        foreach (string candidateName in candidateNames)
+        {
+            if (!model.Skeleton.TryGetNodeIndex(candidateName, out int nodeIndex))
+                continue;
+
+            AnimationNode node = model.Skeleton.Nodes[nodeIndex];
+            Vector3 bestOffset = Vector3.Zero;
+            Vector3 forwardPosition = Vector3.Zero;
+            bool hasForwardPosition = false;
+            float bestDistanceSquared = 0.0f;
+            foreach (AnimationClip clip in model.Clips.Values.Where(static clip =>
+                         clip.Name.StartsWith("Fire", StringComparison.OrdinalIgnoreCase)))
+            {
+                AnimationChannel? channel = clip.Channels.FirstOrDefault(channel =>
+                    channel.NodeName.Equals(node.Name, StringComparison.OrdinalIgnoreCase));
+                if (channel == null || channel.Positions.Length < 2)
+                    continue;
+
+                // Fire clips start with the slide in its forward/rest pose.
+                // Use the furthest keyed position as the lock-back offset so
+                // the value follows the model's real rig and scale.
+                if (!hasForwardPosition)
+                {
+                    forwardPosition = channel.Positions[0];
+                    hasForwardPosition = true;
+                }
+
+                Vector3 clipForwardPosition = channel.Positions[0];
+                foreach (Vector3 position in channel.Positions)
+                {
+                    Vector3 offset = position - clipForwardPosition;
+                    float distanceSquared = offset.LengthSquared();
+                    if (distanceSquared > bestDistanceSquared)
+                    {
+                        bestDistanceSquared = distanceSquared;
+                        bestOffset = offset;
+                    }
+                }
+            }
+
+            if (bestDistanceSquared <= 0.00000001f)
+                continue;
+
+            _slideNodeName = node.Name;
+            _slideLockPosition = forwardPosition + bestOffset;
+            Logger.Info(
+                $"[Glock] Slide lock resolved: node={_slideNodeName}, " +
+                $"position=({_slideLockPosition.X:F4},{_slideLockPosition.Y:F4},{_slideLockPosition.Z:F4})");
+            return;
+        }
+
+        Logger.Warn("[Glock] Could not resolve a translating slide node from the fire animations.");
+    }
+
+    private void SetSlideLocked(bool locked)
+    {
+        if (_animator == null || string.IsNullOrEmpty(_slideNodeName))
+            return;
+
+        _animator.SetNodeLocalTranslationOverride(
+            _slideNodeName,
+            locked ? _slideLockPosition : null);
     }
 
     public void Dispose() { }
