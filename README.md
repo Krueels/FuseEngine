@@ -14,7 +14,7 @@ I don't yet have a clear goal for what kind of game to create with this engine, 
 ## Installation
 
 ```bash
-  git clone https://github.com/SaitoxBeats/FuseEngine.git
+  git clone https://github.com/Krueels/FuseEngine.git
 ```
 Choose the "blowtorch" project for the map editor, and the "Fuse" project to open the game.
 
